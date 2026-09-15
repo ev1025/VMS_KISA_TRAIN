@@ -1,0 +1,44 @@
+# 방화 2단계 — 1단계 그리드 결과를 반영해 짠 큐 (2026-09-13 작성, 그리드·혼합 큐가 끝나면 자동 시작)
+#
+# 1단계(40에폭 스크리닝)에서 확인된 것. 기준선 g_B = 0.289, 동률 기준은 계획대로 mAP50 차이 0.02 미만.
+#   · 손라벨 오버샘플이 유일하게 큰 효과: 기준선 0.289 → ×4 0.371 (+0.08). ×8 0.367 은 동률, ×2 0.343 은 부족
+#   · 하드네거티브는 개수 무관: 0장 0.361 / 3장 0.356 / 5장 0.371 / 8장 0.359 전부 동률 → 5장 유지(최고값)
+#   · 안개 배경 네거티브는 0.371 → 0.343 으로 하락(동률 밖) → 쓰지 않는다
+#   · azimjaan 은 빼도 0.356 으로 동률 → 남기되 기여는 작다
+#   · wildfire_pos 추가가 0.385 로 1단계 최고 → 2단계 전 실험의 기본 구성에 넣는다
+#   · dfire 추가 0.353 은 동률 → 안 쓴다
+#   · 베이스 25%% 도 mAP 0.369 로 동률이지만 F1 이 88.89→82.35 로 한 편 떨어져 제출 후보에는 100%% 유지
+#
+# 그래서 2단계는 1단계에서 아직 건드리지 않은 축만 본다: 해상도 · 모델 크기 · 80에폭 완주.
+# 해상도를 1순위에 두는 이유: 놓치는 클립의 불 박스가 15×13px · 18×9px 이라 640 입력이면 7px 수준까지 줄어든다.
+# (C00_195_0001 안개편은 최고 모델도 불 0건 · 연기만 420표본 전부 = 타일 전체를 연기로 부름)
+#
+# 주의: g_base25 / g_base50(외부 48k 비율) 결과가 나오면, 25%로 줄여도 동률일 경우 여기 base_frac 을 넣어
+#       학습 시간을 크게 줄일 수 있다. 이 큐가 시작되기 전에 확인해 반영할 것.
+defaults:
+  base: aihub71751_48k
+  oversample: { handset_fire_hn: 4 }          # 1단계에서 확정된 유일한 확실한 이득
+  val_small: 600
+  val_set: data/학습데이터/evalset_fire/val.txt
+  train: { epochs: 80, batch: 96, imgsz: 640, multi_scale: 0.5, cache: ram, workers: 16 }
+  vram_gate_mib: 75000        # 잡당 71GB x 2잡 = 143GB. 나머지 40GB 는 SAM 전파 몫으로 비워 둔다
+  min_free_gb: 300
+  ram_cache_max: 60000
+  stagger_sec: 600
+
+experiments:
+  # ---- 기준: 1단계 최고 조합을 80에폭으로 완주(40에폭 0.371 이 더 오르는지) ----
+  - { name: s2_s640_20260913, model: yolo11s, extras: [fasdd_snowfog, fasdd_yolo, azimjaan_yolo, wildfire_pos_yolo] }
+
+  # ---- 해상도 960: 작은 불·먼 연기가 병목이라는 가설의 직접 검증 ----
+  - { name: s2_s960_20260913, model: yolo11s, extras: [fasdd_snowfog, fasdd_yolo, azimjaan_yolo, wildfire_pos_yolo], train: { imgsz: 960, batch: 48, cache: False, workers: 24 } }
+
+  # ---- 모델 크기 × 해상도: 1단계는 전부 11s 640 이었다 ----
+  - { name: s2_m640_20260913, model: yolo11m, extras: [fasdd_snowfog, fasdd_yolo, azimjaan_yolo, wildfire_pos_yolo], train: { batch: 64 } }
+  - { name: s2_m960_20260913, model: yolo11m, extras: [fasdd_snowfog, fasdd_yolo, azimjaan_yolo, wildfire_pos_yolo], train: { multi_scale: 0.333, imgsz: 960, batch: 40, cache: False, workers: 24 } }
+  # 제외(2026-09-15): 배치 16 이라 에폭당 68분 = 80에폭 91시간. 11l 은 퀄컴 NPU 예산 밖이라 제출 후보가 아니다.
+  # - { name: s2_l960_20260913, model: yolo11l, extras: [fasdd_snowfog, fasdd_yolo, azimjaan_yolo, wildfire_pos_yolo], train: { imgsz: 960, batch: 16, cache: False } }
+
+  # ---- 배포 영상 원본 해상도(1280)로 학습. 우리 손라벨 프레임이 1280x720 원본으로 저장돼 있어 손실 없이 들어간다.
+  #      다만 외부 베이스(48k)는 I/O 때문에 960 사본이라 1280 에서는 확대되어 새 정보가 없다 → 이득은 손라벨 쪽에서만 기대.
+  - { name: s2_s1280_20260913, model: yolo11s, extras: [fasdd_snowfog, fasdd_yolo, azimjaan_yolo, wildfire_pos_yolo], train: { multi_scale: 0.0, imgsz: 1280, batch: 104, cache: False, workers: 24 } }

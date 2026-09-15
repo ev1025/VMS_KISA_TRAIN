@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """통합 대시보드용 메타 생성. 4항목 배포 영상별로 GT·예측신호·구역맵·손라벨을 한 JSON 에 모은다.
 
-데이터가 여기저기 흩어져 있어(신호는 results/par/tl, 트랙은 dumps, 맵은 zone_maps, 손라벨은 data/학습데이터/손라벨/full)
+데이터가 여기저기 흩어져 있어(신호는 dumps/score_tl, 트랙은 dumps, 맵은 zone_maps, 손라벨은 data/학습데이터/손라벨/full)
 대시보드가 매번 헤매지 않도록 한 번 스캔해 dash_v2/dash_meta.json 으로 만든다.
 영상은 서버에 있으므로 상대 경로만 담고, 실제 스트리밍은 서버가 한다.
 """
@@ -15,7 +15,7 @@ MAPS = G/"data/원본데이터/kisa_배포_검증영상/zone_maps"
 BEFORE, AFTER, DELAY = 2.0, 10.0, 10.0
 
 ITEMS = {
-    "방화": {"key": "fire", "dir_kw": "방화", "signal": G/"results/par/tl/human_full.json"},
+    "방화": {"key": "fire", "dir_kw": "방화", "signal": G/"dumps/score_tl/human_full.json"},
     "침입": {"key": "intrusion", "dir_kw": "침입", "dump": G/"dumps/intrusion_tile", "zone": ["Intrusion"]},
     "배회": {"key": "loiter", "dir_kw": "배회", "dump": G/"dumps/loiter_trk_id", "zone": ["Loitering", "Intrusion"]},
     "쓰러짐": {"key": "fall", "dir_kw": "쓰러짐", "logits": G/"runs/fall_track/deploy_track_logits.npz"},

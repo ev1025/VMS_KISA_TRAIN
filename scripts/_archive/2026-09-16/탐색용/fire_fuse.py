@@ -13,7 +13,7 @@ import json
 import sys
 from pathlib import Path
 
-SP = Path("/NHNHOME/WORKSPACE/26mss002_E3/vms/results/par/tl")
+SP = Path(__file__).resolve().parents[1] / "dumps/score_tl"
 BEFORE, AFTER, DELAY = 2.0, 10.0, 10.0
 
 

@@ -47,16 +47,28 @@ ITEMS = {
                       conf=0.40, corners=0, dwell=6.0, settle=5.0, gap=6, track_imgsz=640),
     # pose_imgsz: 배포영상이 1280x720 인데 640 으로 줄이면 먼 사람의 관절이 흔들려 트랙이 잘게 끊긴다.
     # 960 으로 올리자 분절이 크게 줄고(예: 41개→2개) 실패하던 편이 정검으로 바뀌었다(자체 10편 84.21→94.74).
-    "falldown": dict(desc="Falldown", model="yolo11x-pose.pt", stride=0.1, delay=0.0, th=0.269, need=4,
+    # th 0.269 -> 0.755 (2026-09-15). 0.269 는 확신 없는 초기 신호에도 터져 C00_235_0002 가 GT-3.5s 에 발화했다.
+    # 자세 1280 확률 덤프로 문턱을 훑으니 0.70~0.81 구간에서만 10편 전부 정검이었다(그 밖은 전부 90.00).
+    # 통로 가운데 0.755 를 쓴다. 아래 벽 0.70 = 235 의 이른 가짜 신호, 위 벽 0.82 = 가장 약한 진짜 낙상.
+    # 전수 100.00 · LOOCV 90.00 (변별하는 편이 235 하나뿐이라 낙관 +10). 최악이어도 지금(90.00)과 같다.
+    "falldown": dict(desc="Falldown", model="yolo11x-pose.pt", stride=0.1, delay=0.0, th=0.755, need=4,
                      pose_imgsz=1280),
     # 방화: score_kisa.py 와 같은 6뷰 타일(전체+4분할+중앙) → 표본별 최고 conf → 창 규칙. 기본 규칙 = '결합+타일가정 3/5'
     # (불 ≥0.4 또는 불 ≥0.3&연기 ≥0.6 이 5스텝 창에 3회). --fire-rule new 면 fire_rule2 신규칙(불 0.5 5/12 + 연기 기준선Δ0.2).
+    # 규칙 변경(2026-09-15): 불 0.4 4회/6스텝 → 불 0.45 3회/10스텝, 연기 기준 사용 안 함.
+    # 덤프 44개(클립 평가 440건) 합산에서 정검 +18 · 미검 -18 · 오검 -6.
+    # 연기를 켜면 오검이 44 → 73~103 으로 늘어난다(안개편 C00_195_0001 은 연기가 0초부터 계속 높다).
+    # smoke=1.1 은 "연기 조건을 절대 만족시키지 않는다"는 뜻이다(신뢰도는 1 을 넘을 수 없다).
     "fire": dict(desc="FireDetection", model="fire_snowfull.pt", stride=0.5, delay=10.0,
-                 rule="combined", fire=0.4, smoke=0.6, win=5, hits=3, new_fire=0.5, new_win=12, new_hits=5, new_sdelta=0.2,
+                 rule="combined", fire=0.45, smoke=1.1, win=10, hits=3, new_fire=0.5, new_win=12, new_hits=5, new_sdelta=0.2,
                  view_imgsz=640),
 }
 FIRE_NAMES = {0: "fire", 1: "smoke"}
-# 타일 검출(person_redump.py 와 동일): 3x3 격자, 겹침 0.2, 입력 960, conf 0.15
+# 타일 검출: 3x3 격자, 겹침 0.2, 입력 960, conf 0.15.
+# 주의: person_redump.py 와 격자·해상도는 같지만 NMS 의 contain 이 다르다.
+#   여기(process)는 contain=None -> 내부 2.0 = 부분검출 억제 끔
+#   person_redump.py 는 기본 0.75 = 억제 켬  (--contain 2.0 으로 맞출 수 있다)
+#   이 차이로 트랙이 달라져 같은 판정기를 써도 침입이 94.74 대 87.72 로 갈린다(2026-09-16 확인).
 TILE = dict(grid=3, overlap=0.2, imgsz=960, conf=0.15)
 
 
@@ -205,7 +217,8 @@ def nms(dets, thr=0.5, contain=0.75):
 
 
 class Tracker:
-    """IoU + 중심거리 단순 트래커(person_redump.py 그대로). 원거리 인물이 간헐적으로 잡혀도 트랙을 잇는다."""
+    """IoU + 중심거리 단순 트래커(person_redump.py 와 같은 구현: iou_thr 0.25 · max_gap 10).
+    원거리 인물이 간헐적으로 잡혀도 트랙을 잇는다."""
 
     def __init__(self, iou_thr=0.25, max_gap=10):
         self.iou_thr, self.max_gap = iou_thr, max_gap
@@ -249,7 +262,9 @@ class Tracker:
 
 
 class PersonDetector:
-    """타일 검출. contain=None 이면 겹침(IoU) NMS 만(원본 intrusion_tile 덤프 = 92.86 구성), 값을 주면 부분검출 억제도."""
+    """타일 검출. contain=None 이면 겹침(IoU) NMS 만(부분검출 억제 끔), 값을 주면 부분검출 억제도 한다.
+    배포 실측 94.74 는 contain=None(끔) + IntrusionRule 의 gap 조합에서 나왔다.
+    dumps/intrusion_tile* 은 person_redump.py 가 억제를 켠 채(0.75) 만든 것이라 이 경로와 다르다."""
 
     def __init__(self, weights, tile=TILE, device=None, contain=None):
         from ultralytics import YOLO

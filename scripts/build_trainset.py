@@ -13,7 +13,8 @@
 import sys, os, io, json, glob, hashlib, argparse, collections, time
 from pathlib import Path
 import cv2
-V = Path("/NHNHOME/WORKSPACE/26mss002_E3/vms")
+import kisa_paths as KP            # 저장소 루트·배포 경로는 여기 한 곳에서만 정의한다
+V = KP.V
 sys.path.insert(0, str(V / "dash_v2"))
 import gt_adapters as GTA
 

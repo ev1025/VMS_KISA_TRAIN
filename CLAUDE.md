@@ -1,57 +1,87 @@
-# vms 레포 규약 (KISA 지능형 CCTV: 방화/침입/배회/쓰러짐)
+# VMS: KISA 지능형 CCTV 인증 레포지토리
+> **분야:** 방화 · 침입 · 배회 · 쓰러짐
 
-vms/ 자체가 레포지토리다. 심링크·중복 폴더 금지(general_yolo/yolo_fire_smoke 폐기됨).
+**기본 원칙:** 레포지토리는 오직 `vms/` 단 하나입니다. 심링크나 중복 폴더를 절대 생성하지 마세요.
 
-## ★ 데이터 배치 규칙 (새 데이터 받으면 반드시 이대로)
-`data/` 직속에는 **원본데이터 / 학습데이터 딱 둘만** 둔다. 그 외 중간 폴더 금지.
+---
 
-### data/원본데이터/  = 받은 원본 그대로
-- 소스별 한 폴더. annotation(xml/json)이 딸려오면 원본과 함께 둔다.
-- 명명 = `<출처>_<내용>` , 출처 접두는 **kisa_ / aihub<번호>_ / open_**
-  - 예: `aihub71330_산불`(frames/=양성, 안개구름/=음성), `aihub71751_48k`(12프레임 평면풀), `kisa_배포_검증영상`,
-        `kisa_연구개발_방화영상`, `kisa_산불_원천`, `open_fasdd`, `open_llvip`, `open_dfire`, `open_azimjaan_fire`
-- 다운로드 목적지도 여기(임시 dl 폴더는 그 안에). AI허브=aihubshell, 키는 ~/.aihub_key
+## 작업 전 필수 확인 문서
+아래 조건에 해당하는 작업을 시작하기 전, **추측해서 진행하지 말고 반드시 명시된 문서를 먼저 확인**하세요. 
+작업이 끝난 후에는 변경된 사실을 해당 문서에 반드시 업데이트해야 합니다.
 
-### data/학습데이터/ = 학습에 쓰는 가공셋 (YOLO 포맷)
-- 구조: `images/train`, `labels/train` (val 은 큐 러너가 목록으로 600장 self-val 을 만든다. 세트 안에 val 두지 않음)
-- 원본에서 파생/합성/의사라벨/하드네거티브 등 "학습에 들어가는 형태"만.
-- **원본 이미지 재복제 금지** → 원본데이터를 심링크로 참조
-  (예: `fasdd_yolo/images/train/*` → `data/원본데이터/open_fasdd/images/{train,val,test}/*` 심링크)
-- 예: fasdd_yolo(95,314=train+val+test), dfire_yolo, azimjaan_yolo(리매핑), wildfire_pos_yolo(산불 양성), wildfire_fog_neg(음성),
-  human_fire(손라벨→build_humanset.py 산출), aihub71751_24k(48k 격프레임 절반=24k 프록시), person_v3 등
-- **외부 데이터의 train/val/test 는 같은 클립이 아니면 전부 학습에 합친다**(우리 평가는 KISA 채점셋이므로)
+| 하려는 일 | 확인해야 할 문서 |
+| :--- | :--- |
+| **파일 생성 / 경로·상수 작성** | `docs/file_path.md` (§1) |
+| **결과·로그·가중치 저장 및 검색** | `docs/file_path.md` (§2) |
+| **신규 데이터 수신 / 학습셋 추가** | `docs/data.md` |
+| **실험(학습·채점) 큐 실행** | `docs/EXPERIMENTS.md` |
+| **대시보드(`dash_v2`) 수정** | `docs/dashboard.md` |
+| **성능 판단 및 수치 보고** | `docs/kisa/B200_평가.md` |
+| **채점 규칙 및 F1 수식 확인** | `docs/kisa/평가.md` |
+| **시험장 절차 및 RTSP 준비** | `docs/kisa/KISA_시험_체크리스트.md` |
+| **본시험 제출물(SA XML) 생성** | `docs/kisa/SA_생성_매뉴얼.md` |
 
-### data/학습데이터/손라벨/ = 손라벨 원천(JSON, 편집기가 쓴다)
-- `fire_labels.json`(방화, 초 단위) · `person_labels.json`(사람, 0.5초=2FPS). 좌표 x,y 는 **좌상단**·정규화
-- `cls: -1` 행 = "검토했고 객체 없음" 마커(박스 아님). 학습셋 빌더는 반드시 건너뛴다
-- 학습 반영은 `scripts/build_humanset.py`(원자적 덮어쓰기, rm 안 함). `exp_queue.py --rebuild-human` 이 실험 전에 자동 실행
+---
 
-### 절대 하지 말 것
-- data/ 밑에 fire/person/deploy/external 같은 중간 그룹 폴더(전부 원본/학습으로 흡수)
-- 채점셋(배포/검증)에 학습 라벨 달기 = train/test 유출
+## 절대 금지 사항 (Do Not)
+- **Train/Test 유출:** 채점셋(`data/원본데이터/kisa_배포_검증영상`)을 학습 데이터에 넣지 마세요.
+- **비인가 폴더 생성:** `data/` 디렉토리 하위에 `원본데이터` 및 `학습데이터` 외의 다른 폴더를 만들지 마세요.
+- **실행 중인 실험 변경:** 실행 중인 큐 스크립트나 yaml을 편집하여 실험을 추가하지 마세요. (바이트 오프셋이 깨져 고아 프로세스가 발생합니다)
+- **규약 우회:** 문서에 적힌 규약을 코드에서 임의로 우회하지 마세요. (러너가 강제하는 필수 값입니다)
 
-## 실험 실행 (유일 진입점 = scripts/exp_queue.py)
-- `python scripts/exp_queue.py run configs/<queue>.yaml --jobs 3 [--wait-tmux <세션>] [--rebuild-human]` · `status` 로 진행 확인
-- 실험 추가 = yaml 에 한 항목. **실행 중인 .sh 를 편집해 실험을 붙이지 않는다**(바이트 오프셋 깨짐·고아 프로세스 원인)
-- 러너가 `docs/EXPERIMENTS.md §0` 규약을 강제: train.txt 목록(심링크 폴더 X) · val_small 600 · `multi_scale=0.5` · `--cache ram --workers 8`
-  · 오버샘플=목록 반복 · 잡별 000.jpg 로 labels.cache 분리 · 동시 잡 N + VRAM 게이트
-- 산출: `runs/<exp>/<model>/weights/best.pt` · `results/<exp>/{meta.json,score.txt}`(item 필드로 4항목 구분) · `logs/queue/<exp>.log`
-- 재실행 안전: best.pt 있으면 학습 생략, score.txt 있으면 전체 생략. `_exp/` 는 잡별 임시 목록·캐시(지워도 됨)
+---
 
-## 그 외 폴더
-- **model/** : 모든 가중치. `pretrained/`(yolo11*, yolov8, yolo26n, clip 등 베이스), `sr/`(RealESRGAN), 루트=프로젝트 학습 .pt(fire_base, person_v2/v3, run_*)
-- **configs/** : 실험 큐 yaml(`queue_fire_20260909.yaml` 등)
-- **runs/** : 학습 산출. 신: `runs/<exp>/<model>/` · 구: `runs/<이름>/`, `kisa/`, `par/`, `fall_track/`, `_archive/`
-- **results/** : 신: `results/<exp>/{meta.json,score.txt}` · 구: 평면 `<이름>.txt`(방화), `intrusion.txt`(침입). 대시보드 결과탭이 둘 다 읽음
-- **dumps/** : 추론 트랙 덤프 — 대시보드 사용: `intrusion_tile`(침입) `loiter_trk_id`(배회) `fire_box`(방화). `_archive/`=옛 변형
-- **dash_v2/** : 통합 대시보드(serve_kisa.py:8890). JS 는 `js/{core,review,data,editor,main}.js`(app.js 는 스텁). 데이터확인·영상검수·결과
-- **scripts/** : 현역 스크립트만. 죽은 경로 참조·대체된 것은 `scripts/_archive/<날짜>/`(README 에 사유). **logs/** 도 동일하게 `_archive/`
+## 디렉토리 구조 (폴더 한 줄 지도)
 
-## 대시보드 통합 로직(재사용)
-- 영상 = `renderCenter(row)` 하나로(영상검수·데이터확인 원본영상 공용, raw는 signal_type:"raw"+sa:null)
-- 이미지 = 중앙 img + SVG 박스 오버레이(라벨생성·데이터확인 공용, 세로중앙 margin:auto)
-- 우측 정보 = rtitle + KV 카드, 리스트 왼쪽 = 태그 배지
+| 폴더 | 설명 및 내용 |
+| :--- | :--- |
+| `data/원본데이터/` | 수신한 원본 데이터 그대로 보관 (`<출처>_<내용>` 형식, 예: kisa_, aihub<번호>_, open_) |
+| `data/학습데이터/` | YOLO 가공 데이터셋 + `손라벨/` (편집기가 사용하는 JSON 원천 데이터) |
+| `configs/` | 실험 큐 yaml 및 `datasets.yaml` (데이터셋 규격 단일 기준) |
+| `scripts/` | 현재 사용 중인 현역 스크립트 (※ 대체된 과거 스크립트는 `scripts/_archive/<날짜>/`로 이동) |
+| `model/` | 모델 가중치 (베이스 모델은 `pretrained/`, 직접 학습한 `.pt` 파일은 루트에 보관) |
+| `runs/`, `results/`, `logs/queue/`| 학습 산출물, 점수 및 모델 계보(`results/MODELS.json`), 실행 로그 |
+| `dash_v2/` | 모니터링 대시보드 (포트 `8890`) |
+| `dumps/` | 추론 트랙 덤프 파일 (`intrusion_tile`, `loiter_trk_id`, `fire_box` 등) |
+| `_exp/` | 작업별 임시 목록 및 캐시 (삭제 가능) |
 
-## docs (읽고 갱신)
-- 새 데이터 들여오기 전 → `docs/data.md`
-- 실험 큐 돌리기 전 → `docs/EXPERIMENTS.md`
+---
+
+## 배치·계보 자가 점검
+
+문서와 실제가 어긋났는지 눈으로 찾지 않아도 되게 두 스크립트가 대신 확인합니다.
+어긴 것이 있으면 되돌아오는 값이 `1` 입니다. **실험 큐를 돌린 뒤, 파일을 옮긴 뒤 한 번 돌리세요.**
+
+| 명령 | 확인하는 것 |
+| :--- | :--- |
+| `.venv/bin/python scripts/check_layout.py --all` | 파일 자리가 `docs/file_path.md` 2절과 맞는가 (루트 진입점, `results/`·`runs/`·`logs/queue/` 구성, `_kisa_port/` 제출 도구 경계, `data/` 하위 폴더) |
+| `.venv/bin/python scripts/check_models.py` | `_kisa_port/weights/kisa/*.pt` 가 전부 `results/MODELS.json` 에 기록돼 있는가 |
+
+실험 큐(`scripts/exp_queue.py`)가 만드는 자리는 다음 네 곳으로 고정돼 있습니다.
+
+| 무엇 | 어디 |
+| :--- | :--- |
+| 학습 가중치 | `runs/<실험>/<모델>/weights/best.pt` |
+| 점수·설정 | `results/<실험>/{score.txt, meta.json, eval_map.json}` |
+| 실행 로그 | `logs/queue/<실험>.log` |
+| 목록·캐시(임시) | `_exp/<실험>/` |
+
+---
+
+## 규칙·계측 요령 (2026-09-15 정리)
+
+점수가 안 오를 때 학습부터 다시 돌리지 마세요. **판정 규칙이 모델 교체보다 크게 움직인 적이 많습니다.**
+같은 날 쓰러짐 90.00 -> 100.00, 방화 77.78 -> 88.89 이 전부 규칙에서 나왔습니다.
+
+| 하려는 일 | 읽을 곳 |
+| :--- | :--- |
+| **판정 규칙 찾기·검증** | `docs/EXPERIMENTS.md` 4절 |
+| **잡이 `rc=-9` 로 죽을 때** | `docs/EXPERIMENTS.md` 5절 |
+
+짧게 세 줄만 옮기면
+
+- 추론은 **한 번만** 하고 신뢰도를 덤프해 규칙은 파일로 훑습니다(`scripts/fall_sweep.py`·`fire_rule_search.py`).
+  문턱을 1.1 처럼 못 넘는 값으로 두면 발화가 안 돼 영상 끝까지 쌓입니다.
+- 고른 규칙은 **LOOCV 나 다른 모델 덤프**로 다시 잽니다. 같은 채점셋으로 고르고 그것으로 보고하면 낙관이 섞입니다.
+- `rc=-9` 는 SIGKILL 이라 **GPU 부족이 아닙니다**(GPU 가 모자라면 파이썬 예외가 납니다).
+  죽은 학습의 데이터로더 워커가 고아로 남아 RAM·공유메모리·GPU 를 쥐고 있는지부터 봅니다.

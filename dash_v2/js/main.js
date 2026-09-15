@@ -18,6 +18,7 @@ function applyMode() {
   $("#right").innerHTML = '<div class="empty">—</div>';
   if (CUR.mode === "data") {
     buildDatasetSrc();
+  if (typeof initPushButton === "function") initPushButton();
   } else if (CUR.mode === "results") {
     $("#list").innerHTML = ""; buildResults();
   } else {
@@ -29,16 +30,17 @@ function applyMode() {
   }
 }
 // ---------- 부트 ----------
+
 function dedupResults(data) {
   const SUMMARY = /^(KISA_SCORES|NIGHT_SUMMARY|FOG_SUMMARY)$/;   // 실험이 아니라 요약 파일
   data = data.filter(d => !SUMMARY.test(d.name));
   const rank = d => { const m = d.meta || {}; return (m.model ? 4 : 0) + (m.kind === "live_sa" ? 2 : m.kind === "archive" ? 0 : 3) + (d.clips && Object.keys(d.clips).length ? 1 : 0); };   // 대표 우선순위(러너 메타 > 라이브 > 보관, 클립 있으면 가점)
   const g = {};
-  data.forEach(d => { const k = d.item + "|" + d.score + "|" + d.tp + "|" + d.fn + "|" + d.fp; (g[k] || (g[k] = [])).push(d); });   // 같은 항목·같은 결과 = 한 묶음
+  data.forEach(d => { const k = d.item + "|" + d.name; (g[k] || (g[k] = [])).push(d); });   // 같은 실험의 중복 기록만 합친다(점수가 같다고 합치면 구성 비교가 깨진다)
   return Object.values(g).map(list => {
     list.sort((a, b) => rank(b) - rank(a) || b.mtime - a.mtime);
     const rep = list[0];
-    rep._members = [...new Set(list.map(d => d.name))];   // 이 결과를 낸 실험/재기록 전부
+    rep._members = [...new Set(list.map(d => d.name))];   // 같은 실험의 중복 기록(러너 메타·라이브 로그·보관본)
     if (!(rep.clips && Object.keys(rep.clips).length)) { const c = list.find(d => d.clips && Object.keys(d.clips).length); if (c) rep.clips = c.clips; }
     if (!(rep.rules && rep.rules.length > 1)) { const r = list.find(d => d.rules && d.rules.length > 1); if (r) rep.rules = r.rules; }
     return rep;
@@ -102,8 +104,8 @@ async function buildResults() {
   const sep = '<span style="color:var(--mut)"> · </span>';
   const confOf = d => {                              // 한 줄 구성: 모델 · 베이스 · +추가셋 · 오버샘플 · 추가 옵션
     const m = d.meta || {};
-    if (m.kind === "live_sa") return `<b>라이브 SA 생성기</b>${sep}<span style="color:var(--mut)">배포 검증영상 채점${m.status ? " · " + m.status : ""}</span>`;
-    if (m.kind === "archive") return `<span style="color:var(--mut)">보관 결과${m.status ? " · " + m.status : ""}</span>`;
+    if (m.kind === "live_sa") return '<b>라이브 SA 생성기</b>';
+    if (m.kind === "archive") return '<span style="color:var(--mut)">보관 결과</span>';
     const parts = [];
     if (m.model) parts.push(`<b>${m.model}</b>`);
     if (m.base) parts.push(`베이스 ${dsName(m.base)}`);
@@ -112,17 +114,62 @@ async function buildResults() {
     if (m.extra && Object.keys(m.extra).length) parts.push(`<span style="color:#d29922">${Object.entries(m.extra).map(([k, v]) => k + "=" + v).join(" ")}</span>`);
     return parts.join(sep) || "–";
   };
+  const resOf = d => {                               // 해상도: 학습 / 채점 측정. 다르면 둘 다 보인다
+    const m = d.meta || {}, t = m.train || {};
+    if (!m.model) return '<span style="color:var(--mut)">–</span>';
+    const tr = t.imgsz || null, ev = (m.eval_map || {}).imgsz || null;
+    if (!tr && !ev) return '<span style="color:var(--mut)">–</span>';
+    if (tr && ev && tr !== ev) return `<b>${tr}</b><br><span style="color:#d29922;font-size:10px">측정 ${ev}</span>`;
+    return `<b>${tr || ev}</b>`;
+  };
+  const dataOf = d => {                              // 입력 데이터: 베이스 + 추가 데이터셋
+    const m = d.meta || {};
+    if (!m.model) return "";
+    const parts = [];
+    if (m.base) parts.push(dsName(m.base));
+    (m.extras || []).forEach(x => parts.push("+ " + dsName(x)));
+    if (!parts.length) return '<span style="color:var(--mut)">–</span>';
+    // 총 학습 장수는 데이터의 성질이라 여기 붙인다(오버샘플 반영 후 실제 목록 수)
+    if (m.n_train) parts.push(`<span style="color:var(--mut)">(총 ${Number(m.n_train).toLocaleString()}장)</span>`);
+    return parts.join("<br>");
+  };
+  const wayOf = d => {                               // 기법: 오버샘플·다중스케일·베이스 비율 등 데이터 외 조작
+    const m = d.meta || {}, t = m.train || {};
+    if (!m.model) return "";
+    const parts = [];
+    if (m.oversample) Object.entries(m.oversample).forEach(([k, v]) => parts.push(`${dsName(k)} ×${v}`));
+    if (t.multi_scale) parts.push(`다중스케일 ${t.multi_scale}`);
+    if (m.base_frac && m.base_frac < 1) parts.push(`베이스 ${Math.round(m.base_frac * 100)}%`);
+    if (m.extra && Object.keys(m.extra).length)
+      parts.push(`<span style="color:#d29922">${Object.entries(m.extra).map(([k, v]) => k + "=" + v).join(" ")}</span>`);
+    return parts.join("<br>") || '<span style="color:var(--mut)">–</span>';
+  };
   const trainOf = d => {                             // 학습 요약: 에폭·배치·크기 / 장수 / 상태
     const m = d.meta || {}, t = m.train || {};
     if (!m.model) return "";
     const a = [t.epochs ? `${t.epochs}에폭` : "", t.batch ? `배치 ${t.batch}` : "", t.imgsz ? `${t.imgsz}px` : ""].filter(Boolean).join(" · ");
-    return a + (m.n_train ? `<br>${Number(m.n_train).toLocaleString()}장` : "") + (m.status && m.status !== "ok" ? `<br><span style="color:${/fail|kill|error/i.test(m.status) ? "#f85149" : "var(--mut)"}">${m.status}</span>` : "");
+    return a + (m.status && m.status !== "ok" ? `<br><span style="color:${/fail|kill|error/i.test(m.status) ? "#f85149" : "var(--mut)"}">${m.status}</span>` : "");
   };
-  const HEAD = '<thead><tr style="color:var(--mut);text-align:left;font-size:11px"><th style="padding:8px 6px">실험</th><th>구성</th><th>학습</th><th>F1</th><th title="배포 검증영상에 친 라벨(학습 미포함)로 잰 mAP50 / mAP50-95">mAP(채점셋)</th><th title="정검(정탐)·미검(놓침)·오검(오탐)">정·미·오</th><th>최적 규칙</th><th>시각</th><th></th></tr></thead>';
+  const HEAD = '<thead><tr style="color:var(--mut);text-align:left;font-size:11px"><th style="padding:8px 6px;width:64px" title="학습 입력 크기. 다르면 채점 측정 크기도 같이 표시">해상도</th><th>입력데이터</th><th title="오버샘플·다중스케일 등 데이터 외 조작">기법</th><th style="width:60px" title="이 레시피가 낸 최고 F1">최고 F1</th><th style="width:74px" title="최고 F1 을 낸 실험의 한 표본 처리시간(GPU) · 괄호는 표본 주기 대비 여유">속도</th><th style="width:96px">시각</th><th style="width:20px"></th></tr></thead>';
   const VC = { "정검": "#3fb950", "미검": "#f85149", "오검": "#d29922", "무GT": "#484f58" };
 
   ITEMS.forEach(item => {
-    const rows = data.filter(d => d.item === item).sort((a, b) => b.score - a.score);
+    const raw = data.filter(d => d.item === item).sort((a, b) => b.score - a.score);
+    // 해상도·입력데이터·기법이 같으면 한 레시피. 구성 기록이 없는 옛 결과는 이름으로 각각 둔다.
+    const rgroup = {};
+    raw.forEach(d => {
+      const m = d.meta || {}, t = m.train || {};
+      const key = m.model
+        ? [t.imgsz || "", m.base || "", (m.extras || []).join(","),
+           Object.entries(m.oversample || {}).sort().map(([k, v]) => k + ":" + v).join(","),
+           t.multi_scale || "", m.base_frac || ""].join("|")
+        : "solo|" + d.name;
+      (rgroup[key] || (rgroup[key] = [])).push(d);
+    });
+    const rows = Object.values(rgroup).map(list => {
+      list.sort((a, b) => b.score - a.score);
+      const rep0 = list[0]; rep0._family = list; return rep0;
+    }).sort((a, b) => b.score - a.score);
     const sec = el("div"); sec.style.cssText = "margin-top:18px";
     const st = el("div", "rtitle", `${item} <span class="tag">${rows.length}건</span>`); st.style.cssText = "font-size:14px;margin-bottom:6px";
     sec.appendChild(st);
@@ -134,25 +181,89 @@ async function buildResults() {
       const top = d.score === best, m = d.meta || {};
       const tr = el("tr"); tr.style.cssText = "border-top:1px solid var(--line);cursor:pointer" + (top ? ";background:#3fb95012" : "");
       tr.innerHTML =
-        `<td style="padding:9px 6px;font-weight:${top ? 800 : 600};white-space:nowrap">${top ? "★ " : ""}${d.name}${(d._members || []).length > 1 ? ` <span style="color:var(--mut);font-weight:400">외 ${d._members.length - 1}건</span>` : ""}</td>` +
-        `<td style="font-size:11px;line-height:1.5">${confOf(d)}</td><td style="color:var(--mut);font-size:11px;line-height:1.5;white-space:nowrap">${trainOf(d)}</td>` +
+        `<td style="padding:9px 6px;font-variant-numeric:tabular-nums;white-space:nowrap;font-weight:${top ? 800 : 600}">${top ? "★ " : ""}${resOf(d)}</td>` +
+        `<td style="font-size:11px;line-height:1.5">${(d.meta || {}).model ? dataOf(d) : ((d.meta || {}).kind ? confOf(d) : `<span style="color:var(--mut)" title="구성 기록이 없는 옛 실험(09-08 이전)">${d.name.replace(/_\d{8}$/, "")}</span>`)}</td>` +
+        `<td style="font-size:11px;line-height:1.5">${wayOf(d)}</td>` +
         `<td style="font-weight:800;font-size:14px;color:${col(d.score)};font-variant-numeric:tabular-nums">${d.score.toFixed(2)}</td>` +
-        `<td style="font-variant-numeric:tabular-nums;white-space:nowrap">${m.eval_map ? `<b>${m.eval_map.map50.toFixed(3)}</b> <span style="color:var(--mut)">/ ${m.eval_map.map5095.toFixed(3)}</span>` : '<span style="color:var(--mut)">–</span>'}</td>` +
-        `<td style="font-variant-numeric:tabular-nums;white-space:nowrap"><span style="color:#3fb950">${d.tp}</span> <span style="color:var(--mut)">·</span> <span style="color:#d29922">${d.fn}</span> <span style="color:var(--mut)">·</span> <span style="color:#f85149">${d.fp}</span></td>` +
-        `<td style="color:var(--mut);font-size:11px">${d.rule}</td><td style="color:var(--mut);font-variant-numeric:tabular-nums;white-space:nowrap">${fmtT(d.mtime)}</td>` +
+        (() => { const b = (d.meta || {}).bench || {};
+          if (b.pt_gpu == null) return '<td style="color:var(--mut);text-align:center">–</td>';
+          const h = b.headroom;
+          return `<td style="text-align:center;font-variant-numeric:tabular-nums;font-size:11px;white-space:nowrap">${b.pt_gpu.toFixed(0)}ms` +
+            (h == null ? "" : `<br><span style="color:${h < 1 ? "#f85149" : h < 2 ? "#d29922" : "var(--mut)"}">${h}배</span>`) + `</td>`; })() +
+        `<td style="color:var(--mut);font-variant-numeric:tabular-nums;white-space:nowrap;font-size:11px">${fmtT(d.mtime)}</td>` +
         `<td style="color:var(--mut);user-select:none" title="구성 상세 · 규칙 스윕 전체">▸</td>`;
       tb.appendChild(tr);
       // 펼침: 구성 표(이름 → 뜻) + 규칙 스윕 표
-      const kv = [["채점셋 mAP", m.eval_map ? `mAP50 ${m.eval_map.map50.toFixed(3)} · mAP50-95 ${m.eval_map.map5095.toFixed(3)} · P ${m.eval_map.P.toFixed(2)} · R ${m.eval_map.R.toFixed(2)} (${m.eval_map.n_frames}프레임 · ${m.eval_map.measured})` : null],
-        ["구 규칙 최고 F1", d.score_old != null && d.score_old !== d.score ? d.score_old.toFixed(2) : null],
-        ["시작 → 끝 (KST)", m.started ? `${m.started} → ${m.ended || "진행 중"}` : null],
-        ["동점·재기록", (d._members || []).length > 1 ? d._members.join(" · ") : null]].filter(([, v]) => v != null && v !== "");
+      const expName = d.name + ((d._members || []).length > 1 ? ` 외 ${d._members.length - 1}건` : "");
+      const fam = (d._family || [d]).slice().sort((a, b) => b.score - a.score);
+      const H3 = t => `<div style="margin:10px 0 4px;font-weight:700;color:var(--tx)">${t}</div>`;
+
+
+      // ---- 2. 모델별 성능 ----
+      const famTbl = (fam[0].meta || {}).model
+        ? H3("모델별 성능") +
+          `<table style="border-collapse:collapse"><thead><tr style="color:var(--mut)">` +
+          `<th style="text-align:left;padding:2px 8px">모델</th><th style="padding:2px 8px">배치</th>` +
+          `<th style="padding:2px 8px">F1</th><th style="padding:2px 8px">mAP50</th>` +
+          `<th style="padding:2px 8px">정검</th><th style="padding:2px 8px">미검</th><th style="padding:2px 8px">오검</th>` +
+          `<th style="padding:2px 8px" title="한 표본 처리시간. 한 표본 = 그 항목이 주기마다 돌리는 뷰 전부">.pt GPU</th>` +
+          `<th style="padding:2px 8px">.pt CPU</th>` +
+          `<th style="padding:2px 8px">onnx GPU</th>` +
+          `<th style="padding:2px 8px">onnx CPU</th>` +
+          `<th style="padding:2px 8px" title="표본 주기 ÷ 가장 빠른 경로. 1 미만이면 실시간 불가">여유</th></tr></thead><tbody>` +
+          fam.map(x => { const xm = x.meta || {}, xt = xm.train || {}, em = xm.eval_map;
+            return `<tr data-pick="${x.name}" style="cursor:pointer${x === d ? ';background:#3fb95022' : ''}" title="이 모델의 규칙 스윕 보기">` +
+              `<td style="padding:2px 8px"><b>${xm.model || "–"}</b></td>` +
+              `<td style="text-align:center;color:var(--mut)">${xt.batch || "–"}</td>` +
+              `<td style="text-align:center;font-weight:700;color:${col(x.score)}">${x.score.toFixed(2)}</td>` +
+              `<td style="text-align:center">${em ? em.map50.toFixed(3) : "–"}</td>` +
+              `<td style="text-align:center;color:#3fb950">${x.tp}</td>` +
+              `<td style="text-align:center;color:#d29922">${x.fn}</td>` +
+              `<td style="text-align:center;color:#f85149">${x.fp}</td>` +
+              (() => { const b = xm.bench || {};
+                const ms = v => v == null ? '<span style="color:var(--mut)">–</span>' : v.toFixed(0) + "ms";
+                const h = b.headroom;
+                return `<td style="text-align:center;font-variant-numeric:tabular-nums">${ms(b.pt_gpu)}</td>` +
+                  `<td style="text-align:center;font-variant-numeric:tabular-nums">${ms(b.pt_cpu)}</td>` +
+                  `<td style="text-align:center;font-variant-numeric:tabular-nums">${ms(b.onnx_gpu)}</td>` +
+                  `<td style="text-align:center;font-variant-numeric:tabular-nums">${ms(b.onnx_cpu)}</td>` +
+                  `<td style="text-align:center;font-weight:700;color:${h == null ? "var(--mut)" : h < 1 ? "#f85149" : h < 2 ? "#d29922" : "#3fb950"}">${h == null ? "–" : h + "배"}</td>`; })() +
+              `</tr>`; }).join("") +
+          `</tbody></table>` : "";
+
+      // ---- 3. 규칙 스윕: 고른 모델 기준. 기본 규칙 대비 증감을 같이 보여준다 ----
+      const detailOf = (x) => {
+        const xm = x.meta || {}, rules = x.rules || [];
+        if (rules.length < 2) return "";
+        return H3("규칙 스윕") +
+          `<table style="border-collapse:collapse"><thead><tr style="color:var(--mut)">` +
+          `<th style="text-align:left;padding:2px 8px">규칙</th><th style="padding:2px 8px">F1</th>` +
+          `<th style="padding:2px 8px">정검</th>` +
+          `<th style="padding:2px 8px">미검</th><th style="padding:2px 8px">오검</th></tr></thead><tbody>` +
+          rules.map(r => { const on = r.rule === x.rule;
+            return `<tr${on ? ' style="background:#3fb95022"' : ''}>` +
+              `<td style="padding:2px 8px">${on ? "▸ " : ""}${r.rule}</td>` +
+              `<td style="text-align:center;font-weight:700;color:${col(r.score)}">${r.score.toFixed(2)}</td>` +
+              `<td style="text-align:center;color:#3fb950">${r.tp}</td>` +
+              `<td style="text-align:center;color:#d29922">${r.fn}</td>` +
+              `<td style="text-align:center;color:#f85149">${r.fp}</td></tr>`; }).join("") +
+          `</tbody></table>`;
+      };
+
       const sub = el("tr"); sub.hidden = true;
-      sub.innerHTML = `<td colspan="9" style="padding:6px 14px 12px;font-size:11px">` +
-        (kv.length ? `<div style="display:grid;grid-template-columns:max-content 1fr;gap:3px 14px;max-width:820px;margin-bottom:6px">${kv.map(([k, v]) => `<span style="color:var(--mut)">${k}</span><span>${v}</span>`).join("")}</div>` : "") +
-        ((d.rules || []).length > 1 ? `<table style="margin-top:10px;border-collapse:collapse"><thead><tr style="color:var(--mut)"><th style="text-align:left;padding:2px 8px">규칙</th><th style="padding:2px 8px">F1</th><th style="padding:2px 8px">정검</th><th style="padding:2px 8px">미검</th><th style="padding:2px 8px">오검</th></tr></thead><tbody>` +
-          d.rules.map(r => `<tr><td style="padding:2px 8px">${r.rule}</td><td style="text-align:center;font-weight:700;color:${col(r.score)}">${r.score.toFixed(2)}</td><td style="text-align:center">${r.tp}</td><td style="text-align:center">${r.fn}</td><td style="text-align:center">${r.fp}</td></tr>`).join("") + `</tbody></table>` : "") + `</td>`;
+      sub.innerHTML = `<td colspan="7" style="padding:6px 14px 14px;font-size:11px">` + famTbl + `<div id="det_${d.name}">${detailOf(d)}</div>` +
+        `</td>`;
       tb.appendChild(sub);
+      sub.querySelectorAll("tr[data-pick]").forEach(rowEl => {          // 모델 행 클릭 → 그 모델 상세로 교체
+        rowEl.onclick = ev => {
+          ev.stopPropagation();
+          const picked = fam.find(x => x.name === rowEl.dataset.pick);
+          if (!picked) return;
+          sub.querySelector("#det_" + d.name).innerHTML = detailOf(picked);
+          sub.querySelectorAll("tr[data-pick]").forEach(r2 => r2.style.background = "");
+          rowEl.style.background = "#3fb95022";
+        };
+      });
       tr.onclick = () => { sub.hidden = !sub.hidden; tr.lastElementChild.textContent = sub.hidden ? "▸" : "▾"; };
     });
     tbl.appendChild(tb); sec.appendChild(tbl);

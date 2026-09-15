@@ -18,7 +18,7 @@ W = Path("/NHNHOME/WORKSPACE/26mss002_E3")
 G = W / "vms"
 VID = W / "vms/data/원본데이터/kisa_배포_방화채점셋/videos"
 GT = W / "vms/data/원본데이터/kisa_배포_방화채점셋/gt"
-OUTDIR = G / "results/par/tl"
+OUTDIR = G / "dumps/score_tl"
 DELAY, BEFORE, AFTER = 10.0, 2.0, 10.0
 NAMES = {0: "fire", 1: "smoke"}
 

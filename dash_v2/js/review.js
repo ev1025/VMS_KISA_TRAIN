@@ -140,7 +140,9 @@ function renderCenter(row) {
   // 브라우저가 seek·로드 후 배속을 1로 되돌리는 경우가 있어, 선택한 배속을 다시 강제한다
   v.addEventListener("ratechange", () => { if (Math.abs(v.playbackRate - wantRate) > 0.01) v.playbackRate = wantRate; });
   v.addEventListener("play", () => { v.playbackRate = wantRate; });
-  ctrl.appendChild(rate); c.appendChild(ctrl);
+  ctrl.appendChild(rate);
+  ctrl.appendChild(boxPicker(row, () => drawZone(zoneov, row, v.currentTime)));   // 모델 예측 박스
+  c.appendChild(ctrl);
 
   const tl = el("div", "tl");
   const bar = el("div", "tlbar"); tl.appendChild(bar);
@@ -205,6 +207,68 @@ function nmsBoxes(boxes, iouTh) {
     if (!keep.some(k => iouBox(b, k) > iouTh)) keep.push(b);
   }
   return keep;
+}
+// ---------- 모델 예측 박스 오버레이 ----------
+// 학습한 실험을 고르면 그 모델이 이 클립에서 낸 박스를 영상 위에 겹쳐 본다.
+// 덤프가 없으면 서버가 그 자리에서 추론해 만든다(0.5초 간격·타일, 채점과 같은 조건).
+let BOXEXP = { fire: "", person: "" };   // 고른 실험을 갈래별로 따로 기억한다
+let BOXMODELS = null;     // 모델 목록은 한 번만 받는다
+function boxModels() {
+  if (!BOXMODELS) BOXMODELS = fetch("/api/boxmodels").then(r => r.json()).catch(() => []);
+  return BOXMODELS;
+}
+// 이 클립에 겹쳐 볼 모델의 갈래. 방화 클립에 사람 모델을 올리면 볼 의미가 없다.
+function rowKind(row) {
+  if (row && (row.kind === "fire" || row.kind === "person")) return row.kind;   // 데이터 확인 탭이 넘겨준다
+  return CUR.item === "fire" ? "fire" : "person";   // 평가 검수 탭(침입·배회·쓰러짐은 전부 사람)
+}
+function boxPicker(row, redraw) {
+  const kind = rowKind(row);
+  const wrap = el("div", "", "");
+  wrap.style.cssText = "display:flex;align-items:center;gap:6px;margin-left:auto";
+  const sel = el("select");
+  sel.style.cssText = "background:#21262d;color:var(--tx);border:1px solid var(--line);border-radius:6px;padding:5px 8px;font-size:12px;max-width:260px";
+  sel.innerHTML = '<option value="">예측 박스 없음</option>';
+  const note = el("span", "", "");
+  note.style.cssText = "font-size:11px;color:var(--mut);white-space:nowrap";
+  wrap.appendChild(sel); wrap.appendChild(note);
+
+  let timer = null;
+  const stop = () => { if (timer) { clearTimeout(timer); timer = null; } };
+
+  async function load(exp) {
+    stop();
+    if (!exp) { row.tracks = null; note.textContent = ""; redraw(); return; }
+    const clip = row.name;
+    const r = await fetch(`/api/boxdump?exp=${encodeURIComponent(exp)}&clip=${encodeURIComponent(clip)}`)
+      .then(x => x.json()).catch(() => ({ state: "err:통신 실패" }));
+    if (sel.value !== exp) return;                       // 그 사이 다른 모델을 골랐으면 버린다
+    if (r.state === "done" && r.rows) {
+      row.tracks = r.rows;
+      const nb = r.rows.reduce((a, x) => a + (x.boxes || []).length, 0);
+      note.textContent = `표본 ${r.rows.length} · 박스 ${nb}`;
+      redraw(); return;
+    }
+    if (String(r.state).startsWith("err")) { note.textContent = "실패: " + String(r.state).slice(4, 60); return; }
+    if (r.state === "none") {
+      note.textContent = "추론 중…";
+      await fetch(`/api/boxdump_start?exp=${encodeURIComponent(exp)}&clip=${encodeURIComponent(clip)}`).catch(() => {});
+    } else note.textContent = "추론 중…";
+    timer = setTimeout(() => load(exp), 3000);           // 다 될 때까지 3초마다 확인
+  }
+
+  boxModels().then(all => {
+    const list = (all || []).filter(m => m.kind === kind);   // 이 클립과 같은 갈래만
+    list.forEach(m => {
+      const o = el("option", "", `${m.exp}${m.map50 != null ? ` · mAP ${m.map50.toFixed(3)}` : ""}`);
+      o.value = m.exp; sel.appendChild(o);
+    });
+    if (!list.length) { note.textContent = kind === "fire" ? "불 학습 모델 없음" : "사람 학습 모델 없음"; return; }
+    const want = BOXEXP[kind];
+    if (want && list.some(m => m.exp === want)) { sel.value = want; load(want); }
+  });
+  sel.onchange = () => { BOXEXP[kind] = sel.value; row.tracks = null; redraw(); load(sel.value); };
+  return wrap;
 }
 function drawZone(ov, row, t) {
   const hasZone = row.zone && row.zone.length, hasTracks = row.tracks && row.tracks.length;

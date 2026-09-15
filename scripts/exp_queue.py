@@ -15,13 +15,14 @@ from pathlib import Path
 
 import yaml
 
-V = Path(os.environ.get("VMS_ROOT", "/NHNHOME/WORKSPACE/26mss002_E3/vms"))
+import kisa_paths as KP                     # 저장소 루트·배포 경로·표본 간격을 여기 한 곳에서만 정의한다
+V = KP.V
 PY = V / ".venv/bin/python"
 TRAIN_DS = V / "data/학습데이터"
 RAW_DS = V / "data/원본데이터"
 EXP_DIR = V / "_exp"            # 잡별 목록 파일·캐시 (재생성 가능한 임시물)
 LOG_DIR = V / "logs/queue"
-SCORE_VIDEOS = {"방화": V / "data/원본데이터/kisa_배포_검증영상/deploy_val/방화(10개)/배포"}
+SCORE_VIDEOS = {"방화": KP.videos("방화")}
 IMG_EXT = (".jpg", ".jpeg", ".png")
 
 
@@ -45,9 +46,62 @@ R960 = Path("/NHNHOME/vms_r960")          # _kisa_port/make_r960.py
 MIRROR = Path("/NHNHOME/vms_mirror")      # _kisa_port/mirror_to_nvme.py (읽기 속도는 Lustre 와 거의 같다. 보험용)
 
 
-def find_dataset(name):
+R960_LONG = 960      # vms_r960 사본의 긴 변. 이보다 큰 입력을 쓰는 학습은 이 사본을 쓰면 안 된다
+
+# 미리 줄여 둔 사본 묶음들(전부 로컬 NVMe). (경로, 긴 변, 완료 표식)
+# 학습이 요구하는 긴 변을 감당하는 것 중 가장 작은 것을 쓴다. 작을수록 JPEG 디코딩이 빠르다.
+# 없으면 Lustre 원본으로 간다(느리고, 두 잡이 동시에 긁으면 페이지 캐시가 크게 부푼다).
+REDUCED = [(Path("/NHNHOME/vms_r960"), 960, ".r960_ok"),
+           (Path("/NHNHOME/vms_r1280"), 1280, ".r1280_ok")]
+
+
+def need_long(exp, defaults):
+    """이 학습이 실제로 요구하는 긴 변 = imgsz x (1 + multi_scale).
+    ultralytics 의 multi_scale 은 imgsz 를 ±비율로 흔든다(0.5 면 0.5~1.5배)."""
+    t = dict(defaults.get("train", {}), **exp.get("train", {}))
+    imgsz = int(t.get("imgsz", 640))
+    ms = t.get("multi_scale", 0)
+    ms = float(ms) if not isinstance(ms, bool) else (1.0 if ms else 0)
+    return int(round(imgsz * (1 + ms)))
+
+
+_USE = None
+
+
+def dataset_use(name):
+    """configs/datasets.yaml 의 use 값. 등재되지 않은 파생 셋이면 None."""
+    global _USE
+    if _USE is None:
+        try:
+            d = yaml.safe_load((V / "configs/datasets.yaml").read_text(encoding="utf-8")) or {}
+            cats = d.get("categories") if isinstance(d.get("categories"), dict) else d
+            _USE = {k: (v or {}).get("use") for k, v in cats.items() if isinstance(v, dict)}
+        except Exception:
+            _USE = {}
+    return _USE.get(name)
+
+
+def assert_trainable(name):
+    """채점 전용(eval)·라이선스 금지(none) 데이터셋이면 학습을 시작하지 못하게 한다.
+    build_trainset.py 는 이미 이렇게 막는데 큐 경로에는 검사가 없었다(2026-09-15 추가)."""
+    use = dataset_use(name)
+    if use in ("eval", "none"):
+        why = "채점 전용(학습·배경 어느 쪽으로도 쓰면 누수)" if use == "eval" else "라이선스상 학습 금지"
+        raise SystemExit(f"[중단] 데이터셋 '{name}' 은 use={use} 입니다: {why}. "
+                         f"큐 yaml 에서 빼세요(configs/datasets.yaml 이 기준).")
+
+
+def find_dataset(name, long_px=R960_LONG):
+    """데이터셋 폴더. long_px = 이 학습이 요구하는 긴 변.
+
+    960 사본은 요구 해상도가 960 이하일 때만 쓴다. 넘으면 확대 보간이 되어
+    '고해상도 학습' 이 이름만 남는다(해상도 그리드서치가 통째로 무의미해진다)."""
+    assert_trainable(name)                          # 채점셋·라이선스 금지 셋은 여기서 걸린다
+    srcs = [(root, mark) for root, side, mark in sorted(REDUCED, key=lambda x: x[1])
+            if long_px <= side]                         # 감당 가능한 것 중 작은 것부터
+    srcs.append((MIRROR, ".mirror_ok"))
     for root in (TRAIN_DS, RAW_DS):
-        for base, mark in ((R960, ".r960_ok"), (MIRROR, ".mirror_ok")):
+        for base, mark in srcs:
             d = base / "data" / root.name / name
             if (d / mark).is_file():                    # 변환·복사가 끝난 것만 쓴다
                 return d
@@ -73,17 +127,18 @@ def build_lists(exp, defaults):
     name = exp["name"]
     d = EXP_DIR / name
     d.mkdir(parents=True, exist_ok=True)
-    base = find_dataset(exp.get("base", defaults.get("base", "aihub71751_48k")))
+    long_px = need_long(exp, defaults)
+    base = find_dataset(exp.get("base", defaults.get("base", "aihub71751_48k")), long_px)
     lines = list_images(base)
     frac = float(exp.get("base_frac", defaults.get("base_frac", 1.0)))
     if 0 < frac < 1:                                        # 베이스 비율 실험(G4): 고정 시드로 일부만
         lines = random.Random(1).sample(lines, int(len(lines) * frac))
     oversample = dict(defaults.get("oversample", {}), **exp.get("oversample", {}))
     for ds, k in oversample.items():                       # 예: human_fire: 5 → 같은 경로 5번
-        imgs = list_images(find_dataset(ds))
+        imgs = list_images(find_dataset(ds, long_px))
         lines += imgs * int(k)
     for ds in exp.get("extras", []):
-        lines += list_images(find_dataset(ds))
+        lines += list_images(find_dataset(ds, long_px))
     # labels.cache 잡별 분리: 잡 폴더의 000.jpg(빈 라벨)를 목록 맨 앞에 → 캐시가 _exp/<name>.cache 로 떨어진다
     dummy = d / "000.jpg"
     if not dummy.exists():
@@ -91,6 +146,19 @@ def build_lists(exp, defaults):
         (d / "000.txt").write_text("")
     lines = [str(dummy)] + lines
     (d / "train.txt").write_text("\n".join(lines) + "\n")
+    # 어느 소스에서 읽었는지 기록한다. 나중에 '왜 고해상도 실험이 안 좋아졌나' 를 뒤지지 않게.
+    # 어느 사본에서 읽는지 센다. r960 만 세면 r1280 을 쓰고도 "원본" 으로 찍혀 오해를 부른다.
+    used = {}
+    for root, side, _ in REDUCED:
+        c = sum(1 for x in lines if str(root) in x)
+        if c:
+            used[f"r{side}"] = c
+    n960 = sum(used.values())
+    src = {"요구_긴변": long_px, "사본_사용": used, "원본_사용": len(lines) - n960,
+           "판정": " + ".join(f"{k} 사본" for k in used) if used else "원본(맞는 사본이 없다)"}
+    (d / "source.json").write_text(json.dumps(src, ensure_ascii=False, indent=1), encoding="utf-8")
+    print(f"  [소스] 요구 긴변 {long_px}px · " + (" ".join(f"{k} {v}장" for k, v in used.items()) or "사본없음")
+          + f" · 원본 {len(lines) - n960}장", flush=True)
     rnd = random.Random(0)
     val = rnd.sample(lines[1:], min(int(defaults.get("val_small", 600)), len(lines) - 1))
     (d / "val_small.txt").write_text("\n".join([str(dummy)] + val) + "\n")
@@ -183,30 +251,77 @@ def train_cmd(exp, defaults, data_yaml, n_train=0):
     return cmd
 
 
-def eval_map(exp, pt):
+def eval_map(exp, pt, defaults=None):
     """채점 전용 검증셋 mAP(학습에 안 들어간 배포 검증영상 라벨). 검증셋을 먼저 다시 빌드해 새 라벨까지 반영 → results/<exp>/eval_map.json"""
     item = exp.get("item", "방화"); mode = "fire" if item == "방화" else "person"
+    # 측정 해상도 = 그 실험이 학습한 해상도. 640 고정으로 재면 960 학습 모델이 부당하게 낮게 나온다.
+    dtr = (defaults or {}).get("train", {})
+    imgsz = int(exp.get("train", {}).get("imgsz", dtr.get("imgsz", KP.DEFAULT_IMGSZ)))
     try:
         subprocess.run([str(PY), str(V / "scripts/build_evalset.py"), mode], capture_output=True, text=True, cwd=V, timeout=600)
         if (V / "data/학습데이터" / f"evalset_{mode}" / "data.yaml").exists():
-            subprocess.run([str(PY), str(V / "scripts/eval_map.py"), mode, "--exp", exp["name"], "--pt", str(pt)], capture_output=True, text=True, cwd=V, timeout=1800)
+            subprocess.run([str(PY), str(V / "scripts/eval_map.py"), mode, "--exp", exp["name"], "--pt", str(pt),
+                            "--imgsz", str(imgsz)], capture_output=True, text=True, cwd=V, timeout=1800)
     except Exception as e:
         log(f"{exp['name']} eval_map 실패: {e}")
 
 
-def score(exp, pt):
+KISA_ITEMS = V / "_kisa_port/tools/kisa_items.py"
+
+
+def score_person(exp, pt, rdir, imgsz=KP.DEFAULT_IMGSZ):
+    """사람 검출 모델 실험의 F1.
+
+    실제 시험에 쓰는 채점기(kisa_items.py)를 그대로 돌린다. 3x3@960 타일 + 자체 트래커 +
+    '다수면 마지막 사람' 규칙까지 같은 경로라, 여기서 나온 점수가 곧 인증 점수 예측치다.
+    (단순판 sa_runner 로 재면 같은 모델이 45 점대로 나와 실측 94.74 와 비교가 안 된다.)
+    쓰러짐은 자세 모델을 써서 사람 검출 모델을 바꿔도 달라지지 않으므로 뺀다.
+    """
+    import tempfile
+    lines = []
+    for item in KP.PERSON_ITEMS:
+        kitem = KP.kisa_item(item)
+        vids = KP.videos(item)
+        if not vids.is_dir():
+            lines.append(f"({item} 영상 폴더 없음)"); continue
+        with tempfile.TemporaryDirectory() as td:
+            r = subprocess.run([str(PY), str(KISA_ITEMS), "--item", kitem,
+                                "--videos", str(vids), "--gt", str(vids), "--maps", str(KP.ZONE_MAPS),
+                                "--out", str(Path(td) / "sa"), "--person-weights", str(pt),
+                                "--person-imgsz", str(imgsz)],
+                               capture_output=True, text=True, cwd=V, timeout=14400)
+            hit = [ln.strip() for ln in (r.stdout or "").splitlines() if ln.strip().startswith(f"[{kitem}]")]
+            lines.append(hit[-1] if hit else f"({item} 채점 실패) " + ((r.stderr or "")[-200:]))
+        log(f"{exp['name']} {item} 채점: {lines[-1]}")
+    return "\n".join(lines)
+
+
+def score(exp, pt, defaults=None):
     item = exp.get("item", "방화")
+    imgsz = int(exp.get("train", {}).get("imgsz", (defaults or {}).get("train", {}).get("imgsz", KP.DEFAULT_IMGSZ)))
     vids = SCORE_VIDEOS.get(item)
     rdir = V / "results" / exp["name"]; rdir.mkdir(parents=True, exist_ok=True)
-    eval_map(exp, pt)                                        # 항목 무관: 채점셋 mAP 는 항상 잰다
+    eval_map(exp, pt, defaults)                              # 항목 무관: 채점셋 mAP 는 항상 잰다
+    if item in ("사람",) + KP.PERSON_ITEMS:                      # 사람 검출 모델 = 침입·배회 F1 을 잰다
+        out = score_person(exp, pt, rdir, imgsz)
+        (rdir / "score.txt").write_text(f"=== {exp['name']} 사람 항목 ===\n" + out + "\n")
+        return out
     if vids is None:
         (rdir / "score.txt").write_text(f"=== {exp['name']} ===\n(항목 {item} 채점기 미연결)\n")
         return None
     cmd = [str(PY), str(V / "score_kisa.py"), str(pt), "--videos", str(vids), "--gt", str(vids),
-           "--stride", "0.5", "--imgsz", "640", "--tiles", "--tag", exp["name"]]
+           "--stride", str(KP.SAMPLE_STRIDE_S), "--imgsz", str(imgsz), "--tiles", "--tag", exp["name"]]
     out = subprocess.run(cmd, capture_output=True, text=True, cwd=V).stdout
     (rdir / "score.txt").write_text(f"=== {exp['name']} 타일 ===\n" + out)
     return out
+
+
+def _read_source(name):
+    f = EXP_DIR / name / "source.json"
+    try:
+        return json.loads(f.read_text(encoding="utf-8"))
+    except Exception:
+        return None
 
 
 def write_meta(exp, defaults, n_train, pt, started, status):
@@ -216,7 +331,10 @@ def write_meta(exp, defaults, n_train, pt, started, status):
             "oversample": dict(defaults.get("oversample", {}), **exp.get("oversample", {})),
             "train": dict(defaults.get("train", {}), **exp.get("train", {})),
             "extra": dict(defaults.get("extra", {}), **exp.get("extra", {})),
+            "base_frac": exp.get("base_frac", defaults.get("base_frac", 1.0)),
             "n_train": n_train, "best_pt": str(pt) if pt else None,
+            "source": _read_source(exp["name"]),   # 어느 해상도의 이미지를 읽었나
+
             "started": started, "ended": _kst("%Y-%m-%d %H:%M:%S"), "status": status}
     (rdir / "meta.json").write_text(json.dumps(meta, ensure_ascii=False, indent=1))
 
@@ -255,6 +373,8 @@ def run_one(exp, defaults):
             pt = best_pt(exp)
             if rc != 0 or pt is None:
                 log(f"{name} 이어서 학습 실패 rc={rc}{' (SIGKILL: OOM 의심 → 캐시/동시잡 확인)' if rc == -9 else ''} (logs/queue/{name}.log)")
+                kill_orphan_trainers()   # 죽은 학습의 데이터로더 워커가 RAM·shm·GPU 를 쥔 채 남는다.
+                                         # 두면 다음 잡이 그것 때문에 또 죽는다(2026-09-15 네 번 반복).
                 write_meta(exp, defaults, n_lines, pt, started, "train_failed"); return
         elif pt is None:
             d, n_train = build_lists(exp, defaults)
@@ -266,11 +386,13 @@ def run_one(exp, defaults):
             pt = best_pt(exp)
             if rc != 0 or pt is None:
                 log(f"{name} 학습 실패 rc={rc}{' (SIGKILL: OOM 의심 → 캐시/동시잡 확인)' if rc == -9 else ''} (logs/queue/{name}.log). 러너 재실행 시 자동 재시도")
+                kill_orphan_trainers()   # 죽은 학습의 데이터로더 워커가 RAM·shm·GPU 를 쥔 채 남는다.
+                                         # 두면 다음 잡이 그것 때문에 또 죽는다(2026-09-15 네 번 반복).
                 write_meta(exp, defaults, n_train, pt, started, "train_failed"); return
         else:
             log(f"{name} best.pt 있음 → 학습 생략, 채점만")
         log(f"{name} 채점")
-        score(exp, pt)
+        score(exp, pt, defaults)
         write_meta(exp, defaults, n_train, pt, started, "done")
         shutil.rmtree(EXP_DIR / name, ignore_errors=True)
         log(f"{name} 완료 → results/{name}/score.txt")

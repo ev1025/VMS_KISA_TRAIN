@@ -6,7 +6,7 @@
 # 검증: 채점 전용 evalset_person / evalset_fire (학습 미포함). 채점 F1 은 방화만 연결(사람은 mAP 만).
 # 순서: 앞의 둘은 즉시 가능한 셋만 쓴다(COCO 포함 셋은 빌드가 끝난 뒤 차례가 온다).
 defaults:
-  train: { epochs: 60, batch: 48, imgsz: 640, multi_scale: 0.5, cache: False, workers: 8 }   # GPU 여유 ~40GB 안에서: RAM 캐시 끔
+  train: { epochs: 60, batch: 48, imgsz: 640, multi_scale: 0.5, cache: False, workers: 24 }   # GPU 여유 ~40GB 안에서: RAM 캐시 끔
   val_small: 600
   vram_gate_mib: 175000        # 방화 잡 2개(≈135GB)가 도는 중에도 시작(전체 183GB)
   min_free_gb: 60
@@ -17,8 +17,8 @@ experiments:
   # --- 방화: 기존 최고 조합(azimjaan) + 우리 라벨·하드네거 오버샘플 ---
   - { name: fire_azim_hn_s_20260911, model: yolo11s, item: 방화, names: [fire, smoke], base: aihub71751_48k, extras: [fasdd_snowfog, fasdd_yolo, azimjaan_yolo], oversample: { handset_fire_hn: 4 }, val_set: data/학습데이터/evalset_fire/val.txt, train: { epochs: 80, batch: 48 } }
   # --- 사람: 우리 라벨만(COCO 없이, 사전학습 가중치의 person 지식 위에 KISA 장면만) ---
-  - { name: person_kisa_only_s_20260911,    model: yolo11s, item: 사람, names: [person], base: handset_person, extras: [], oversample: {}, val_set: data/학습데이터/evalset_person/val.txt, train: { epochs: 80, batch: 32 } }
+  - { name: person_kisa_only_s_20260911,    model: yolo11s, item: 사람, names: [person], base: handset_person, extras: [], oversample: {}, val_set: data/학습데이터/evalset_person/val.txt, train: { epochs: 80, batch: 48, workers: 24 } }
   # --- 사람: COCO person + KISA 손라벨·전파(×5) ---
   - { name: person_coco_kisa_s_20260911,    model: yolo11s, item: 사람, names: [person], base: trainset_person_20260911, extras: [], oversample: { handset_person: 5 }, val_set: data/학습데이터/evalset_person/val.txt }
-  - { name: person_coco_kisa_s960_20260911, model: yolo11s, item: 사람, names: [person], base: trainset_person_20260911, extras: [], oversample: { handset_person: 5 }, val_set: data/학습데이터/evalset_person/val.txt, train: { imgsz: 960, batch: 24 } }
-  - { name: person_coco_kisa_m_20260911,    model: yolo11m, item: 사람, names: [person], base: trainset_person_20260911, extras: [], oversample: { handset_person: 5 }, val_set: data/학습데이터/evalset_person/val.txt, train: { batch: 32 } }
+  - { name: person_coco_kisa_s960_20260911, model: yolo11s, item: 사람, names: [person], base: trainset_person_20260911, extras: [], oversample: { handset_person: 5 }, val_set: data/학습데이터/evalset_person/val.txt, train: { imgsz: 960, batch: 48, workers: 24 } }
+  - { name: person_coco_kisa_m_20260911,    model: yolo11m, item: 사람, names: [person], base: trainset_person_20260911, extras: [], oversample: { handset_person: 5 }, val_set: data/학습데이터/evalset_person/val.txt, train: { batch: 48, workers: 24 } }

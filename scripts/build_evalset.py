@@ -9,7 +9,8 @@
 import sys, io, json, argparse, collections, time
 from pathlib import Path
 import cv2
-V = Path(__file__).resolve().parents[1]
+import kisa_paths as KP            # 저장소 루트는 여기 한 곳에서만 정의한다
+V = KP.V
 sys.path.insert(0, str(V / "dash_v2")); import gt_adapters as GTA
 ap = argparse.ArgumentParser(); ap.add_argument("mode", choices=["fire", "person"]); ap.add_argument("--name", default=None)
 ap.add_argument("--bg", type=int, default=10, help="클립마다 화재 발생 전 구간에서 뽑을 배경 프레임 수(0=안 뽑음)")

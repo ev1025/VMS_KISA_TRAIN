@@ -205,17 +205,20 @@ def cmd_eval(a):
     from ultralytics.data.utils import img2label_paths   # 이미지경로 -> 라벨경로 (ultralytics 규칙 그대로)
     model = _YOLO(a.weights)
     data = a.data or str(C.DATA_YAML)
+    dy = yaml.safe_load(Path(data).read_text(encoding="utf-8"))
+    # 클래스 이름은 평가 대상 yaml 에서 읽는다(config.py 고정이면 사람 모델에서 IndexError)
+    names = dy.get("names") or {}
+    names = [names[i] for i in sorted(names)] if isinstance(names, dict) else list(names)
     # (A) 검출 지표
     run = Path(a.weights).parent.parent.name                       # runs/<run>/weights/best.pt -> <run>
     # project 를 안 주면 ultralytics 전역 settings 의 runs_dir(남의 폴더일 수 있음)로 저장된다
     m = model.val(data=data, imgsz=a.imgsz, device=a.device, conf=0.001,
                   project=a.project or str(C.RUNS_DIR), name=f"val_{run}", exist_ok=True)
     det = {"mAP50": float(m.box.map50), "mAP50-95": float(m.box.map),
-           "per_class": {C.CLASS_NAMES[i]: {"AP50": float(m.box.ap50[i]), "P": float(m.box.p[i]), "R": float(m.box.r[i])}
-                         for i in range(len(C.CLASS_NAMES))}}
+           "per_class": {names[i]: {"AP50": float(m.box.ap50[i]), "P": float(m.box.p[i]), "R": float(m.box.r[i])}
+                         for i in range(len(names))}}
     # (B) image-level 경보 지표 (정상=네거티브)
     # val 목록은 --data 의 yaml 에서 뽑는다 (서버/로컬 어디서 돌려도 동작. C.DATASET 고정이면 남의 머신에서 0장)
-    dy = yaml.safe_load(Path(data).read_text(encoding="utf-8"))
     vp = Path(dy.get("path", "")) / dy["val"]
     imgs = sorted(vp.glob("*.jpg")) if vp.is_dir() else [Path(s) for s in vp.read_text(encoding="utf-8").split()]
     lbls = img2label_paths([str(i) for i in imgs])

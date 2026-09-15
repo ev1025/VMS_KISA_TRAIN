@@ -5,7 +5,8 @@
       python scripts/eval_map.py fire --all        (results/ 아래 meta.json 있는 실험 전부, eval_map.json 없는 것만)"""
 import sys, io, json, argparse, time, os
 from pathlib import Path
-V = Path(__file__).resolve().parents[1]
+import kisa_paths as KP            # 저장소 루트는 여기 한 곳에서만 정의한다
+V = KP.V
 ap = argparse.ArgumentParser(); ap.add_argument("mode", choices=["fire", "person"])
 ap.add_argument("--exp"); ap.add_argument("--pt"); ap.add_argument("--all", action="store_true"); ap.add_argument("--force", action="store_true")
 ap.add_argument("--imgsz", type=int, default=640); ap.add_argument("--batch", type=int, default=16); ap.add_argument("--device", default="0")

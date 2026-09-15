@@ -19,7 +19,9 @@ HERE = Path(__file__).parent
 # 데이터 루트 = 이 파일의 상위 폴더(= .../vms). 전에는 general_yolo 심링크를 하드코딩했는데
 # 그 심링크가 지워지자 라벨·영상·프레임이 전부 404 가 됐다. 자기 위치 기준으로 잡으면 그런 일이 없다.
 G = HERE.parent
-WS = Path("/NHNHOME/WORKSPACE/26mss002_E3")  # 심링크가 vms/data 로 나가도 허용
+# 영상·이미지를 내보낼 때 "이 경계 안의 파일만" 확인하는 기준. 심링크가 vms/data 로 나가도 허용한다.
+# 다른 장비(Thor 등)에 올려 돌릴 때는 VMS_WS 로 덮어쓴다. 기본값은 예전 동작 그대로다.
+WS = Path(os.environ.get("VMS_WS") or "/NHNHOME/WORKSPACE/26mss002_E3")
 RAW = G / "data/원본데이터"        # 라벨 대상 영상이 카테고리 폴더로 들어 있는 곳
 PORT = 8890
 
@@ -337,6 +339,100 @@ def json_spans(clip, fps=30.0):
         return out
     except Exception:
         return []      # 라벨이 깨져도 라벨 생성 화면은 돌아야 한다
+
+
+# ---------- 실험별 박스 덤프(영상 검수에서 모델 예측 박스를 영상 위에 겹쳐 보기) ----------
+_BOXJOBS = {}                      # (실험, 클립) → "run" | "done" | "err:사유"
+_BOXDIR = G / "dumps/fire_box"     # <실험>/<클립>.jsonl
+
+
+def box_models():
+    """학습 가중치가 남아 있는 실험 목록. 고를 때 참고하도록 채점셋 mAP50 을 같이 싣는다."""
+    out = []
+    rd = G / "results"
+    if not rd.is_dir():
+        return out
+    for md in rd.glob("*/meta.json"):
+        try:
+            m = json.loads(md.read_text(encoding="utf-8")) or {}
+        except Exception:
+            continue
+        pt = m.get("best_pt")
+        if not pt or not Path(pt).is_file():
+            continue
+        exp = md.parent.name
+        em = {}
+        ej = md.parent / "eval_map.json"          # 채점셋 mAP 는 별도 파일에 있다
+        if ej.is_file():
+            try:
+                em = json.loads(ej.read_text(encoding="utf-8")) or {}
+            except Exception:
+                em = {}
+        f1 = None
+        st = md.parent / "score.txt"              # F1 = 규칙 스윕 중 최고값
+        if st.is_file():
+            try:
+                for ln in st.read_text(encoding="utf-8").splitlines():
+                    mm = re.search(r"→\s*([0-9]+\.[0-9]+)", ln)
+                    if mm:
+                        v = float(mm.group(1))
+                        if f1 is None or v > f1:
+                            f1 = v
+            except Exception:
+                pass
+        item = m.get("item", "방화")
+        # 화면에서 클립과 짝이 맞는 모델만 보여주려고 두 갈래로 정리한다.
+        # item 은 방화 / 사람 / 침입 / 배회 / 쓰러짐 이 섞여 들어온다(큐 작성 시점마다 달랐다).
+        out.append({"exp": exp, "model": m.get("model"), "item": item,
+                    "kind": "fire" if item == "방화" else "person",
+                    "map50": em.get("map50"), "f1": f1})
+    out.sort(key=lambda d: (d["map50"] is None, -(d["map50"] or 0)))
+    return out
+
+
+def box_dump_path(exp, clip):
+    return _BOXDIR / exp / (clip + ".jsonl")
+
+
+def box_dump_read(exp, clip):
+    f = box_dump_path(exp, clip)
+    if not f.is_file():
+        return None
+    rows = []
+    for ln in f.read_text(encoding="utf-8").splitlines():
+        ln = ln.strip()
+        if not ln:
+            continue
+        try:
+            rows.append(json.loads(ln))
+        except Exception:
+            pass
+    return rows
+
+
+def box_dump_start(exp, clip):
+    """덤프를 백그라운드로 만든다. 학습이 도는 중에도 추론 몇 GB 라 큐를 막지 않는다."""
+    key = (exp, clip)
+    if box_dump_path(exp, clip).is_file():
+        return "done"
+    if _BOXJOBS.get(key) == "run":
+        return "run"
+    _BOXJOBS[key] = "run"
+
+    def work():
+        import subprocess as _sp
+        try:
+            r = _sp.run([str(G / ".venv/bin/python"), str(G / "scripts/exp_boxdump.py"), exp, clip],
+                        capture_output=True, text=True, cwd=str(G), timeout=3600)
+            if box_dump_path(exp, clip).is_file():
+                _BOXJOBS[key] = "done"
+            else:
+                _BOXJOBS[key] = "err:" + ((r.stdout or "") + (r.stderr or ""))[-200:]
+        except Exception as e:
+            _BOXJOBS[key] = "err:" + str(e)[:200]
+
+    threading.Thread(target=work, daemon=True).start()
+    return "run"
 
 
 def clip_info(clip):
@@ -1144,6 +1240,62 @@ def train_progress(name):
             "mem": mem, "val": val, "epoch_min": round(ep_min, 1) if ep_min else None, "remain_h": round(remain_s / 3600, 1), "finish_kst": finish}
 
 
+
+def push_labels(dry=True):
+    """이 장비의 라벨 저장소를 LABEL_PUSH_TARGET 으로 보내고 중복 아닌 것만 합치게 한다.
+
+    보내는 것은 손라벨·자동라벨 뿐이다(수 MB). 영상은 보내지 않는다.
+    합치기는 저쪽의 scripts/merge_labels.py 가 한다. 이쪽은 옮기기만 한다.
+    """
+    import subprocess, tempfile
+    tgt = os.environ.get("LABEL_PUSH_TARGET", "").strip()
+    if not tgt:
+        return {"ok": False, "err": "LABEL_PUSH_TARGET 이 없습니다(이 장비는 보내는 쪽이 아닙니다)."}
+    try:
+        user_host, port, root = tgt.split(":", 2)
+    except ValueError:
+        return {"ok": False, "err": f"LABEL_PUSH_TARGET 형식이 잘못됐습니다: {tgt}"}
+    key = os.environ.get("LABEL_PUSH_KEY", "").strip()
+    # -F /dev/null: 이 장비의 ssh 설정을 읽지 않는다. 컨테이너는 root 로 도는데 마운트한
+    # ~/.ssh 는 다른 사용자 소유라 ssh 가 "Bad owner or permissions" 로 거부한다.
+    ssh = ["ssh", "-p", port, "-F", "/dev/null",
+           "-o", "BatchMode=yes", "-o", "StrictHostKeyChecking=no",
+           "-o", "UserKnownHostsFile=/dev/null", "-o", "LogLevel=ERROR"]
+    if key:
+        ssh += ["-i", key]
+
+    stage = f"/tmp/label_push_{int(time.time())}"
+    src = G / "data/학습데이터"
+    try:
+        subprocess.run(ssh + [user_host, f"mkdir -p {stage}"], check=True, capture_output=True, timeout=60)
+        for sub in ("손라벨", "자동라벨"):
+            if not (src / sub).is_dir():
+                continue
+            r = subprocess.run(["rsync", "-a", "-s", "--no-motd",
+                                "-e", " ".join(ssh),
+                                str(src / sub), f"{user_host}:{stage}/"],
+                               capture_output=True, text=True, timeout=1800)
+            if r.returncode != 0:
+                return {"ok": False, "err": f"전송 실패({sub}): {(r.stderr or '')[-300:]}"}
+        cmd = (f"cd {root} && .venv/bin/python scripts/merge_labels.py {stage}"
+               + (" --dry" if dry else ""))
+        r = subprocess.run(ssh + [user_host, cmd], capture_output=True, text=True, timeout=1800)
+        out = (r.stdout or "") + (r.stderr or "")
+        subprocess.run(ssh + [user_host, f"rm -rf {stage}"], capture_output=True, timeout=60)
+        return {"ok": r.returncode == 0, "dry": dry, "log": out[-4000:]}
+    except subprocess.TimeoutExpired:
+        return {"ok": False, "err": "시간 초과"}
+    except subprocess.CalledProcessError as e:
+        # 거의 항상 ssh 키 문제다. 무엇을 해야 하는지 적어 준다.
+        return {"ok": False, "err": (
+            f"서버에 접속하지 못했습니다({user_host}:{port}).\n"
+            f"이 장비의 공개키가 서버에 등록돼 있어야 합니다.\n"
+            f"  쓰는 키: {key or '(기본 키)'}\n"
+            f"자세한 내용: {(e.stderr or b'').decode('utf-8', 'replace')[-200:] if e.stderr else e}")}
+    except Exception as e:
+        return {"ok": False, "err": f"{e!r}"}
+
+
 class H(BaseHTTPRequestHandler):
     def log_message(self, *a): pass
 
@@ -1193,6 +1345,11 @@ class H(BaseHTTPRequestHandler):
 
     def do_POST(self):
         p = urllib.parse.urlparse(self.path).path
+        if p == "/api/push_labels":       # 이 장비의 라벨을 서버로 보내고 중복 아닌 것만 합친다
+            q = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
+            dry = (q.get("dry") or ["1"])[0] != "0"
+            self._bytes(json.dumps(push_labels(dry), ensure_ascii=False).encode(),
+                        "application/json; charset=utf-8"); return
         if p == "/api/refresh_cache":            # 데이터 폴더 바뀐 뒤 서버 재시작 대신 이걸 누른다
             clear_caches(); sources()
             self._bytes(json.dumps({"ok": True, "sources": len(sources())}).encode(), "application/json; charset=utf-8"); return
@@ -1274,6 +1431,25 @@ class H(BaseHTTPRequestHandler):
             except Exception as e:
                 self._bytes(json.dumps({"ok": False, "err": str(e)}).encode(), "application/json; charset=utf-8", 500)
             return
+        if p == "/api/clearlabels":           # 학습 프레임 초기화: 클립의 손라벨 전부 삭제(백업) + SAM 저장소 비움
+            try:
+                n = int(self.headers.get("Content-Length", 0))
+                body = json.loads(self.rfile.read(n) or b"{}")
+                clip = Path(body["clip"]).stem
+                fn = "person_labels.json" if body.get("kind") == "person" else "fire_labels.json"
+                fl = data_path("data/학습데이터/손라벨/" + fn, fn)
+                with _SAVE_LOCK:
+                    _backup_labels(fl)
+                    rows = json.load(open(fl, encoding="utf-8")) if fl.exists() else []
+                    keep = [r for r in rows if r.get("clip") != clip]
+                    removed = len(rows) - len(keep)
+                    tmp = fl.with_suffix(f".json.tmp{os.getpid()}")
+                    tmp.write_text(json.dumps(keep, ensure_ascii=False, indent=1), encoding="utf-8"); tmp.replace(fl)
+                sam_n = sam2_store_clear(body["clip"])
+                self._bytes(json.dumps({"ok": True, "hand_rows": removed, "sam_frames": sam_n}).encode(), "application/json; charset=utf-8")
+            except Exception as e:
+                self._bytes(json.dumps({"ok": False, "err": str(e)}).encode(), "application/json; charset=utf-8", 500)
+            return
         if p == "/api/savelabel":
             _SAVE_LOCK.acquire()
             try:
@@ -1345,6 +1521,11 @@ class H(BaseHTTPRequestHandler):
             out = {c: DATASETS.get(c) for c in sorted(set(cats) | set(DATASETS.all()))}
             self._bytes(json.dumps(out, ensure_ascii=False).encode(), "application/json; charset=utf-8")
             return
+        if p == "/api/pushinfo":              # 버튼을 보일지 여부(보내는 쪽에서만 보인다)
+            t = os.environ.get("LABEL_PUSH_TARGET", "").strip()
+            self._bytes(json.dumps({"enabled": bool(t), "target": t.split(":")[0] if t else ""},
+                                   ensure_ascii=False).encode(),
+                        "application/json; charset=utf-8"); return
         if p == "/api/config":                # 클라이언트가 알아야 하는 서버 기본값
             self._bytes(json.dumps({"prop_default": PROP_DEFAULT_MODE, "prop_thr": PROP_THR}).encode(), "application/json; charset=utf-8")
             return
@@ -1395,6 +1576,30 @@ class H(BaseHTTPRequestHandler):
             q = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
             clips = clips_of((q.get("src") or [""])[0])
             self._bytes(json.dumps(clips, ensure_ascii=False).encode(),
+                        "application/json; charset=utf-8"); return
+        if p == "/api/bench":               # 추론 속도 측정(.pt|ONNX x CPU|GPU). dumps/bench_all.json
+            f = G / "dumps/bench_all.json"
+            self._bytes(f.read_bytes() if f.is_file() else b"{}",
+                        "application/json; charset=utf-8"); return
+        if p == "/api/boxmodels":           # 오버레이에 쓸 수 있는 학습 모델 목록(채점셋 mAP 순)
+            self._bytes(json.dumps(box_models(), ensure_ascii=False).encode(),
+                        "application/json; charset=utf-8"); return
+        if p == "/api/boxdump":             # 실험별 박스 덤프. 없으면 생성 상태만 돌려준다
+            q = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
+            exp = (q.get("exp") or [""])[0]; clip = (q.get("clip") or [""])[0]
+            rows = box_dump_read(exp, clip) if (exp and clip) else None
+            if rows is not None:
+                self._bytes(json.dumps({"state": "done", "rows": rows}).encode(),
+                            "application/json; charset=utf-8"); return
+            st = _BOXJOBS.get((exp, clip), "none")
+            self._bytes(json.dumps({"state": st}, ensure_ascii=False).encode(),
+                        "application/json; charset=utf-8"); return
+        if p == "/api/boxdump_start":       # 덤프 생성 시작(백그라운드 추론)
+            q = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
+            exp = (q.get("exp") or [""])[0]; clip = (q.get("clip") or [""])[0]
+            if not exp or not clip:
+                self.send_error(400, "exp/clip required"); return
+            self._bytes(json.dumps({"state": box_dump_start(exp, clip)}, ensure_ascii=False).encode(),
                         "application/json; charset=utf-8"); return
         if p == "/api/clipinfo":
             q = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
@@ -1458,6 +1663,49 @@ class H(BaseHTTPRequestHandler):
             self._bytes(json.dumps(q, ensure_ascii=False).encode(), "application/json; charset=utf-8"); return
         if p == "/api/results":
             out = []
+            # 항목 → 그 항목이 쓰는 가중치의 계보(results/MODELS.json). 라이브 SA 채점 로그에는
+            # meta 가 없어 결과 탭의 해상도·입력데이터·기법 열이 비는데, 그 값이 여기 있다.
+            _mdl = {}
+            try:
+                _mj = json.loads((G / "results/MODELS.json").read_text(encoding="utf-8"))
+                for _w, _e in (_mj.get("models") or {}).items():
+                    _ds = _e.get("dataset") or {}
+                    for _it in (_e.get("used_by") or []):
+                        _mdl.setdefault(_it, []).append((_w, _e, _ds))
+            except Exception as _ex:
+                print("[results] MODELS.json 못 읽음:", _ex, flush=True)
+
+            def _meta_from_models(item, cfg_line):
+                """항목이 쓰는 가중치로 meta 를 만든다. 없으면 None."""
+                ms = _mdl.get(item) or []
+                if not ms:
+                    return None
+                # 검출 모델을 대표로 삼는다(쓰러짐은 pose + SeqNet 두 개라 앞의 것)
+                w, e, ds = ms[0]
+                base, extras = None, []
+                for c in (ds.get("composition") or []):
+                    nm = c.get("source", "")
+                    if base is None:
+                        base = nm
+                    else:
+                        extras.append(nm)
+                t = dict(e.get("train") or {})
+                # 실행마다 다를 수 있는 해상도는 로그의 [설정] 줄을 우선한다
+                if cfg_line:
+                    m_ = re.search(r"해상도=(\d+)", cfg_line)
+                    if m_:
+                        t["imgsz"] = int(m_.group(1))
+                # 모델 열은 아키텍처로 통일한다(person_v3.pt 도 yolo11s 로 학습한 것).
+                # 무슨 데이터로 학습했는지는 입력데이터 열이 말한다.
+                arch = (e.get("base_model") or w).replace(".pt", "")
+                return {"model": arch, "base": base, "extras": extras,
+                        "n_train": ds.get("total"), "train": t,
+                        "oversample": None, "extra": None, "status": None,
+                        "started": None, "ended": None,
+                        "eval_map": {"map50": e.get("val_map50")} if e.get("val_map50") else None,
+                        "bench": None,
+                        "_from_models": True,
+                        "_dataset_status": ds.get("status")}
             rdir = G / "results"
             pat = re.compile(r"^\s*(.+?)\s+→\s+([0-9.]+)\s+\(정검 (\d+) 미검 (\d+) 오검 (\d+)\)", re.M)
             files = sorted(rdir.glob("*.txt")) + sorted(rdir.glob("*/score.txt"))   # 구(평면 txt) + 신(results/<exp>/score.txt)
@@ -1470,6 +1718,8 @@ class H(BaseHTTPRequestHandler):
                 if f.name == "score.txt":                       # 새 레이아웃: 실험명=폴더명, item 은 meta.json
                     try: _meta = json.loads((f.parent / "meta.json").read_text(encoding="utf-8"))
                     except Exception: _meta = {}
+                    try: _meta["bench"] = json.loads((f.parent / "bench.json").read_text(encoding="utf-8"))        # 이 실험의 추론 속도
+                    except Exception: pass
                     try: _meta["eval_map"] = json.loads((f.parent / "eval_map.json").read_text(encoding="utf-8"))   # 채점 전용 검증셋 mAP
                     except Exception: pass
                 rows = []
@@ -1494,9 +1744,27 @@ class H(BaseHTTPRequestHandler):
                     _item = "\uc4f0\ub7ec\uc9d0"
                 else:
                     _item = "\ubc29\ud654"                       # 방화(기본)
+                # 사람 검출 모델 실험은 '규칙' 자리에 항목(intrusion/loiter)이 온다.
+                # 항목별로 따로 올려야 침입·배회 표에서 보인다.
+                if _item == "사람":
+                    _ITEM_OF = {"intrusion": "침입", "loiter": "배회", "loitering": "배회",
+                                "falldown": "쓰러짐", "fall": "쓰러짐", "fire": "방화"}
+                    for _r in rows:
+                        _sub = _ITEM_OF.get(_r["rule"].strip().lower())
+                        if not _sub:
+                            continue
+                        out.append({"name": _stem, "score": _r["score"], "rule": "고정 규칙",
+                                    "tp": _r["tp"], "fn": _r["fn"], "fp": _r["fp"],
+                                    "item": _sub, "score_old": None,
+                                    "meta": {k: _meta.get(k) for k in ("model", "base", "extras", "extra", "status",
+                                                                       "n_train", "train", "oversample", "started",
+                                                                       "ended", "eval_map", "bench")},
+                                    "clips": _clips, "n": 1, "mtime": int(f.stat().st_mtime),
+                                    "rules": [dict(_r, rule="고정 규칙")]})
+                    continue
                 out.append({"name": _stem, "score": best["score"], "rule": best["rule"],
                             "tp": best["tp"], "fn": best["fn"], "fp": best["fp"], "item": _item, "score_old": _score_old,
-                            "meta": {k: _meta.get(k) for k in ("model", "base", "extras", "extra", "status", "n_train", "train", "oversample", "started", "ended", "eval_map")}, "clips": _clips,
+                            "meta": {k: _meta.get(k) for k in ("model", "base", "extras", "extra", "status", "n_train", "train", "oversample", "started", "ended", "eval_map", "bench")}, "clips": _clips,
                             "n": len(rows), "mtime": int(f.stat().st_mtime), "rules": rows})
             # ---- 라이브 SA 생성기 채점 로그(logs/queue/val_*.log): 침입·배회·쓰러짐(·방화) 항목별 점수 + 클립별 판정 ----
             ITEM_OF = {"fire": "방화", "intrusion": "침입", "loitering": "배회", "loiter": "배회", "falldown": "쓰러짐", "fall": "쓰러짐"}
@@ -1511,27 +1779,102 @@ class H(BaseHTTPRequestHandler):
                 if not last:
                     continue
                 _clips = {c.group(1): c.group(2) for c in re.finditer(r"^\s*클립 (\S+): (\S+)", txt, re.M)}
+                # 실행 설정 한 줄(kisa_items.py 가 첫 줄에 찍는다). 옛 로그에는 없다.
+                _cfg = re.search(r"^\[설정\] (.+)$", txt, re.M)
                 st = "합격" if "합격" in last.group(6) else last.group(6).strip(" ()") or ""
                 row = {"rule": "라이브 SA 생성기(kisa_items)", "score": float(last.group(5)), "tp": int(last.group(2)), "fn": int(last.group(3)), "fp": int(last.group(4))}
+                _it2 = ITEM_OF.get(last.group(1), last.group(1))
+                _mm = {"kind": "live_sa", "status": st, "note": f"logs/queue/{f.name}",
+                       "config": _cfg.group(1) if _cfg else None}
+                _fill = _meta_from_models(_it2, _mm["config"])
+                if _fill:
+                    _mm.update(_fill)          # 해상도·입력데이터·기법 열이 읽는 자리를 채운다
                 out.append({"name": f.stem, "score": row["score"], "rule": row["rule"], "tp": row["tp"], "fn": row["fn"], "fp": row["fp"],
-                            "item": ITEM_OF.get(last.group(1), last.group(1)), "score_old": None,
-                            "meta": {"kind": "live_sa", "status": st, "note": f"logs/queue/{f.name}"}, "clips": _clips,
+                            "item": _it2, "score_old": None,
+                            "meta": _mm, "clips": _clips,
                             "n": 1, "mtime": int(f.stat().st_mtime), "rules": [row]})
-            # ---- 보관 결과(results/ALL_RESULTS.json, 2026-09-07 정리본): 방화는 러너 결과가 따로 있어 사람 항목만 ----
-            try:
-                af = rdir / "ALL_RESULTS.json"
-                arc = json.loads(af.read_text(encoding="utf-8"))
-                for item, lst in (arc.get("항목") or {}).items():
-                    if item == "방화":
-                        continue
-                    for e in lst:
-                        row = {"rule": e.get("rule") or "", "score": float(e.get("f1", 0)), "tp": int(e.get("tp", 0)), "fn": int(e.get("fn", 0)), "fp": int(e.get("fp", 0))}
-                        out.append({"name": e.get("실험", ""), "score": row["score"], "rule": row["rule"], "tp": row["tp"], "fn": row["fn"], "fp": row["fp"],
-                                    "item": item, "score_old": None,
-                                    "meta": {"kind": "archive", "status": e.get("채점", ""), "note": f"results/ALL_RESULTS.json (정리 {arc.get('생성', '')})"},
-                                    "clips": {}, "n": 1, "mtime": int(af.stat().st_mtime), "rules": [row]})
-            except Exception:
-                pass
+            # 2026-09-15: ALL_RESULTS.json 별도 읽기를 없앴다. 그 안의 규칙 비교는
+            # results/<항목>_규칙비교_20260907/score.txt 로 펼쳐 다른 실험과 같은 경로로 읽힌다.
+            # ---- 합쳐 만든 학습셋은 구성으로 펼친다 ----
+            # base 가 data/학습데이터/<이름>/ 이면 그 meta.json 의 stats 가 원본별 장수를 안다.
+            # 이름만 보여주면 무엇이 몇 장 들어갔는지 알 수 없다(방화는 원본 이름이 직접 들어가 보인다).
+            _dscache = {}
+
+            def _expand(name):
+                if name in _dscache:
+                    return _dscache[name]
+                out_ = None
+                mf = G / "data/학습데이터" / str(name) / "meta.json"
+                if mf.is_file():
+                    try:
+                        dm = json.loads(mf.read_text(encoding="utf-8"))
+                        lab = {"이미지": "", "영상프레임": "영상 "}
+                        comp = []
+                        for k, v in (dm.get("stats") or {}).items():
+                            if not isinstance(v, int) or k.startswith("제외"):
+                                continue          # 제외 항목은 안 들어간 것이다
+                            p = k.split(":")
+                            if p[0] == "이미지" and len(p) >= 2:
+                                comp.append((p[1], v))                    # 원본 데이터셋 이름
+                            elif p[0] == "영상프레임" and len(p) >= 2:
+                                comp.append(("영상프레임 " + p[1], v))     # hand · sam
+                            else:
+                                comp.append((k, v))
+                        comp.sort(key=lambda x: -x[1])
+                        out_ = {"comp": comp, "train": dm.get("train"), "val": dm.get("val")}
+                    except Exception:
+                        out_ = None
+                _dscache[name] = out_
+                return out_
+
+            for _r in out:
+                _m = _r.get("meta") or {}
+                if not _m.get("base") or _m.get("extras"):
+                    continue                      # 이미 원본 이름이 들어 있으면 그대로
+                _e = _expand(_m["base"])
+                if not _e or not _e["comp"]:
+                    continue
+                _m["base"] = f"{_e['comp'][0][0]} {_e['comp'][0][1]:,}"
+                _m["extras"] = [f"{n} {v:,}" for n, v in _e["comp"][1:]]
+                if _e["train"]:
+                    _m["n_train"] = _e["train"]   # 무엇을 센 값인지 분명한 쪽으로
+
+            # ---- 같은 가중치로 돌린 실행들을 한 줄로 접는다 ----
+            # 모델별 성능 = 모델이 다른 것 / 규칙 스윕 = 같은 모델에 규칙만 다른 것.
+            # 방화(러너)는 한 실험 안에서 이미 스윕하므로 건드리지 않는다.
+            _fold = {}
+            _keep = []
+            for _r in out:
+                _m = _r.get("meta") or {}
+                if _m.get("kind") not in ("live_sa", "archive") or not _m.get("model"):
+                    _keep.append(_r)
+                    continue
+                _k = (_r["item"], _m["model"])
+                # 이 실행이 규칙 스윕에서 어떤 줄이 될지: 사람이 읽을 이름 + 파라미터
+                _lab = (_m.get("extra") or {}).get("기법") or _r["name"].replace("_20260910", "")
+                _par = _r["rule"] if _r["rule"] and "라이브 SA 생성기" not in _r["rule"] else ""
+                if not _par and _m.get("config"):
+                    _par = " ".join(re.findall(r"해상도=\d+|임계=[\d.]+|연속창=\d+|conf=[\d.]+", _m["config"]))
+                _row = {"rule": (_lab + (" · " + _par if _par else "")),
+                        "score": _r["score"], "tp": _r["tp"], "fn": _r["fn"], "fp": _r["fp"]}
+                if _k not in _fold:
+                    _fold[_k] = _r
+                    _r["rules"] = [_row]
+                    _r["name"] = _m["model"]          # 접은 줄의 이름 = 아키텍처
+                else:
+                    _b = _fold[_k]
+                    _b["rules"].append(_row)
+                    if _r["score"] > _b["score"]:     # 대표는 최고 점수
+                        _b.update({k: _r[k] for k in ("score", "rule", "tp", "fn", "fp", "clips")})
+                        _b["meta"] = _m
+                        _b["name"] = _m["model"]
+                    _b["mtime"] = max(_b["mtime"], _r["mtime"])
+            for _b in _fold.values():
+                _b["rules"].sort(key=lambda x: -x["score"])
+                _b["rule"] = _b["rules"][0]["rule"]   # 대표 규칙 = 최고 점수를 낸 것
+                _b["n"] = len(_b["rules"])
+                _keep.append(_b)
+            out = _keep
             out.sort(key=lambda r: -r["score"])
             self._bytes(json.dumps(out).encode("utf-8"), "application/json; charset=utf-8"); return
         if p == "/api/rawlabel":                 # 이미지 원본 정답 → 우리 클래스 규약의 YOLO 줄(datasets.yaml 의 gt·classes 로 변환)

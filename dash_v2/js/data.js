@@ -4,6 +4,7 @@ let DSMETA = null, DS_CUR = null, DS_ONLY_LABELED = false, DS_SEL = null, DS_KIN
 let SOURCES = null;                           // 원본 카테고리 목록(/api/sources). 한 번 받아 재사용
 const DS_SEL_BY = { raw: null, ds: null };   // 원본/학습 각각 마지막에 고른 항목
 const CONDS_BY = {};                          // 카테고리 → 촬영조건(한 번 받으면 재사용)
+let RAW_CAT = "", SUBSEL = "", COND_REDRAW = null;   // 지금 보는 카테고리 · 하위폴더 드롭다운 값 · 조건칩 다시그리기
 async function buildDatasetSrc() {
   if (!DSMETA) DSMETA = await (await fetch("/api/dataset")).json();
   if (!SOURCES) { try { SOURCES = await (await fetch("/api/sources")).json(); } catch (e) { SOURCES = []; } }
@@ -16,17 +17,9 @@ async function buildDatasetSrc() {
   kb.style.cssText = "display:flex;gap:4px;margin-bottom:6px";
   kb.innerHTML = "";
   DS_KIND = "raw";                                  // 학습 데이터(의사라벨 세트) 탭은 뺐다. 원본만 본다
-  [["raw", "원본 데이터"]].forEach(([k, label]) => {
-    const b = el("button", null, label);
-    const on = DS_KIND === k;
-    b.style.cssText = "flex:1;border-radius:6px;padding:5px;cursor:pointer;font-size:11px;font-weight:700;" +
-      (on ? "background:var(--blue);color:#06090f;border:1px solid var(--blue)"
-          : "background:var(--panel);color:var(--mut);border:1px solid var(--line)");
-    b.onclick = () => { if (DS_KIND === k) return; DS_SEL_BY[DS_KIND] = DS_SEL; DS_KIND = k; DS_SEL = DS_SEL_BY[k]; buildDatasetSrc(); };
-    kb.appendChild(b);
-  });
+  // 고를 종류가 원본 하나뿐이라 '원본 데이터' 버튼은 없앴다(2026-09-15). 새로고침만 남긴다.
   const cb = el("button", null, "\u21bb"); cb.title = "서버 폴더 캐시 새로고침(데이터 폴더를 옮기거나 이름 바꾼 뒤)";
-  cb.style.cssText = "flex:0 0 30px;border-radius:6px;padding:5px 0;cursor:pointer;font-size:12px;background:var(--panel);color:var(--mut);border:1px solid var(--line)";
+  cb.style.cssText = "margin-left:auto;flex:0 0 30px;border-radius:6px;padding:5px 0;cursor:pointer;font-size:12px;background:var(--panel);color:var(--mut);border:1px solid var(--line)";
   cb.onclick = async () => { cb.textContent = "\u2026"; try { await fetch("/api/refresh_cache", { method: "POST" }); } catch (e) {} SOURCES = null; DSMETA = null; buildDatasetSrc(); };
   kb.appendChild(cb);
   // 드롭다운은 고른 쪽만
@@ -67,17 +60,47 @@ async function renderRawList(cat) {
   try { r = await (await fetch("/api/raw?src=" + encodeURIComponent(cat))).json(); }
   catch (e) { box.innerHTML = '<div class="empty">이 카테고리를 못 읽었습니다</div>'; return; }
   box.innerHTML = "";
+  RAW_CAT = cat; SUBSEL = ""; COND_REDRAW = null;
+  // 목록 맨 위 머리글. 하위폴더 드롭다운과 촬영조건 칩을 한 상자에 넣고 이 상자만 고정한다
+  // (둘을 각각 sticky 로 붙이면 높이가 서로 달라 겹친다).
+  const head = el("div"); head.id = "listHead";
+  head.style.cssText = "position:sticky;top:-6px;z-index:3;background:var(--bg,#0d1117);" +
+    "margin:-6px -6px 6px;padding:8px 6px 6px;border-bottom:1px solid var(--line);" +
+    "display:flex;flex-direction:column;gap:6px";
+  box.appendChild(head);
+  // 하위 폴더가 여럿인 카테고리(kisa_연구개발_사람영상 = 배회·침입·쓰러짐 825편)는
+  // 한 목록에 다 쏟아지면 고르기 어렵다. 폴더별로 추려 보는 드롭다운을 위에 둔다.
+  const subs = [...new Set(r.videos.map(v => subOf(cat, v)).filter(Boolean))].sort();
+  if (subs.length > 1) {
+    const row = el("div"); row.id = "subFilterRow";
+    const ss = el("select");
+    // 크기는 위쪽 '데이터 원본' 드롭다운(.srcbox select)과 같게 맞춘다
+    ss.style.cssText = "width:100%;padding:7px 9px;font-size:13px;font-weight:600;border-radius:7px;" +
+      "background:var(--panel);color:var(--tx);border:1px solid var(--line);cursor:pointer";
+    const add = (val, label) => { const o = el("option"); o.value = val; o.textContent = label; ss.appendChild(o); };
+    add("", `전체 (${r.videos.length}편)`);
+    subs.forEach(sub => {
+      const n = r.videos.filter(v => subOf(cat, v) === sub).length;
+      add(sub, `${sub.replace(/^\d+\.\s*/, "").replace(/\s*\(\d+개\)\s*$/, "")} (${n}편)`);
+    });
+    ss.onchange = () => {
+      SUBSEL = ss.value;
+      if (COND_REDRAW) COND_REDRAW();      // 조건칩 개수도 고른 폴더 기준으로
+      applyCondFilter(box); openFirstVisible(box);
+    };
+    row.appendChild(ss); head.appendChild(row);
+  }
   // 촬영조건 필터(야간·눈·비·안개). 조건 XML 이 있는 카테고리에서만 뜬다.
   if (r.videos.length) {
     const cf = el("div"); cf.id = "condFilterRow";
-    box.appendChild(cf);
+    head.appendChild(cf);
     let cd = CONDS_BY[cat];                       // 조건을 먼저 받아 목록과 같이 그린다(늦게 따로 뜨지 않게)
     if (!cd) { try { cd = await (await fetch("/api/clipconds?src=" + encodeURIComponent(cat))).json(); } catch (e) { cd = {}; } CONDS_BY[cat] = cd || {}; }
     {
       CONDS = cd || {}; CLIPFILTER = "";
       const draw = () => {
-        cf.innerHTML = ""; cf.style.cssText = "display:flex;flex-wrap:wrap;gap:4px;position:sticky;top:-6px;z-index:2;background:var(--bg,#0d1117);margin:-6px -6px 6px;padding:8px 6px 6px;border-bottom:1px solid var(--line)";   // 목록 스크롤 상단에 고정
-        const cnt = key => { const k0 = CLIPFILTER; CLIPFILTER = key; const n = r.videos.filter(v => passFilter(v.split("/").pop().replace(/\.mp4$/, ""))).length; CLIPFILTER = k0; return n; };
+        cf.innerHTML = ""; cf.style.cssText = "display:flex;flex-wrap:wrap;gap:4px";   // 고정은 바깥 #listHead 가 한다
+        const cnt = key => { const k0 = CLIPFILTER; CLIPFILTER = key; const n = r.videos.filter(v => (!SUBSEL || subOf(cat, v) === SUBSEL) && passFilter(v.split("/").pop().replace(/\.mp4$/, ""))).length; CLIPFILTER = k0; return n; };
         [["", "전체"], ["night", "야간"], ["day", "주간"], ["snow", "눈"], ["rain", "비"], ["fog", "안개"], ["hard", "야간·악천후"]]
           .forEach(([key, label]) => {
             const n = cnt(key);
@@ -90,9 +113,10 @@ async function renderRawList(cat) {
             cf.appendChild(b);
           });
       };
-      draw();
+      draw(); COND_REDRAW = draw;
     }
   }
+  if (!head.children.length) head.remove();      // 드롭다운도 조건칩도 없으면 빈 줄만 남는다
   if (!r.images.length && !r.videos.length) {
     box.innerHTML = '<div class="empty">이 폴더엔 이미지·영상이 없습니다<br><small>압축 상태이거나 라벨 파일만 있는 폴더</small></div>';
     return;
@@ -133,8 +157,21 @@ function applyCondFilter(box) {
     const nm = it.querySelector(".nm");
     const rel = (nm && (nm.title || nm.textContent)) || "";
     if (!/\.mp4$/i.test(rel)) return;                 // 이미지 항목은 조건이 없다
-    it.hidden = !passFilter(rel.split("/").pop().replace(/\.mp4$/, ""));
+    const okSub = !SUBSEL || subOf(RAW_CAT, rel) === SUBSEL;
+    it.hidden = !(okSub && passFilter(rel.split("/").pop().replace(/\.mp4$/, "")));
   });
+}
+
+// 원본데이터 기준 상대경로에서 '카테고리 바로 아래 폴더' 이름. 카테고리 밑 파일이면 빈 문자열.
+function subOf(cat, rel) {
+  const p = String(rel).replace(/^data\/원본데이터\//, "").split("/");
+  return p[0] === cat && p.length > 2 ? p[1] : "";
+}
+
+// 지금 보이는 첫 항목을 연다(하위 폴더를 바꾸면 그 폴더 첫 영상으로).
+function openFirstVisible(box) {
+  const it = [...box.querySelectorAll(".item")].find(x => !x.hidden);
+  if (it) it.click();
 }
 
 // 원본 이미지 한 장. 같은 이름 YOLO txt 가 있으면 박스도 그린다.
@@ -275,7 +312,9 @@ async function showRawVideo(rel) {
     if (_my !== _SRV_SEQ) return;
   } else {
     ED = null;   // 영상 볼 땐 에디터 재사용상태 초기화(다음 라벨편집이 새로 그리게)
-    renderCenter({ video: rel, name: rel.split("/").pop(), signal_type: "raw", signal: [], zone: [], tracks: null,
+    // 예측 박스 드롭다운이 쓸 갈래. 라벨 모드를 "편집 안 함"으로 둔 경우는 이름으로 짐작한다
+    const _kind0 = (_mode0 === "fire" || _mode0 === "person") ? _mode0 : catModeAuto(catOf(rel));
+    renderCenter({ video: rel, name: rel.split("/").pop(), signal_type: "raw", signal: [], zone: [], tracks: null, kind: _kind0,
                    weather: [], tod: null, gt: (first.start != null ? first.start : null), gt_dur: first.dur || 0, sa: null });
   }
   // 우측 정보(파일/경로/정답)
@@ -379,3 +418,34 @@ async function showDatasetImage(d, im) {
   }
 }
 
+// ---------- 서버로 라벨 보내기 (Thor 등 보내는 쪽에서만 보인다) ----------
+// 먼저 미리보기(합치지 않고 무엇이 들어갈지만)를 보여주고, 한 번 더 누르면 실제로 합친다.
+async function initPushButton() {
+  let info = {};
+  try { info = await (await fetch("/api/pushinfo")).json(); } catch (e) { return; }
+  if (!info.enabled) return;                       // 서버 쪽에서는 아예 안 만든다
+  const box = document.querySelector(".srcbox");
+  if (!box || document.getElementById("pushBtn")) return;
+  const b = el("button", null, "서버로 라벨 보내기");
+  b.id = "pushBtn";
+  b.style.cssText = "width:100%;margin-top:8px;padding:7px 9px;font-size:12px;font-weight:700;border-radius:7px;" +
+    "background:var(--panel);color:var(--tx);border:1px solid var(--line);cursor:pointer";
+  const note = el("div", null, "");
+  note.style.cssText = "margin-top:4px;font-size:11px;color:var(--mut);white-space:pre-wrap;line-height:1.5";
+  let staged = false;                               // 미리보기를 본 뒤인가
+  b.onclick = async () => {
+    b.disabled = true;
+    const dry = !staged;
+    b.textContent = dry ? "확인 중…" : "보내는 중…";
+    let r;
+    try { r = await (await fetch("/api/push_labels?dry=" + (dry ? "1" : "0"),
+                                 { method: "POST" })).json(); }
+    catch (e) { r = { ok: false, err: String(e) }; }
+    b.disabled = false;
+    if (!r.ok) { note.textContent = "실패: " + (r.err || r.log || "").slice(0, 300); b.textContent = "서버로 라벨 보내기"; staged = false; return; }
+    note.textContent = (r.log || "").trim();
+    if (dry) { staged = true; b.textContent = "이대로 보내기(한 번 더)"; }
+    else { staged = false; b.textContent = "서버로 라벨 보내기"; }
+  };
+  box.appendChild(b); box.appendChild(note);
+}

@@ -1,0 +1,61 @@
+# 고해상도 학습 큐 (2026-09-15). 배포 속도는 따지지 않고 학습 효과만 본다.
+#
+# 왜 하는가: 배포 검증영상이 1280x720 인데 지금까지 전부 640 으로 학습했다.
+#   person_v2 가 640 학습이라 960 추론에서 배회가 93.10 → 79.31 로 떨어진 것이
+#   배율 불일치 때문이었다. 우리 손라벨은 전부 1280x720 원본이라 고해상도 학습에
+#   실제로 넣을 정보가 있다.
+# 주의: 외부 대규모 데이터(48k·FASDD·COCO)는 원본이 960 이하라 1280 에서는 확대만 된다.
+#   이득이 기대되는 건 손라벨 쪽이므로 오버샘플을 크게 준다.
+# 채점: 사람 항목은 학습 해상도와 같은 해상도로 채점한다(러너가 --person-imgsz 로 넘긴다).
+defaults:
+  val_small: 600
+  train: { epochs: 60, batch: 80, imgsz: 1280, multi_scale: 0.0, cache: False, workers: 8 }
+  vram_gate_mib: 90000        # 잡당 85GB x 2잡 = 170GB. SAM 전파는 Thor 에서 돌리므로 비워 둘 몫이 없다
+  min_free_gb: 300
+  ram_cache_max: 0
+  stagger_sec: 600
+
+experiments:
+  - { name: f1280_best_s_20260915, model: yolo11s, item: 방화, names: [fire, smoke],
+      base: aihub71751_48k, extras: [fasdd_snowfog, fasdd_yolo, azimjaan_yolo, wildfire_pos_yolo],
+      oversample: { handset_fire_hn_20260915: 8 },
+      val_set: data/학습데이터/evalset_fire/val.txt, train: { batch: 80, workers: 8 } }
+
+  # ---- 방화 960: 추론이 6뷰 타일이라 1280 은 과할 수 있다. 960 학습 → 960 추론 정합 확인 ----
+  - { name: person_coco_kisa_s960_20260911, model: yolo11s, item: 사람, names: [person],
+      base: trainset_person_20260915, extras: [], oversample: { handset_person_20260915: 5 },
+      val_set: data/학습데이터/evalset_person/val.txt,
+      train: { imgsz: 960, multi_scale: 0.333, batch: 88, workers: 8 } }
+    # 혼합 큐에서 옮겨옴(2026-09-15 OOM 으로 죽은 뒤 그 큐가 종료됨). 상한 1280 규칙 적용.
+  # ---- 사람: 손라벨(1280 원본) 중심 + COCO. 배회·침입 채점 ----
+  - { name: f960_best_s_20260915, model: yolo11s, item: 방화, names: [fire, smoke],
+      base: aihub71751_48k, extras: [fasdd_snowfog, fasdd_yolo, azimjaan_yolo, wildfire_pos_yolo],
+      oversample: { handset_fire_hn_20260915: 8 },
+      val_set: data/학습데이터/evalset_fire/val.txt, train: { imgsz: 960, multi_scale: 0.333, batch: 88, workers: 8 } }
+
+  # ---- 사람 960 · 손라벨만: 침입 타일이 960 이라 배율이 맞는 조합 ----
+  - { name: p1280_coco_kisa_s_20260915, model: yolo11s, item: 사람, names: [person],
+      base: trainset_person_20260915, extras: [], oversample: { handset_person_20260915: 8 },
+      val_set: data/학습데이터/evalset_person/val.txt }
+
+  # ---- 사람: 손라벨만(외부 확대 없이 순수 1280 원본) ----
+  - { name: s2_m960_20260913, model: yolo11m, item: 방화, names: [fire, smoke],
+      base: aihub71751_48k, extras: [fasdd_snowfog, fasdd_yolo, azimjaan_yolo, wildfire_pos_yolo],
+      oversample: { handset_fire_hn_20260915: 4 },
+      val_set: data/학습데이터/evalset_fire/val.txt,
+      train: { multi_scale: 0.333, imgsz: 960, batch: 44, epochs: 80, cache: False, workers: 8 } }
+    # stage2 큐에서 옮겨옴(2026-09-15). batch 56 은 GPU 100GB 를 써서 SAM 전파 자리가 없었다.
+    # 설정은 stage2 defaults(base·oversample·val_set)를 풀어 적은 것이고 batch 만 28 로 줄였다.
+  - { name: p1280_hand_s_20260915, model: yolo11s, item: 사람, names: [person],
+      base: handset_person_20260915, extras: [], oversample: {},
+      val_set: data/학습데이터/evalset_person/val.txt, train: { epochs: 80, batch: 80, workers: 8 } }
+
+  # ---- 사람 960: 1280 이 과한지 비교 ----
+  - { name: p960_coco_kisa_s_20260915, model: yolo11s, item: 사람, names: [person],
+      base: trainset_person_20260915, extras: [], oversample: { handset_person_20260915: 8 },
+      val_set: data/학습데이터/evalset_person/val.txt, train: { imgsz: 960, multi_scale: 0.333, batch: 88, workers: 8 } }
+
+  # ---- 방화 1280: 지금까지 최고 조합(wildfire_pos 포함)을 원본 해상도로 ----
+  - { name: p960_hand_s_20260915, model: yolo11s, item: 사람, names: [person],
+      base: handset_person_20260915, extras: [], oversample: {},
+      val_set: data/학습데이터/evalset_person/val.txt, train: { imgsz: 960, multi_scale: 0.333, batch: 88, epochs: 80, workers: 8 } }

@@ -1,4 +1,7 @@
 # -*- coding: utf-8 -*-
+# 기준: 이 파일이 방화 오프라인 채점의 기준이다. 실측과 맞는 것을 확인했다
+#       (fresh_48k_wildall 고정 규칙 77.78 = results/ 기록과 일치, 2026-09-15).
+#       제출 경로는 _kisa_port/tools/kisa_items.py 이고 규칙 값은 양쪽이 같아야 한다.
 """자립형 KISA 방화 채점기 (서버용, VMS 앱 의존 없음. ultralytics + opencv 만).
 
 model(.pt) 하나를 방화 10편에 돌려, 우리가 쓰는 판정 규칙 몇 개로 F1 을 낸다.
@@ -102,10 +105,10 @@ def _score2(per, **kw):
     return (round(2 * r * pr / (r + pr) * 100, 2) if r + pr else 0.0), tp, fn, fp, det
 
 def new_rule_sweep(per, tag):
-    """per = {stem: (rows[(t, {"fire","smoke"})], gt)}. 시계열을 results/par/tl/<tag>.json 에 남기고 새 규칙 스윕 상위 5 + 클립별을 출력."""
+    """per = {stem: (rows[(t, {"fire","smoke"})], gt)}. 시계열을 dumps/score_tl/<tag>.json 에 남기고 새 규칙 스윕 상위 5 + 클립별을 출력."""
     import json
     tl = {stem: {"rows": [[t, b["fire"], b["smoke"]] for t, b in rows], "gt": gt} for stem, (rows, gt) in per.items()}
-    tld = Path(__file__).resolve().parent / "results/par/tl"; tld.mkdir(parents=True, exist_ok=True)
+    tld = Path(__file__).resolve().parent / "dumps/score_tl"; tld.mkdir(parents=True, exist_ok=True)
     (tld / (str(tag).replace("/", "_") + ".json")).write_text(json.dumps(tl))
     per2 = {k: ([tuple(r) for r in v["rows"]], v["gt"]) for k, v in tl.items() if v["gt"] is not None}
     if not per2:
@@ -145,6 +148,9 @@ def main():
         "fire만 0.4 4/6":  dict(kind="fire_only", fire=0.4, window=6, hits=4),
         "결합 f0.4/s0.6 4/6": dict(kind="combined", fire=0.4, smoke=0.6, window=6, hits=4),
         "결합+타일가정 3/5": dict(kind="combined", fire=0.4, smoke=0.6, window=5, hits=3),
+        # 2026-09-15 채택. 덤프 44개 합산에서 기존 4/6 대비 정검 +18 · 미검 -18 · 오검 -6.
+        # 진짜 화재는 검출이 띄엄띄엄 떠서 '3초 안에 4번' 을 못 채운다. 5초 창에 3번이면 담긴다.
+        "불만 0.45 3/10(운영)": dict(kind="fire_only", fire=0.45, window=10, hits=3),
     }
     print(f"\n=== {a.tag or a.model} (tiles={a.tiles}) ===")
     best = None

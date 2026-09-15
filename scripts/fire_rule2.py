@@ -1,4 +1,6 @@
 # -*- coding: utf-8 -*-
+# 참고용: 신규칙의 원본 설계. 실제 계산은 score_kisa.py 와 kisa_items.py 안에 옮겨져 있다.
+#         여기를 고쳐도 채점에 반영되지 않는다.
 """방화 온셋 규칙 재설계. 저장된 신호 시계열(pilot.json 등)로 추론 없이 즉시 스윕.
 
 기존 규칙이 놓친 이유(실측):
@@ -13,7 +15,7 @@ import json
 import sys
 from pathlib import Path
 
-SP = Path("/NHNHOME/WORKSPACE/26mss002_E3/vms/results/par/tl")
+SP = Path(__file__).resolve().parents[1] / "dumps/score_tl"
 BEFORE, AFTER, DELAY = 2.0, 10.0, 10.0
 STEP = 0.5
 

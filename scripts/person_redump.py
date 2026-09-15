@@ -23,105 +23,14 @@ W = Path("/NHNHOME/WORKSPACE/26mss002_E3")
 G = W / "vms"
 
 
-def tiles_of(fr, grid, overlap):
-    h, w = fr.shape[:2]
-    if grid <= 1:
-        return [(fr, 0, 0)]
-    out = []
-    th, tw = h // grid, w // grid
-    oy, ox = int(th * overlap), int(tw * overlap)
-    for gy in range(grid):
-        for gx in range(grid):
-            y0 = max(0, gy * th - oy); y1 = min(h, (gy + 1) * th + oy)
-            x0 = max(0, gx * tw - ox); x1 = min(w, (gx + 1) * tw + ox)
-            out.append((fr[y0:y1, x0:x1], x0, y0))
-    return out
+# 검출·추적 코드는 제출 도구에서 가져온다. 복사본을 두면 언제든 갈라진다.
+# 실제로 2026-09-16 에 nms 의 contain 기본값이 달라 침입이 94.74 대 87.72 로 갈렸다.
+import sys as _sys
+_sys.path.insert(0, str(G / "_kisa_port/tools"))
+from kisa_items import tiles_of, iou, contained, nms, Tracker, TILE   # noqa: E402,F401
 
 
-def iou(a, b):
-    ax1, ay1, ax2, ay2 = a; bx1, by1, bx2, by2 = b
-    ix1, iy1 = max(ax1, bx1), max(ay1, by1)
-    ix2, iy2 = min(ax2, bx2), min(ay2, by2)
-    iw, ih = max(0.0, ix2 - ix1), max(0.0, iy2 - iy1)
-    inter = iw * ih
-    ua = (ax2 - ax1) * (ay2 - ay1) + (bx2 - bx1) * (by2 - by1) - inter
-    return inter / ua if ua > 0 else 0.0
-
-
-def contained(a, b):
-    """a 가 b 안에 든 비율 (교집합/a면적). 부분검출(작은 박스가 큰 박스 안) 판정용."""
-    ix1, iy1 = max(a[0], b[0]), max(a[1], b[1])
-    ix2, iy2 = min(a[2], b[2]), min(a[3], b[3])
-    inter = max(0.0, ix2 - ix1) * max(0.0, iy2 - iy1)
-    A = (a[2] - a[0]) * (a[3] - a[1])
-    return inter / A if A > 0 else 0.0
-
-
-def nms(dets, thr=0.5, contain=0.75):
-    """겹친 것(IoU>=thr) + 부분검출(a가 b 안에 contain 이상 들어감) 제거.
-       같은 사람을 전신/부분(상반신)으로 이중검출하는 것을 합친다."""
-    dets = sorted(dets, key=lambda d: -d[0])
-    keep = []
-    for d in dets:
-        if all(iou(d[1:], k[1:]) < thr and contained(d[1:], k[1:]) < contain for k in keep):
-            keep.append(d)
-    return keep
-
-
-class Tracker:
-    """IoU + 중심거리 기반 단순 트래커. 원거리 인물이 간헐적으로 잡혀도 트랙을 유지하는 것이 목적이라
-       새 트랙 생성 문턱을 두지 않고, 끊김만 max_gap 프레임까지 허용한다."""
-
-    def __init__(self, iou_thr=0.25, max_gap=10):
-        self.iou_thr = iou_thr
-        self.max_gap = max_gap
-        self.tracks = []          # dict(id, box, miss)
-        self.next_id = 1
-
-    def update(self, dets):
-        for t in self.tracks:
-            t["miss"] += 1
-        out = []
-        used = set()
-        # 신뢰도 높은 검출부터 기존 트랙에 붙인다
-        for conf, x1, y1, x2, y2 in sorted(dets, key=lambda d: -d[0]):
-            box = (x1, y1, x2, y2)
-            best, bi = self.iou_thr, None
-            for i, t in enumerate(self.tracks):
-                if i in used:
-                    continue
-                v = iou(box, t["box"])
-                if v > best:
-                    best, bi = v, i
-            if bi is None:
-                # IoU 로 못 붙으면 중심거리로 한 번 더 (빠르게 움직이거나 프레임 간격이 넓을 때)
-                cx, cy = (x1 + x2) / 2, (y1 + y2) / 2
-                dbest, di = 1e18, None
-                for i, t in enumerate(self.tracks):
-                    if i in used:
-                        continue
-                    tx1, ty1, tx2, ty2 = t["box"]
-                    tcx, tcy = (tx1 + tx2) / 2, (ty1 + ty2) / 2
-                    d = ((cx - tcx) ** 2 + (cy - tcy) ** 2) ** 0.5
-                    lim = max(60.0, 0.8 * max(x2 - x1, y2 - y1)) * (1 + t["miss"])
-                    if d < dbest and d <= lim:
-                        dbest, di = d, i
-                bi = di
-            if bi is None:
-                self.tracks.append({"id": self.next_id, "box": box, "miss": 0})
-                used.add(len(self.tracks) - 1)
-                out.append([self.next_id, round(conf, 3), *[round(v, 1) for v in box]])
-                self.next_id += 1
-            else:
-                self.tracks[bi]["box"] = box
-                self.tracks[bi]["miss"] = 0
-                used.add(bi)
-                out.append([self.tracks[bi]["id"], round(conf, 3), *[round(v, 1) for v in box]])
-        self.tracks = [t for t in self.tracks if t["miss"] <= self.max_gap]
-        return out
-
-
-def run(model, mp4, out, stride, grid, overlap, imgsz, conf):
+def run(model, mp4, out, stride, grid, overlap, imgsz, conf, contain=0.75):
     cap = cv2.VideoCapture(str(mp4))
     fps = cap.get(cv2.CAP_PROP_FPS) or 30.0
     step = max(1, round(fps * stride))
@@ -140,7 +49,7 @@ def run(model, mp4, out, stride, grid, overlap, imgsz, conf):
                     for b in r.boxes:
                         x1, y1, x2, y2 = (float(v) for v in b.xyxy[0])
                         dets.append((float(b.conf), x1 + ox, y1 + oy, x2 + ox, y2 + oy))
-                boxes = trk.update(nms(dets))
+                boxes = trk.update(nms(dets, contain=contain))
                 lines.append(json.dumps({"t": round(i / fps, 2), "boxes": boxes}))
         i += 1
     cap.release()
@@ -158,6 +67,11 @@ def main():
     ap.add_argument("--overlap", type=float, default=0.2)
     ap.add_argument("--imgsz", type=int, default=960)
     ap.add_argument("--conf", type=float, default=0.15)
+    # 부분검출 억제 기준. 제출 경로(_kisa_port/tools/kisa_items.py 의 PersonDetector)는
+    # process() 에서 contain=None 으로 부르고, 그러면 내부에서 2.0 을 쓴다 = 억제를 끈다.
+    # 이 값이 다르면 트랙이 달라져 같은 판정기를 써도 점수가 어긋난다(2026-09-16 실측 87.72 대 94.74).
+    ap.add_argument("--contain", type=float, default=0.75,
+                    help="부분검출 억제 기준(0.75=켬). 제출 경로와 맞추려면 2.0(끔)")
     a = ap.parse_args()
     from ultralytics import YOLO
     model = YOLO(a.model)
@@ -169,7 +83,7 @@ def main():
         f = outd / f"{v.stem}.jsonl"
         if f.exists():
             continue
-        c = run(model, v, f, a.stride, a.grid, a.overlap, a.imgsz, a.conf)
+        c = run(model, v, f, a.stride, a.grid, a.overlap, a.imgsz, a.conf, a.contain)
         print(f"  [{n}/{len(vids)}] {v.stem} {c}표본", flush=True)
     print("완료", flush=True)
 

@@ -10,7 +10,8 @@ V = Path("/NHNHOME/WORKSPACE/26mss002_E3/vms")
 OUT = V/"dumps/fire_box"; OUT.mkdir(parents=True, exist_ok=True)
 m = YOLO(str(V/"runs/par/human_full/yolo11s/weights/best.pt"))   # 신호와 동일 모델
 CONF = 0.10
-vids = sorted((V/"data/원본데이터/kisa_배포_검증영상/deploy_val/방화(10개)/배포").glob("*.mp4"))
+import kisa_paths as KP
+vids = sorted(KP.videos("방화").glob("*.mp4"))
 
 def tiles(fr):
     h, w = fr.shape[:2]

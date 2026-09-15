@@ -11,7 +11,8 @@ import cv2, json, os
 from collections import defaultdict
 from pathlib import Path
 
-G = Path(os.environ.get("VMS_ROOT", "/NHNHOME/WORKSPACE/26mss002_E3/vms"))
+import kisa_paths as KP            # 저장소 루트는 여기 한 곳에서만 정의한다
+G = KP.V
 SRC = G / "data/원본데이터/kisa_연구개발_방화영상"   # src 없는 옛 라벨의 기본 영상 폴더
 RAW = G / "data/원본데이터"                          # 라벨에 src(상대경로)가 있으면 이 기준
 OUT = G / "data/학습데이터/human_fire"
