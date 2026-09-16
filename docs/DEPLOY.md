@@ -104,6 +104,8 @@ python _kisa_port/tools/kisa_items.py --item <fire|intrusion|loitering|falldown>
 | `python scripts/check_models.py` | 운영 가중치가 전부 `results/MODELS.json` 에 적혀 있는가 |
 | `python scripts/check_layout.py` | 산출물이 규약 자리에 있는가 |
 | `python scripts/audit_stale.py` | 판정 중복·죽은 경로·낡은 산출물·미참조 스크립트 |
+| `python scripts/stale_scan.py` | **파생물이 원본보다 낡았나** 전수 조사(학습셋·검증셋·덤프·배포 가중치) |
+| `python scripts/stale_scan.py --selfcheck` | **그 검사기가 진짜 잡는지** 자가 시험 |
 
 ### 판단할 때 쓰는 도구
 
