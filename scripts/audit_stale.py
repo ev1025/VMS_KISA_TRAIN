@@ -132,8 +132,12 @@ if not bad:
 print()
 
 print("=== C. 산출물이 입력보다 오래된 것")
+# 입력은 '그 산출물이 실제로 읽는 것' 만 적는다.
+# dumps/score_tl 폴더 전체를 넣었더니 새 실험 덤프가 하나 생길 때마다 헛경보가 났다.
+# 화면 곡선이 읽는 것은 배포 구성을 합친 _deploy.json 하나다(2026-09-16).
 GEN = [("dash_v2/dash_meta.json", ["dumps/intrusion_tile_v3", "dumps/loiter_botsort_v2",
-                                   "dumps/score_tl", "_kisa_port/tools/kisa_items.py"]),
+                                   "dumps/score_tl/_deploy.json", "dumps/fall_seq_1280",
+                                   "_kisa_port/tools/kisa_items.py"]),
        ("dash_v2/dataset_meta.json", ["data/학습데이터"]),
        ("results/MODELS.json", ["_kisa_port/weights/kisa"])]
 for out, ins in GEN:
