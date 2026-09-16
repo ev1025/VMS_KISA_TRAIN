@@ -134,7 +134,13 @@ def build_labelset():
     """손라벨 클립(연구개발 방화 75클립). 프레임 목록 + 박스. 영상 없이 프레임 이미지로 검수."""
     import collections
     labels = json.load(open(G/"data/학습데이터/손라벨/fire_labels.json", encoding="utf-8"))
-    lmeta = json.load(open(G/"data/학습데이터/손라벨/full/meta.json", encoding="utf-8"))
+    # 프레임 이미지 목록. scripts/make_full.py 가 만든다. 안 만들었으면 이 탭만 비우고 넘어간다.
+    # (예전에는 여기서 멈춰 dash_meta.json 전체가 09-08 판에 묶여 있었다. 2026-09-16)
+    mf = G/"data/학습데이터/손라벨/full/meta.json"
+    if not mf.exists():
+        print(f"  [건너뜀] 손라벨 탭: {mf} 없음 (scripts/make_full.py 로 만든다)", flush=True)
+        return []
+    lmeta = json.load(open(mf, encoding="utf-8"))
     by_clip = collections.defaultdict(lambda: {"frames": {}, "boxes": 0})
     for m in lmeta:
         by_clip[m["clip"]]["frames"].setdefault(m["file"], {"gt": m.get("gt"), "t": m.get("t"),

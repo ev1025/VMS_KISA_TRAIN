@@ -6,7 +6,12 @@ const DS_SEL_BY = { raw: null, ds: null };   // 원본/학습 각각 마지막�
 const CONDS_BY = {};                          // 카테고리 → 촬영조건(한 번 받으면 재사용)
 let RAW_CAT = "", SUBSEL = "", COND_REDRAW = null;   // 지금 보는 카테고리 · 하위폴더 드롭다운 값 · 조건칩 다시그리기
 async function buildDatasetSrc() {
-  if (!DSMETA) DSMETA = await (await fetch("/api/dataset")).json();
+  // 학습 데이터셋 목록. DS_KIND 가 "raw" 로 못 박혀 있어 지금은 화면에서 안 쓰지만,
+  // 없을 때 터지면 데이터 확인 탭 전체가 안 뜬다. 빈 값으로 넘어간다.
+  if (!DSMETA) {
+    try { DSMETA = await (await fetch("/api/dataset")).json(); }
+    catch (e) { DSMETA = { datasets: [] }; }
+  }
   if (!SOURCES) { try { SOURCES = await (await fetch("/api/sources")).json(); } catch (e) { SOURCES = []; } }
   const sel = $("#srcSel"); sel.innerHTML = "";
   $("#filtBox").hidden = true;
