@@ -35,7 +35,9 @@ THOR = "/home/mrod1/Desktop/Project/Kisa"
 PAIRS = [
     ("_kisa_port/tools/kisa_items.py",        f"{THOR}/tools/kisa_items.py"),
     ("_kisa_port/tools/rtsp_source.py",       f"{THOR}/tools/rtsp_source.py"),
-    ("_kisa_port/weights/kisa/fire_snowfull.pt", f"{THOR}/weights/kisa/fire_snowfull.pt"),
+    # 방화는 두 벌을 겹쳐 쓴다(2026-09-16). 한 벌만 낡아도 점수가 달라지므로 둘 다 본다.
+    ("_kisa_port/weights/kisa/fire_fog.pt", f"{THOR}/weights/kisa/fire_fog.pt"),
+    ("_kisa_port/weights/kisa/fire_small.pt", f"{THOR}/weights/kisa/fire_small.pt"),
     ("_kisa_port/weights/kisa/person_v2.pt",  f"{THOR}/weights/kisa/person_v2.pt"),
     ("_kisa_port/weights/kisa/person_v3.pt",  f"{THOR}/weights/kisa/person_v3.pt"),
     ("_kisa_port/weights/kisa/yolo11x-pose.pt", f"{THOR}/weights/kisa/yolo11x-pose.pt"),

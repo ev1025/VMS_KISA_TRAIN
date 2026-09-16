@@ -63,9 +63,16 @@ ITEMS = {
     # 덤프 44개(클립 평가 440건) 합산에서 정검 +18 · 미검 -18 · 오검 -6.
     # 연기를 켜면 오검이 44 → 73~103 으로 늘어난다(안개편 C00_195_0001 은 연기가 0초부터 계속 높다).
     # smoke=1.1 은 "연기 조건을 절대 만족시키지 않는다"는 뜻이다(신뢰도는 1 을 넘을 수 없다).
-    "fire": dict(desc="FireDetection", model="fire_snowfull.pt", stride=0.5, delay=10.0,
-                 rule="combined", fire=0.45, smoke=1.1, win=10, hits=3, new_fire=0.5, new_win=12, new_hits=5, new_sdelta=0.2,
-                 view_imgsz=640),
+    # 앙상블(2026-09-16): 가중치 하나로는 규칙을 다 훑어도 88.89 가 천장이었다.
+    #   fire_fog.pt   = fresh_48k_wildall_20260909 @640  안개편 C00_195_0001 을 본다(안개 네거티브 학습)
+    #   fire_small.pt = s2_s960_20260913 @960            눈편  C00_216_0003 을 본다(960 학습, 작은 불씨)
+    # 두 모델을 6뷰에 다 태우고 표본별 최고 신뢰도를 쓴다. 덤프 재계산 10편 전편 정검.
+    # 규칙도 같이 바꿈: 불 0.45 창 10 -> 불 0.40 창 20(3회 유지). 44개 단일 덤프 평균 70.63 -> 72.74,
+    # 오검 합계 44 -> 42 라 이 쌍에만 맞춘 값이 아니다. model2 를 지우면 예전 단일 경로로 돌아간다.
+    "fire": dict(desc="FireDetection", model="fire_fog.pt", model2="fire_small.pt",
+                 stride=0.5, delay=10.0,
+                 rule="combined", fire=0.40, smoke=1.1, win=20, hits=3, new_fire=0.5, new_win=12, new_hits=5, new_sdelta=0.2,
+                 view_imgsz=640, view_imgsz2=960),
 }
 FIRE_NAMES = {0: "fire", 1: "smoke"}
 # 타일 검출: 3x3 격자, 겹침 0.2, 입력 960, conf 0.15.
@@ -587,14 +594,27 @@ class FallJudge:
 
 
 # ----------------------------------------------------------------------------- 방화(score_kisa.py 규칙 이식)
+def fire_weights(cfg):
+    """설정에서 (가중치 경로, 해상도) 목록을 만든다. model2 가 없으면 한 벌이라 지금과 같다."""
+    out = [(WEIGHTS / cfg["model"], cfg.get("view_imgsz", 640))]
+    if cfg.get("model2"):
+        out.append((WEIGHTS / cfg["model2"], cfg.get("view_imgsz2", cfg.get("view_imgsz", 640))))
+    return out
+
+
 class FireJudge:
     """6뷰 타일 추론 → 표본별 (t, 불max, 연기max) → 창 규칙으로 onset. score_kisa.py 의 dump()+onset() 과 같은 계산.
     rule='combined': 불 ≥fire 또는 (불 ≥0.3 & 연기 ≥smoke) 가 win 스텝 안에 hits 회 → 창의 첫 충족 시각.
     rule='new'     : fire_rule2 — 불 ≥new_fire 또는 연기 ≥ 앞 60초 기준선(80퍼센타일)+new_sdelta(&≥0.3), new_win/new_hits."""
 
-    def __init__(self, weights, cfg, device=None):
+    def __init__(self, weights, cfg, device=None, imgsz=None):
+        """weights 는 하나 또는 [(경로, 해상도), ...]. 여러 벌이면 표본마다 최고 신뢰도를 쓴다(앙상블).
+        모델마다 학습 해상도가 다르므로 해상도를 같이 들고 다닌다."""
         from ultralytics import YOLO
-        self.model = YOLO(str(weights)); self.cfg = cfg; self.device = device
+        if not isinstance(weights, (list, tuple)):
+            weights = [(weights, imgsz or cfg.get("view_imgsz", 640))]
+        self.models = [(YOLO(str(w)), int(z)) for w, z in weights]
+        self.cfg = cfg; self.device = device
         self.rows = []; self.win = deque(maxlen=cfg["new_win"] if cfg["rule"] == "new" else cfg["win"])
         self.decided = None
 
@@ -609,12 +629,14 @@ class FireJudge:
         crops = [bgr] + [bgr[y:y + h // 2, x:x + w // 2] for x, y in
                          ((0, 0), (w // 2, 0), (0, h // 2), (w // 2, h // 2), (w // 4, h // 4))]
         best = {"fire": 0.0, "smoke": 0.0}
-        for r in self.model.predict(crops, conf=0.05, imgsz=self.cfg.get("view_imgsz", 640),
-                                    verbose=False, device=self.device):
-            for b in r.boxes:
-                name = FIRE_NAMES.get(int(b.cls))
-                if name in best:
-                    best[name] = max(best[name], float(b.conf))
+        # 타일을 하나씩 넣는다. 배치로 넣으면 크기가 다른 타일이 공통 크기로 패딩돼
+        # 실효 배율이 달라지고, 덤프(score_kisa.py, 낱장)로 고른 규칙이 안 맞는다.
+        for model, z in self.models:
+            for c in crops:
+                for b in model.predict(c, conf=0.05, imgsz=z, verbose=False, device=self.device)[0].boxes:
+                    name = FIRE_NAMES.get(int(b.cls))
+                    if name in best:
+                        best[name] = max(best[name], float(b.conf))
         f, s = best["fire"], best["smoke"]
         self.rows.append((t, f, s))
         c = self.cfg
@@ -731,7 +753,7 @@ def process(item, src, out_dir, maps_dir=None, expect=None, gt_dir=None, device=
                 judge = FallJudge(WEIGHTS / cfg["model"], WEIGHTS / "fall_track.pt", cfg["th"], cfg["need"], device,
                                   cfg.get("pose_imgsz", 640))
             elif item == "fire":
-                judge = FireJudge(WEIGHTS / cfg["model"], cfg, device)
+                judge = FireJudge(fire_weights(cfg), cfg, device)
             elif item == "loitering":
                 tracker = BotSortPersons(WEIGHTS / cfg["model"], device=device,
                                          imgsz=cfg.get("track_imgsz", 640))   # 원본 93.1 덤프 = BoT-SORT 전체프레임
@@ -797,7 +819,9 @@ def cfg_line(item):
         parts += [f"해상도={c.get('pose_imgsz', 640)}", "판정=SeqNet",
                   f"임계={c['th']}", f"연속창={c['need']}"]
     elif item == "fire":
-        parts += [f"해상도={c.get('view_imgsz', 640)}", "뷰=6분할타일",
+        parts += [f"해상도={c.get('view_imgsz', 640)}"
+                  + (f"+{c.get('view_imgsz2')}(앙상블 {c['model2']})" if c.get("model2") else ""),
+                  "뷰=6분할타일",
                   f"규칙={c['rule']}", f"불={c['fire']}", f"연기={c['smoke']}",
                   f"창={c['win']}", f"히트={c['hits']}", f"지연={c['delay']}s"]
     return " ".join(parts)
@@ -888,7 +912,9 @@ def main():
     ap.add_argument("--device", default=None, help="cuda / cpu (기본 자동)")
     ap.add_argument("--scene-thresh", type=float, default=None)
     ap.add_argument("--fire-rule", choices=["combined", "new"], default=None, help="방화 규칙: combined(기본, 결합+타일가정 3/5) / new(fire_rule2 신규칙)")
-    ap.add_argument("--fire-weights", default=None, help="방화 .pt (기본 weights/kisa/fire_snowfull.pt)")
+    ap.add_argument("--fire-weights", default=None, help="방화 .pt (기본 weights/kisa/fire_fog.pt)")
+    ap.add_argument("--fire-weights2", default=None, help="방화 두 번째 .pt. 'none' 이면 앙상블을 끄고 한 벌로 돈다")
+    ap.add_argument("--fire-imgsz2", type=int, default=None, help="두 번째 .pt 의 추론 해상도(기본 960)")
     ap.add_argument("--person-weights", default=None, help="사람 .pt 덮어쓰기(침입·배회 공통). 학습 실험 채점용")
     ap.add_argument("--person-imgsz", type=int, default=None,
                     help="사람 추론 해상도 덮어쓰기(침입 타일·배회 전체프레임 공통). 학습 해상도와 맞춘다")
@@ -905,6 +931,10 @@ def main():
             ITEMS["fire"]["rule"] = a.fire_rule
         if a.fire_weights:
             ITEMS["fire"]["model"] = a.fire_weights        # 절대경로면 WEIGHTS / 경로 가 그대로 절대경로가 된다
+        if a.fire_weights2:
+            ITEMS["fire"]["model2"] = None if a.fire_weights2.lower() == "none" else a.fire_weights2
+        if a.fire_imgsz2:
+            ITEMS["fire"]["view_imgsz2"] = a.fire_imgsz2
         if a.fire_legacy:
             from tools import kisa as fire_tool
             if a.rtsp:
