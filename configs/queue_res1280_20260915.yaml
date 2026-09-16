@@ -61,3 +61,40 @@ experiments:
   - { name: p960_hand_s_20260915, model: yolo11s, item: 사람, names: [person],
       base: handset_person_20260915, extras: [], oversample: {},
       val_set: data/학습데이터/evalset_person/val.txt, train: { imgsz: 960, multi_scale: 0.333, batch: 88, epochs: 80, workers: 8 } }
+
+  # ---- 앙상블 두 벌의 데이터를 한 모델에 합친다 (2026-09-16) ----
+  # fire_fog(@640)  = base + snowfog + fasdd + wildfire_pos + wildfire_fog_neg + human_fire x5
+  # fire_small(@960)= base + snowfog + fasdd + wildfire_pos + azimjaan         + handset_fire_hn x4
+  # 데이터 차이는 사실상 wildfire_fog_neg(안개 네거티브) 하나다. azimjaan 은 기여 0 으로 확인돼 뺀다.
+  # 이 합집합을 960 에서 돌린 적이 없다. 되면 앙상블을 버리고 단일 모델로 갈 수 있다(취약성 해결).
+  - { name: f960_union_s_20260916, model: yolo11s, item: 방화, names: [fire, smoke],
+      base: aihub71751_48k,
+      extras: [fasdd_snowfog, fasdd_yolo, wildfire_pos_yolo, wildfire_fog_neg],
+      oversample: { handset_fire_hn_20260916: 4 },
+      val_set: data/학습데이터/evalset_fire/val.txt,
+      train: { imgsz: 960, multi_scale: 0.5, batch: 64, epochs: 60, cache: False, workers: 8 } }
+
+  # ---- 데이터 다이어트: 기여가 확인된 것만 남긴다 (2026-09-16) ----
+  # 지금 21.6만장 · 960 · 60에폭 = 약 15시간. 그중 기여가 확인된 것은 절반쯤이다.
+  #   빼는 것  azimjaan(1만, 기여 0) · fasdd_yolo(9.5만, 44%인데 기여 1편분) · 베이스 75%
+  #   남기는 것 wildfire_pos(+11.8 최대) · fasdd_snowfog(+8.1) · 안개 네거티브 · 손라벨HN
+  # 21.6만 -> 약 8만장. 되면 이후 모든 방화 학습이 3배 빨라진다.
+  # 주의: fasdd_yolo 를 뺀 조합은 한 번도 안 돌려봤다. 표의 +5.4 는 wildfire_pos 가 없던 시절 값이고
+  #       10편에서 1편 차이라 근거가 약하다. 그래서 확인이 필요하다.
+  - { name: f960_diet_s_20260916, model: yolo11s, item: 방화, names: [fire, smoke],
+      base: aihub71751_48k, base_frac: 0.25,
+      extras: [fasdd_snowfog, wildfire_pos_yolo, wildfire_fog_neg],
+      oversample: { handset_fire_hn_20260916: 4 },
+      val_set: data/학습데이터/evalset_fire/val.txt,
+      train: { imgsz: 960, multi_scale: 0.5, batch: 64, epochs: 60, cache: False, workers: 8 } }
+
+  # ---- COCO + 최신 손라벨 (2026-09-16). 지금 배포본(person_v3)의 합법적 대체재 ----
+  # person_v2/v3 는 학습 데이터의 57%가 의사라벨이고 그 데이터셋은 삭제됐다. 재현이 안 된다.
+  # 손라벨만(4,697장) 학습으로 야간 IR 편이 0.000 -> 0.915 가 됐다. 손라벨이 그 도메인을 푼다.
+  # 다만 원경 소형은 손라벨만으로 안 된다(화면 전체 최고 0.29~0.53). COCO 가 있어야 한다.
+  # 그래서 둘을 섞는다. 해상도는 침입 타일과 같은 960.
+  - { name: p960_coco_hand_20260916, model: yolo11s, item: 사람, names: [person],
+      base: trainset_person_20260915, extras: [],
+      oversample: { handset_person_20260916: 8 },
+      val_set: data/학습데이터/evalset_person/val.txt,
+      train: { imgsz: 960, multi_scale: 0.333, batch: 64, epochs: 60, cache: False, workers: 8 } }
