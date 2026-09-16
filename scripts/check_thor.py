@@ -19,7 +19,7 @@
 
     SRV_HOST  서버 ssh 이름 (기본 nhn-yolo)
     THOR_HOST Thor ssh 주소 (기본 mrod1@10.37.27.28)
-    둘 다 키 인증이 걸려 있어야 한다.
+    서버는 키 인증. Thor 는 키가 없으면 환경변수 MROD_PW 로 붙는다(비밀번호는 코드에 안 적는다).
 """
 import os
 import subprocess
@@ -43,15 +43,46 @@ PAIRS = [
 ]
 
 
-def md5_on(host, paths):
-    """그 장비에서 md5 를 받아 {경로: 해시} 로 돌려준다. 심링크는 따라간다."""
-    cmd = ["ssh", "-o", "BatchMode=yes", "-o", "ConnectTimeout=10", host,
-           "md5sum " + " ".join(f"'{p}'" for p in paths) + " 2>/dev/null"]
-    r = subprocess.run(cmd, capture_output=True, text=True, timeout=300)
+def _parse(text):
     out = {}
-    for ln in r.stdout.splitlines():
+    for ln in text.splitlines():
         h, _, p = ln.strip().partition("  ")
-        out[p.strip()] = h
+        if h and p:
+            out[p.strip()] = h
+    return out
+
+
+def md5_on(host, paths):
+    """그 장비에서 md5 를 받아 {경로: 해시} 로 돌려준다. 심링크는 따라간다.
+
+    키 인증이 없으면 MROD_PW 비밀번호로 한 번 더 시도한다(Thor 가 그렇다).
+    비밀번호는 코드에 적지 않는다. 환경변수로만 받는다.
+    """
+    line = "md5sum " + " ".join(f"'{p}'" for p in paths) + " 2>/dev/null"
+    cmd = ["ssh", "-o", "BatchMode=yes", "-o", "ConnectTimeout=10", host, line]
+    r = subprocess.run(cmd, capture_output=True, text=True, timeout=300)
+    out = _parse(r.stdout)
+    if out:
+        return out, r
+
+    pw = os.environ.get("MROD_PW")
+    if not pw:
+        return out, r
+    try:
+        import paramiko
+    except ImportError:
+        return out, r
+    user, _, addr = host.rpartition("@")
+    c = paramiko.SSHClient()
+    c.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+    try:
+        c.connect(addr, username=user or None, password=pw, timeout=20)
+        _, o, _e = c.exec_command(line, timeout=300)
+        out = _parse(o.read().decode("utf-8", "replace"))
+    except Exception as ex:                      # 붙지 못하면 원래 결과를 그대로 돌려준다
+        r.stderr = (r.stderr or "") + " / 비밀번호 접속도 실패: " + repr(ex)
+    finally:
+        c.close()
     return out, r
 
 
