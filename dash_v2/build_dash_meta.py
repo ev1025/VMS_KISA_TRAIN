@@ -182,6 +182,12 @@ def build_labelset():
     return rows
 
 def main():
+    # 재생바 곡선(_deploy.json)을 먼저 다시 만든다. 가중치를 바꾸고 이걸 안 돌리면
+    # 화면만 옛 모델 곡선을 그린다(2026-09-16 에 human_full 곡선을 그리고 있었다).
+    import sys
+    sys.path.insert(0, str(G / "scripts"))
+    import make_deploy_signal
+    make_deploy_signal.main()
     data = {"items": {}}
     # 예측 알람(sa)은 제출 도구의 규칙으로 서버에서 계산해 싣는다.
     # 화면이 따로 구현하면 상수가 낡아 정검/오검/미검이 실측과 달라진다(2026-09-16 에 네 항목 다 그랬다).
