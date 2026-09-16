@@ -71,8 +71,9 @@ def run_intrusion(rows, poly, conf, corners, hold, settle, gap):
     return j.final()
 
 
-def run_loiter(rows, poly, conf, corners, dwell, settle, gap, step=0.5, delay=10.0):
-    j = K.LoiterRule(poly, conf, corners, dwell, settle, gap, step)
+def run_loiter(rows, poly, conf, corners, dwell, settle, gap, step=0.5, delay=10.0,
+               maxgap=20.0, crowd=3, still_in=1.0):
+    j = K.LoiterRule(poly, conf, corners, dwell, settle, gap, step, maxgap, crowd, still_in)
     for r in rows:
         j.feed(r["t"], r["boxes"])
     o = j.final()
@@ -110,22 +111,28 @@ def main():
                 for s in (12.0, 18.0, 24.0, 30.0)
                 for g in (0, 2, 4, 6, 8)]
     else:
-        clips = load("loiter_trk_id", "배회", cfg0["zone"])
+        clips = load("loiter_botsort_v2", "배회", cfg0["zone"])
         fn = run_loiter
         now = dict(conf=cfg0["conf"], corners=cfg0["corners"], dwell=cfg0["dwell"],
-                   settle=cfg0["settle"], gap=cfg0["gap"], step=cfg0["stride"])
-        grid = [dict(conf=c, corners=cfg0["corners"], dwell=d, settle=s, gap=g, step=cfg0["stride"])
+                   settle=cfg0["settle"], gap=cfg0["gap"], step=cfg0["stride"],
+                   maxgap=cfg0["maxgap"], crowd=cfg0["crowd"], still_in=cfg0["still_in"])
+        # 새 축(2026-09-16): 늦게 도착한 일행을 받아들이는 조건. 자세한 근거는 kisa_items 의 주석.
+        grid = [dict(conf=c, corners=cfg0["corners"], dwell=d, settle=s, gap=g, step=cfg0["stride"],
+                     maxgap=mg, crowd=cw, still_in=si)
                 for c in (0.30, 0.40, 0.50)
-                for d in (3.0, 4.5, 6.0, 8.0, 10.0)
-                for s in (3.0, 5.0, 8.0, 12.0)
-                for g in (2, 4, 6, 8, 12)]
+                for d in (4.5, 6.0, 8.0)
+                for s in (3.0, 5.0, 8.0)
+                for g in (2, 6, 12)
+                for mg in (10.0, 20.0, 30.0)
+                for cw in (2, 3, 5)
+                for si in (1.0, 3.0)]
 
     print(f"{item} · {len(clips)}편 · 후보 {len(grid)}조합\n")
     f1, tp, fn_, fp, _ = score(clips, fn, now)
     print(f"지금 값 {now}")
     print(f"  -> {f1:.2f}  (정검 {tp} 미검 {fn_} 오검 {fp})")
     print("  ※ 이 값이 제출 경로 실측과 같아야 아래 스윕을 믿을 수 있다"
-          " (침입 94.74 · 배회 93.10)\n")
+          " (침입 94.74 · 배회 96.55)\n")
 
     res = sorted(((score(clips, fn, c)[0], c) for c in grid), key=lambda x: -x[0])
     top = res[0][0]

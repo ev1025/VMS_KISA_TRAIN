@@ -44,7 +44,11 @@ ITEMS = {
     # track_imgsz: 배포영상 1280x720 을 640 으로 줄여 통째로 넣고 있었다(타일 없음). 쓰러짐에서 같은 조건을
     # 960 으로 올리자 84.21→94.74 가 됐으므로 여기도 검증 대상. 기본은 기존 동작(640) 유지.
     "loitering": dict(desc="Loitering", model="person_v2.pt", zone="Loitering", stride=0.5, delay=10.0,
-                      conf=0.40, corners=0, dwell=6.0, settle=5.0, gap=6, track_imgsz=640),
+                      conf=0.40, corners=0, dwell=6.0, settle=5.0, gap=6, track_imgsz=640,
+                      # 늦게 온 일행 받기(2026-09-16): 20초 안 · 구역 인원 3명 이하 · 고른 사람 아직 구역 안 · 방금 도착
+                      # C00_211_0002(두 사람 13.5초 차) 를 살리면서 붐비는 편(039_0002)을 안 깨는 값.
+                      # 덤프 30편 재계산 93.10 -> 96.55(오검 0), LOOCV 89.66 -> 96.55.
+                      maxgap=20.0, crowd=3, still_in=1.0),
     # pose_imgsz: 배포영상이 1280x720 인데 640 으로 줄이면 먼 사람의 관절이 흔들려 트랙이 잘게 끊긴다.
     # 960 으로 올리자 분절이 크게 줄고(예: 41개→2개) 실패하던 편이 정검으로 바뀌었다(자체 10편 84.21→94.74).
     # th 0.269 -> 0.755 (2026-09-15). 0.269 는 확신 없는 초기 신호에도 터져 C00_235_0002 가 GT-3.5s 에 발화했다.
@@ -369,10 +373,16 @@ class IntrusionRule:
 class LoiterRule:
     """구역 발끝 체류 dwell 초(gap 프레임까지 끊김 허용) → 배회자. 마지막 배회자의 진입 시각(+delay 는 밖에서)."""
 
-    def __init__(self, poly, conf, corners, dwell, settle, gap, step):
+    def __init__(self, poly, conf, corners, dwell, settle, gap, step,
+                 maxgap=20.0, crowd=3, still_in=1.0):
         self.poly, self.conf, self.corners = poly, conf, corners
         self.dwell_s, self.settle, self.gap, self.step = dwell, settle, gap, step
+        # 늦게 도착한 일행을 받아들이는 조건(2026-09-16). 셋을 모두 만족할 때만 settle 을 넘겨 받는다.
+        self.maxgap, self.crowd, self.still_in = maxgap, crowd, still_in
         self.dwell, self.miss, self.entry, self.loit = {}, {}, {}, {}
+        self.first_in = {}      # 트랙 -> 구역에 처음 들어온 시각(진입시각은 끊기면 다시 잡힌다)
+        self.lastseen = {}      # 트랙 -> 마지막으로 구역 안에서 본 시각
+        self.cur = None         # 지금 고른 배회자 (확정시각, 트랙)
         self.latest = self.last_new = None
         self.settled = None
 
@@ -384,22 +394,45 @@ class LoiterRule:
             if conf < self.conf or not entered((x1, y1, x2, y2), self.poly, self.corners):
                 continue
             seen.add(pid)
+            self.lastseen[pid] = t
+            self.first_in.setdefault(pid, t)
             if not self.dwell.get(pid, 0) > 0:
                 self.entry[pid] = t
             self.dwell[pid] = self.dwell.get(pid, 0) + self.step
             self.miss[pid] = 0
             if self.dwell[pid] >= self.dwell_s and pid not in self.loit:
                 self.loit[pid] = self.entry[pid]
-                self.latest = self.entry[pid] if self.latest is None else max(self.latest, self.entry[pid])
-                self.last_new = t
+                if self.cur is None or self._take(t, pid, len(seen)):
+                    self.cur = (t, pid)
+                    self.latest = self.entry[pid] if self.latest is None else max(self.latest, self.entry[pid])
+                    self.last_new = t
         for pid in list(self.dwell):
             if pid not in seen:
                 self.miss[pid] = self.miss.get(pid, 0) + 1
                 if self.miss[pid] > self.gap:
                     self.dwell[pid] = 0
-        if self.latest is not None and t - self.last_new >= self.settle - T_EPS:
+        if self.latest is not None and t - self.last_new >= self.settle - T_EPS                 and not self._may_wait(t, len(seen)):
             self.settled = self.latest
         return self.settled
+
+    def _take(self, t, pid, n_in_zone):
+        """새로 생긴 배회자를 '마지막 사람' 으로 받아들일까."""
+        ct, cpid = self.cur
+        if t - ct <= self.settle:
+            return True                                   # 지금까지와 같다: 바로 이어지면 받는다
+        return (self.lastseen.get(cpid, -1e9) >= t - self.still_in  # 고른 사람이 아직 구역 안
+                and t - ct <= self.maxgap                          # 너무 늦지 않았다
+                and n_in_zone <= self.crowd                        # 한산하다
+                and abs(self.entry[pid] - self.first_in[pid]) <= self.step)   # 방금 도착했다
+
+    def _may_wait(self, t, n_in_zone):
+        """아직 늦은 일행이 올 수 있으면 확정을 미룬다."""
+        if self.cur is None:
+            return False
+        ct, cpid = self.cur
+        return (t - ct <= self.maxgap
+                and self.lastseen.get(cpid, -1e9) >= t - self.still_in
+                and n_in_zone <= self.crowd)
 
     def final(self):
         return self.settled if self.settled is not None else self.latest
@@ -652,7 +685,8 @@ def make_judge(item, cfg, stem, maps_dir, frame_wh, dets):
         return IntrusionRule(poly, cfg["conf"], cfg["corners"], cfg["hold"], cfg["settle"], cfg["gap"])
     if item == "loitering":
         poly = zone_of(maps_dir, stem, cfg["zone"], frame_wh)
-        return LoiterRule(poly, cfg["conf"], cfg["corners"], cfg["dwell"], cfg["settle"], cfg["gap"], cfg["stride"])
+        return LoiterRule(poly, cfg["conf"], cfg["corners"], cfg["dwell"], cfg["settle"], cfg["gap"], cfg["stride"],
+                          cfg.get("maxgap", 20.0), cfg.get("crowd", 3), cfg.get("still_in", 1.0))
     raise ValueError(item)
 
 
@@ -757,7 +791,8 @@ def cfg_line(item):
     elif item == "loitering":
         parts += [f"해상도={c.get('track_imgsz', 640)}", "추적=BoT-SORT",
                   f"conf={c['conf']}", f"체류={c['dwell']}s", f"끊김허용={c['gap']}",
-                  f"확정대기={c['settle']}s", f"지연={c['delay']}s"]
+                  f"확정대기={c['settle']}s", f"늦은일행={c.get('maxgap')}s/{c.get('crowd')}명",
+                  f"지연={c['delay']}s"]
     elif item == "falldown":
         parts += [f"해상도={c.get('pose_imgsz', 640)}", "판정=SeqNet",
                   f"임계={c['th']}", f"연속창={c['need']}"]

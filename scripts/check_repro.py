@@ -33,7 +33,7 @@ BASE = json.loads((V / "results/BASELINE.json").read_text(encoding="utf-8"))
 # 항목 -> (덤프 후보들, 영상 폴더 이름, kisa_items 의 항목 키)
 DUMPS = {
     "침입": (["intrusion_tile_v3", "intrusion_tile_v2", "intrusion_tile"], "침입", "intrusion"),
-    "배회": (["loiter_trk_id"], "배회", "loitering"),
+    "배회": (["loiter_botsort_v2", "loiter_trk_id"], "배회", "loitering"),
 }
 
 
@@ -55,14 +55,10 @@ def replay(dump_dir, item, key):
         gt = gt_of(p.stem, item)
         if gt is None:
             continue
-        poly = K.zone_of(KP.ZONE_MAPS, p.stem, cfg["zone"])
-        if key == "intrusion":
-            j = K.IntrusionRule(poly, cfg["conf"], cfg["corners"], cfg["hold"], cfg["settle"], cfg["gap"])
-            delay = 0.0
-        else:
-            j = K.LoiterRule(poly, cfg["conf"], cfg["corners"], cfg["dwell"],
-                             cfg["settle"], cfg["gap"], cfg["stride"])
-            delay = cfg["delay"]
+        # 판정기는 제출 경로와 똑같이 make_judge 로 만든다.
+        # 예전에는 여기서 직접 만들었는데, 규칙에 인자가 늘면 여기만 빠져도 기본값으로 조용히 통과했다.
+        j = K.make_judge(key, cfg, p.stem, KP.ZONE_MAPS, None, None)
+        delay = 0.0 if key == "intrusion" else cfg["delay"]
         for ln in p.read_text().splitlines():
             r = json.loads(ln)
             j.feed(r["t"], r["boxes"])
