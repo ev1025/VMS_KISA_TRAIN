@@ -56,6 +56,8 @@
 | :--- | :--- |
 | `.venv/bin/python scripts/check_layout.py --all` | 파일 자리가 `docs/file_path.md` 2절과 맞는가 (루트 진입점, `results/`·`runs/`·`logs/queue/` 구성, `_kisa_port/` 제출 도구 경계, `data/` 하위 폴더) |
 | `.venv/bin/python scripts/check_models.py` | `_kisa_port/weights/kisa/*.pt` 가 전부 `results/MODELS.json` 에 기록돼 있는가 |
+| `python scripts/check_thor.py` | Thor 배포본이 서버와 같은 규칙·가중치인가 (작업 PC 에서 실행) |
+| `.venv/bin/python scripts/check_repro.py` | 오프라인 재현이 `results/BASELINE.json` 의 실측과 맞는가 |
 
 실험 큐(`scripts/exp_queue.py`)가 만드는 자리는 다음 네 곳으로 고정돼 있습니다.
 
@@ -85,3 +87,6 @@
 - 고른 규칙은 **LOOCV 나 다른 모델 덤프**로 다시 잽니다. 같은 채점셋으로 고르고 그것으로 보고하면 낙관이 섞입니다.
 - `rc=-9` 는 SIGKILL 이라 **GPU 부족이 아닙니다**(GPU 가 모자라면 파이썬 예외가 납니다).
   죽은 학습의 데이터로더 워커가 고아로 남아 RAM·공유메모리·GPU 를 쥐고 있는지부터 봅니다.
+
+**갈라짐이 오늘 세 번 나왔습니다.** 서버와 Thor, 제출 도구와 재구현, 라이브와 덤프. 전부 복사본이 원인입니다.
+코드를 복사하지 말고 `_kisa_port/tools/kisa_items.py` 에서 가져다 쓰세요. 점수는 `results/BASELINE.json` 한 곳만 믿습니다.
