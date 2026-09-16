@@ -141,7 +141,9 @@ function renderCenter(row) {
   v.addEventListener("ratechange", () => { if (Math.abs(v.playbackRate - wantRate) > 0.01) v.playbackRate = wantRate; });
   v.addEventListener("play", () => { v.playbackRate = wantRate; });
   ctrl.appendChild(rate);
-  ctrl.appendChild(boxPicker(row, () => drawZone(zoneov, row, v.currentTime)));   // 모델 예측 박스
+  // 모델을 바꾸면 박스와 재생바 곡선을 같이 다시 그린다(곡선도 그 모델 덤프에서 나온다)
+  const redrawAll = () => { drawZone(zoneov, row, v.currentTime); drawBar(bar, row, gt, sa, total || v.duration, v.currentTime); };
+  ctrl.appendChild(boxPicker(row, redrawAll));   // 모델 예측 박스
   c.appendChild(ctrl);
 
   const tl = el("div", "tl");
@@ -150,8 +152,8 @@ function renderCenter(row) {
   leg.innerHTML = row.signal_type === "raw"
     ? '<span><i style="background:#3fb95055"></i>정답 유효창</span>'
     : row.signal_type === "fire_smoke"
-    ? '<span><i style="background:var(--fire)"></i>불</span><span><i style="background:var(--smoke)"></i>연기</span><span><i style="background:#3fb95055"></i>GT 유효창</span><span><i style="background:var(--fire)"></i>예측알람</span>'
-    : '<span><i style="background:var(--blue)"></i>신호</span><span><i style="background:#3fb95055"></i>GT 유효창</span><span><i style="background:var(--fire)"></i>예측알람</span>';
+    ? '<span><i style="background:var(--fire)"></i>불</span><span><i style="background:var(--smoke)"></i>연기</span><span><i style="background:#3fb95055"></i>GT 유효창</span><span><i style="background:#e3b341"></i>예측알람</span>'
+    : '<span><i style="background:var(--blue)"></i>신호</span><span><i style="background:#3fb95055"></i>GT 유효창</span><span><i style="background:#e3b341"></i>예측알람</span>';
   tl.appendChild(leg); c.appendChild(tl);
   // 정답/예측/판정/시간대/날씨는 우측 정보창(renderRight)에 있으므로 중앙 하단 중복 표시는 제거
 
@@ -160,6 +162,16 @@ function renderCenter(row) {
   v.ontimeupdate = () => { now.textContent = fmt(v.currentTime); drawBar(bar, row, gt, sa, total || v.duration, v.currentTime); drawZone(zoneov, row, v.currentTime); };
   bar.onclick = e => { const r = bar.getBoundingClientRect(); const t = (e.clientX - r.left) / r.width * (total || v.duration || 1); if (v.duration) v.currentTime = t; };
   drawBar(bar, row, gt, sa, total, 0);
+}
+// 고른 모델의 박스 덤프에서 곡선을 만든다. 표본마다 클래스별 최고 신뢰도.
+// 박스와 같은 자료를 쓰므로 그림과 곡선이 어긋날 수 없다.
+function signalFromTracks(tracks) {
+  if (!tracks || !tracks.length) return null;
+  return tracks.map(r => {
+    let f = 0, sm = 0;
+    for (const b of (r.boxes || [])) { if (b[0]) { if (b[1] > sm) sm = b[1]; } else if (b[1] > f) f = b[1]; }
+    return [r.t, f, sm];
+  });
 }
 function drawBar(bar, row, gt, sa, total, cur) {
   total = total || estDur(row) || 300;
@@ -185,10 +197,13 @@ function drawBar(bar, row, gt, sa, total, cur) {
     });
     return d ? `<path d="${d}" fill="none" stroke="${color}" stroke-width="1.4"/>` : "";
   };
-  if (row.signal_type === "fire_smoke") { s += plot(row.signal, 1, "#f85149"); s += plot(row.signal, 2, "#a371f7"); }
+  // 모델을 고르면 그 모델 곡선, 안 골랐으면 배포 구성 곡선
+  const sig = signalFromTracks(row.tracks) || row.signal;
+  if (row.signal_type === "fire_smoke") { s += plot(sig, 1, "#f85149"); s += plot(sig, 2, "#a371f7"); }
   else if (row.signal_type === "fall") { (row.curves || []).forEach(c => s += plot(c, 1, "#58a6ff99")); }
-  else { s += plot(row.signal, 1, "#58a6ff"); }
-  if (sa != null) s += `<line x1="${px(sa)}" y1="0" x2="${px(sa)}" y2="${H}" stroke="#f85149" stroke-width="2" stroke-dasharray="4 3"/>`;
+  else { s += plot(sig, 1, "#58a6ff"); }
+  // 예측알람은 노랑. 불 곡선(빨강)과 같은 색이면 어느 쪽인지 헷갈린다.
+  if (sa != null) s += `<line x1="${px(sa)}" y1="0" x2="${px(sa)}" y2="${H}" stroke="#e3b341" stroke-width="2" stroke-dasharray="4 3"/>`;
   if (cur) s += `<line x1="${px(cur)}" y1="0" x2="${px(cur)}" y2="${H}" stroke="#58a6ff" stroke-width="1.5"/>`;
   s += "</svg>";
   bar.innerHTML = s;
@@ -201,10 +216,25 @@ function iouBox(a, b) {
   return inter / (A + B - inter + 1e-6);
 }
 // 타일 추론이 같은 대상을 풀프레임+타일에서 여러 번 잡아 박스가 겹쳐 보이는 것 제거.
-function nmsBoxes(boxes, iouTh) {
+// 제출 도구(_kisa_port/tools/kisa_items.py 의 nms)와 같은 규칙을 쓴다.
+//   겹침(IoU >= iouTh) 이거나 작은 박스가 큰 박스 안에 containTh 이상 들어가면 지운다.
+//   타일 경계에 걸려 잘린 박스는 IoU 가 낮아 겹침만으로는 안 지워진다. 그래서 포함도 같이 본다.
+// 클래스가 다르면 지우지 않는다(불 위의 연기는 둘 다 보여야 한다).
+function containedIn(a, b) {          // a 가 b 안에 얼마나 들어가 있나 (a 기준 넓이 비율)
+  const ix = Math.max(0, Math.min(a[4], b[4]) - Math.max(a[2], b[2]));
+  const iy = Math.max(0, Math.min(a[5], b[5]) - Math.max(a[3], b[3]));
+  const A = (a[4] - a[2]) * (a[5] - a[3]);
+  return A > 0 ? (ix * iy) / A : 0;
+}
+function nmsBoxes(boxes, iouTh, containTh) {
+  const ct = containTh == null ? 0.75 : containTh;
   const keep = [];
   for (const b of boxes.slice().sort((p, q) => q[1] - p[1])) {
-    if (!keep.some(k => iouBox(b, k) > iouTh)) keep.push(b);
+    // 포함은 양쪽으로 본다. 연기는 같은 기둥을 작게도 크게도 잡아서
+    // '새 박스가 남은 박스 안' 만 보면 큰 박스가 살아남아 겹겹이 쌓인다(t=252 에서 5개 -> 2개 -> 1개).
+    const dup = keep.some(k => k[0] === b[0] &&
+      (iouBox(b, k) >= iouTh || containedIn(b, k) >= ct || containedIn(k, b) >= ct));
+    if (!dup) keep.push(b);
   }
   return keep;
 }
@@ -212,6 +242,7 @@ function nmsBoxes(boxes, iouTh) {
 // 학습한 실험을 고르면 그 모델이 이 클립에서 낸 박스를 영상 위에 겹쳐 본다.
 // 덤프가 없으면 서버가 그 자리에서 추론해 만든다(0.5초 간격·타일, 채점과 같은 조건).
 let BOXEXP = { fire: "", person: "" };   // 고른 실험을 갈래별로 따로 기억한다
+let BOXCONF = 0.25;                      // 이 신뢰도 아래는 안 그린다(화면에서 조절한다)
 let BOXMODELS = null;     // 모델 목록은 한 번만 받는다
 function boxModels() {
   if (!BOXMODELS) BOXMODELS = fetch("/api/boxmodels").then(r => r.json()).catch(() => []);
@@ -231,7 +262,22 @@ function boxPicker(row, redraw) {
   sel.innerHTML = '<option value="">예측 박스 없음</option>';
   const note = el("span", "", "");
   note.style.cssText = "font-size:11px;color:var(--mut);white-space:nowrap";
-  wrap.appendChild(sel); wrap.appendChild(note);
+
+  // 신뢰도 문턱. 박스가 너무 많다/적다는 이 값 하나로 갈린다.
+  const conf = el("input");
+  conf.type = "range"; conf.min = "0.10"; conf.max = "0.90"; conf.step = "0.05";
+  conf.value = String(BOXCONF);
+  conf.title = "신뢰도 문턱";
+  conf.style.cssText = "width:90px;accent-color:var(--acc)";
+  const confTx = el("span", "", "conf " + BOXCONF.toFixed(2));
+  confTx.style.cssText = "font-size:11px;color:var(--mut);white-space:nowrap;min-width:62px";
+  conf.oninput = () => {
+    BOXCONF = parseFloat(conf.value);
+    confTx.textContent = "conf " + BOXCONF.toFixed(2);
+    redraw();
+  };
+
+  wrap.appendChild(sel); wrap.appendChild(conf); wrap.appendChild(confTx); wrap.appendChild(note);
 
   let timer = null;
   const stop = () => { if (timer) { clearTimeout(timer); timer = null; } };
@@ -251,16 +297,24 @@ function boxPicker(row, redraw) {
     }
     if (String(r.state).startsWith("err")) { note.textContent = "실패: " + String(r.state).slice(4, 60); return; }
     if (r.state === "none") {
-      note.textContent = "추론 중…";
+      note.textContent = "추론 시작…";
       await fetch(`/api/boxdump_start?exp=${encodeURIComponent(exp)}&clip=${encodeURIComponent(clip)}`).catch(() => {});
-    } else note.textContent = "추론 중…";
+    } else {
+      // 도는 중이어도 지금까지 나온 박스는 그린다(사건 구간부터 훑으므로 초반에 이미 쓸 만하다)
+      if (r.rows && r.rows.length) { row.tracks = r.rows; redraw(); }
+      const nb = (r.rows || []).reduce((a, x) => a + (x.boxes || []).length, 0);
+      note.textContent = `추론 중… ${r.pct != null ? r.pct + "%" : ""}`
+        + (r.rows && r.rows.length ? ` (표본 ${r.rows.length} · 박스 ${nb})` : "");
+    }
     timer = setTimeout(() => load(exp), 3000);           // 다 될 때까지 3초마다 확인
   }
 
   boxModels().then(all => {
     const list = (all || []).filter(m => m.kind === kind);   // 이 클립과 같은 갈래만
     list.forEach(m => {
-      const o = el("option", "", `${m.exp}${m.map50 != null ? ` · mAP ${m.map50.toFixed(3)}` : ""}`);
+      // mAP 가 아니라 실제 KISA 점수를 보여준다(순위도 그것으로 매겨져 있다)
+      const tag = m.deploy ? ` · ${m.deploy}` : (m.why ? ` · ${m.why}` : "");
+      const o = el("option", "", `${m.exp}${tag}`);
       o.value = m.exp; sel.appendChild(o);
     });
     if (!list.length) { note.textContent = kind === "fire" ? "불 학습 모델 없음" : "사람 학습 모델 없음"; return; }
@@ -281,7 +335,7 @@ function drawZone(ov, row, t) {
     for (const r of row.tracks) { const d = Math.abs(r.t - t); if (d < best) { best = d; near = r; } }
     if (near && best < 1) {
       const fire = row.signal_type === "fire_smoke";   // 방화면 클래스별 색(불=빨강, 연기=보라)
-      for (const b of nmsBoxes(near.boxes.filter(x => x[1] >= 0.25), 0.5)) {
+      for (const b of nmsBoxes(near.boxes.filter(x => x[1] >= BOXCONF), 0.5, 0.75)) {
         const col = fire ? (b[0] ? "#a371f7" : "#f85149") : "#f85149";
         s += `<rect x="${b[2]}" y="${b[3]}" width="${b[4] - b[2]}" height="${b[5] - b[3]}" fill="none" stroke="${col}" stroke-width="2"/>`;
       }
@@ -322,6 +376,16 @@ function renderLabels(r, row) {
   if (!mine.length) return;   // 손라벨(사람이 그린 정답)이 없으면 섹션 자체를 숨김 — 배포 영상은 원래 없음
   r.appendChild(el("div", "rtitle", `손라벨(사람 정답) <span class="tag">${mine.length}박스</span>`));
   const frames = [...new Set(mine.map(l => l.file))];
+  // 그림은 미리 뽑아 둔 PNG 가 아니라 영상에서 그때 뽑는다(그 폴더는 만든 적이 없다).
+  // 손라벨 행에 src(영상 상대경로)와 t(초)가 들어 있다.
+  const srcOfFile = {};
+  mine.forEach(l => { if (l.src && !srcOfFile[l.file]) srcOfFile[l.file] = l; });
+  const frameUrl = (file, w) => {
+    const l = srcOfFile[file];
+    if (!l) return "/frame/" + encodeURIComponent(file);       // 옛 자료(src 없는 행) 대비
+    const clip = String(l.src).replace(/\.mp4$/i, "");
+    return "/frameat?clip=" + encodeURIComponent(clip) + "&t=" + l.t + (w ? "&w=" + w : "");
+  };
   const wrap = el("div", "lblframe");
   const img = el("img"); const ov = el("div"); ov.style.cssText = "position:absolute;inset:0";
   wrap.appendChild(img); wrap.appendChild(ov); r.appendChild(wrap);
@@ -335,12 +399,13 @@ function renderLabels(r, row) {
     s += "</svg>"; ov.innerHTML = s;
   };
   img.onload = () => draw(img.dataset.file);
-  img.dataset.file = frames[0]; img.src = "/frame/" + encodeURIComponent(frames[0]);
+  img.dataset.file = frames[0]; img.src = frameUrl(frames[0]);
   if (frames.length > 1) {
     const th = el("div", "thumbs");
     frames.slice(0, 12).forEach((f, i) => {
-      const tw = el("div", "tw" + (i === 0 ? " on" : "")); const ti = el("img"); ti.src = "/frame/" + encodeURIComponent(f); tw.appendChild(ti);
-      tw.onclick = () => { img.dataset.file = f; img.src = "/frame/" + encodeURIComponent(f); th.querySelectorAll(".tw").forEach(z => z.classList.remove("on")); tw.classList.add("on"); };
+      const tw = el("div", "tw" + (i === 0 ? " on" : "")); const ti = el("img");
+      ti.loading = "lazy"; ti.src = frameUrl(f, 180); tw.appendChild(ti);
+      tw.onclick = () => { img.dataset.file = f; img.src = frameUrl(f); th.querySelectorAll(".tw").forEach(z => z.classList.remove("on")); tw.classList.add("on"); };
       th.appendChild(tw);
     });
     r.appendChild(th);

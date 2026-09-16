@@ -15,7 +15,9 @@ MAPS = G/"data/원본데이터/kisa_배포_검증영상/zone_maps"
 BEFORE, AFTER, DELAY = 2.0, 10.0, 10.0
 
 ITEMS = {
-    "방화": {"key": "fire", "dir_kw": "방화", "signal": G/"dumps/score_tl/human_full.json"},
+    # 재생바 곡선. 배포 구성(앙상블)의 신호를 쓴다 - scripts/make_deploy_signal.py 가 만든다.
+    # 여기를 옛 실험으로 두면 화면이 판정 근거와 다른 모델을 보여 준다(2026-09-16 에 human_full 이 그랬다).
+    "방화": {"key": "fire", "dir_kw": "방화", "signal": G/"dumps/score_tl/_deploy.json"},
     "침입": {"key": "intrusion", "dir_kw": "침입", "dump": G/"dumps/intrusion_tile_v3", "zone": ["Intrusion"]},
     "배회": {"key": "loiter", "dir_kw": "배회", "dump": G/"dumps/loiter_botsort_v2", "zone": ["Loitering", "Intrusion"]},
     "쓰러짐": {"key": "fall", "dir_kw": "쓰러짐", "logits": G/"runs/fall_track/deploy_track_logits.npz"},

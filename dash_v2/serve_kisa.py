@@ -344,6 +344,7 @@ def json_spans(clip, fps=30.0):
 # ---------- 실험별 박스 덤프(영상 검수에서 모델 예측 박스를 영상 위에 겹쳐 보기) ----------
 _BOXJOBS = {}                      # (실험, 클립) → "run" | "done" | "err:사유"
 _BOXDIR = G / "dumps/fire_box"     # <실험>/<클립>.jsonl
+BOX_TOP = 10                      # 검수 탭 모델 목록에 올릴 개수(갈래별). 순위는 scripts/model_rank.py
 
 
 def box_models():
@@ -386,18 +387,37 @@ def box_models():
         out.append({"exp": exp, "model": m.get("model"), "item": item,
                     "kind": "fire" if item == "방화" else "person",
                     "map50": em.get("map50"), "f1": f1})
-    out.sort(key=lambda d: (d["map50"] is None, -(d["map50"] or 0)))
-    return out
+    # 순위는 scripts/model_rank.py 한 곳에서만 정한다(백필 순서와 화면 순서가 갈라지지 않게).
+    try:
+        import sys as _sys
+        if str(G / "scripts") not in _sys.path:
+            _sys.path.insert(0, str(G / "scripts"))
+        from model_rank import rank as _rank, DEPLOY as _DEPLOY
+        order, why = {}, {}
+        for i, (exp_, kind_, key_, why_) in enumerate(_rank()):
+            order[exp_] = i
+            why[exp_] = why_
+        for d in out:
+            d["why"] = why.get(d["exp"])
+            d["deploy"] = _DEPLOY.get(d["exp"])
+        out.sort(key=lambda d: order.get(d["exp"], 10 ** 6))
+    except Exception:                    # 순위를 못 구하면 예전처럼 mAP 순
+        out.sort(key=lambda d: (d["map50"] is None, -(d["map50"] or 0)))
+
+    top, seen = [], {}
+    for d in out:                        # 갈래별 상위 BOX_TOP 개만. 목록이 길면 고르기만 어렵다
+        k = d["kind"]
+        seen[k] = seen.get(k, 0) + 1
+        if seen[k] <= BOX_TOP:
+            top.append(d)
+    return top
 
 
 def box_dump_path(exp, clip):
     return _BOXDIR / exp / (clip + ".jsonl")
 
 
-def box_dump_read(exp, clip):
-    f = box_dump_path(exp, clip)
-    if not f.is_file():
-        return None
+def _read_jsonl(f):
     rows = []
     for ln in f.read_text(encoding="utf-8").splitlines():
         ln = ln.strip()
@@ -408,6 +428,29 @@ def box_dump_read(exp, clip):
         except Exception:
             pass
     return rows
+
+
+def box_dump_read(exp, clip):
+    f = box_dump_path(exp, clip)
+    return _read_jsonl(f) if f.is_file() else None
+
+
+def box_dump_partial(exp, clip):
+    """아직 도는 중인 덤프의 '지금까지' 와 진행률. 다 되기를 기다리지 않고 보여 주려는 것이다.
+    exp_boxdump.py 가 사건 구간부터 훑으므로 초반 결과만으로도 검수가 된다."""
+    d = box_dump_path(exp, clip).parent
+    part = d / (clip + ".jsonl.part")
+    prog = d / (clip + ".progress")
+    rows = _read_jsonl(part) if part.is_file() else None
+    pct = None
+    if prog.is_file():
+        try:
+            p = json.loads(prog.read_text(encoding="utf-8"))
+            if p.get("total"):
+                pct = round(100.0 * p.get("done", 0) / p["total"])
+        except Exception:
+            pass
+    return rows, pct
 
 
 def box_dump_start(exp, clip):
@@ -909,6 +952,12 @@ def sam2_propagate_objs(clip, seeds, back=5.0, fwd=10.0, step=0.5, progress=None
                     if k + 1 < len(sds) and idxs[k + 1] == i0:    # 같은 프레임에 참조가 둘이면 뒤 것만
                         continue
                     run_segment({oid: sd}, i0, max(i0, i1), i0, profs, False)
+    # 모델이 한 번 어긋나면 이후 전파가 조용히 전부 "대상 없음"이 된다(2026-09-16 Thor 실측: 128프레임 중 126 lost).
+    # 코드·입력이 같아도 같은 프로세스에서 계속 재현되고, 새로 올리면 정상으로 돌아온다 → 비워서 다음 작업이 다시 올리게 한다.
+    n_lost, n_keep = drops["lost"], len(out)
+    if n_lost >= 20 and n_lost >= 9 * max(1, n_keep):
+        _SAM2V = None
+        return out, polys, round(time.time() - tic, 1), "전파가 거의 전부 실패했습니다. 모델을 다시 올렸으니 한 번 더 눌러 주세요"
     return out, polys, round(time.time() - tic, 1), None
 
 
@@ -1592,7 +1641,14 @@ class H(BaseHTTPRequestHandler):
                 self._bytes(json.dumps({"state": "done", "rows": rows}).encode(),
                             "application/json; charset=utf-8"); return
             st = _BOXJOBS.get((exp, clip), "none")
-            self._bytes(json.dumps({"state": st}, ensure_ascii=False).encode(),
+            body = {"state": st}
+            if st == "run":                      # 도는 중이면 지금까지 나온 것과 진행률을 같이 준다
+                prows, pct = box_dump_partial(exp, clip)
+                if prows:
+                    body["rows"] = prows
+                if pct is not None:
+                    body["pct"] = pct
+            self._bytes(json.dumps(body, ensure_ascii=False).encode(),
                         "application/json; charset=utf-8"); return
         if p == "/api/boxdump_start":       # 덤프 생성 시작(백그라운드 추론)
             q = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)

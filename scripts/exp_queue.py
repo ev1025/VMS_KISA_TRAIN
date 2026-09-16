@@ -296,6 +296,18 @@ def score_person(exp, pt, rdir, imgsz=KP.DEFAULT_IMGSZ):
     return "\n".join(lines)
 
 
+def boxdump_later(name):
+    """검수 탭에서 볼 예측 박스를 미리 만들어 둔다. 큐를 막지 않게 떼어 돌린다.
+    이미 있는 편은 건너뛰므로 두 번 불려도 손해가 없다."""
+    try:
+        subprocess.Popen([str(PY), str(V / "scripts/boxdump_backfill.py"), "--only", name],
+                         cwd=V, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                         start_new_session=True)
+        print(f"  [검수] {name} 박스 덤프를 뒤에서 만든다", flush=True)
+    except Exception as e:
+        print(f"  [검수] 박스 덤프 시작 실패: {e!r}", flush=True)
+
+
 def score(exp, pt, defaults=None):
     item = exp.get("item", "방화")
     imgsz = int(exp.get("train", {}).get("imgsz", (defaults or {}).get("train", {}).get("imgsz", KP.DEFAULT_IMGSZ)))
@@ -305,6 +317,7 @@ def score(exp, pt, defaults=None):
     if item in ("사람",) + KP.PERSON_ITEMS:                      # 사람 검출 모델 = 침입·배회 F1 을 잰다
         out = score_person(exp, pt, rdir, imgsz)
         (rdir / "score.txt").write_text(f"=== {exp['name']} 사람 항목 ===\n" + out + "\n")
+        boxdump_later(exp["name"])      # 검수 탭에서 볼 박스를 미리 만들어 둔다
         return out
     if vids is None:
         (rdir / "score.txt").write_text(f"=== {exp['name']} ===\n(항목 {item} 채점기 미연결)\n")
@@ -313,6 +326,7 @@ def score(exp, pt, defaults=None):
            "--stride", str(KP.SAMPLE_STRIDE_S), "--imgsz", str(imgsz), "--tiles", "--tag", exp["name"]]
     out = subprocess.run(cmd, capture_output=True, text=True, cwd=V).stdout
     (rdir / "score.txt").write_text(f"=== {exp['name']} 타일 ===\n" + out)
+    boxdump_later(exp["name"])      # 검수 탭에서 볼 박스를 미리 만들어 둔다
     return out
 
 
