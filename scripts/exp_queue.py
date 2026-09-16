@@ -269,13 +269,28 @@ def eval_map(exp, pt, defaults=None):
 KISA_ITEMS = V / "_kisa_port/tools/kisa_items.py"
 
 
+def deploy_person_imgsz(item):
+    """배포가 그 항목에서 실제로 쓰는 사람 추론 해상도. 손으로 적지 않고 제출 도구에서 읽는다."""
+    sys.path.insert(0, str(V / "_kisa_port/tools"))
+    import kisa_items as KI
+    if item == "침입":
+        return int(KI.TILE["imgsz"])
+    return int(KI.ITEMS["loitering"].get("track_imgsz", 640))
+
+
 def score_person(exp, pt, rdir, imgsz=KP.DEFAULT_IMGSZ):
     """사람 검출 모델 실험의 F1.
 
-    실제 시험에 쓰는 채점기(kisa_items.py)를 그대로 돌린다. 3x3@960 타일 + 자체 트래커 +
+    실제 시험에 쓰는 채점기(kisa_items.py)를 그대로 돌린다. 3x3 타일 + 자체 트래커 +
     '다수면 마지막 사람' 규칙까지 같은 경로라, 여기서 나온 점수가 곧 인증 점수 예측치다.
-    (단순판 sa_runner 로 재면 같은 모델이 45 점대로 나와 실측 94.74 와 비교가 안 된다.)
     쓰러짐은 자세 모델을 써서 사람 검출 모델을 바꿔도 달라지지 않으므로 뺀다.
+
+    해상도를 항목마다 따로 준다 (2026-09-16)
+        배포는 침입 타일 960, 배회 전체프레임 640 으로 서로 다르다. 그런데 예전에는
+        --person-imgsz 하나로 둘 다 덮어써서 학습 해상도 960 인 모델은 배회도 960 으로 쟀다.
+        person_v2 를 960 으로 재면 93.10 이 79.31 로 떨어진다. 배율이 안 맞아서지 모델이 나빠서가 아니다.
+        그래서 학습 해상도와 배포 해상도가 다르면 둘 다 재서 나란히 적는다.
+        항목마다 kisa_items.py 를 따로 부르므로 제출 파일은 손대지 않아도 된다.
     """
     import tempfile
     lines = []
@@ -284,16 +299,25 @@ def score_person(exp, pt, rdir, imgsz=KP.DEFAULT_IMGSZ):
         vids = KP.videos(item)
         if not vids.is_dir():
             lines.append(f"({item} 영상 폴더 없음)"); continue
-        with tempfile.TemporaryDirectory() as td:
-            r = subprocess.run([str(PY), str(KISA_ITEMS), "--item", kitem,
-                                "--videos", str(vids), "--gt", str(vids), "--maps", str(KP.ZONE_MAPS),
-                                "--out", str(Path(td) / "sa"), "--person-weights", str(pt),
-                                "--person-imgsz", str(imgsz)],
-                               capture_output=True, text=True, cwd=V, timeout=14400)
-            hit = [ln.strip() for ln in (r.stdout or "").splitlines() if ln.strip().startswith(f"[{kitem}]")]
-            lines.append(hit[-1] if hit else f"({item} 채점 실패) " + ((r.stderr or "")[-200:]))
-        log(f"{exp['name']} {item} 채점: {lines[-1]}")
-    return "\n".join(lines)
+        try:
+            dep = deploy_person_imgsz(item)
+        except Exception as e:
+            log(f"  [경고] {item} 배포 해상도를 못 읽었다({e!r}). 학습 해상도만 잰다")
+            dep = imgsz
+        sizes = [imgsz] + ([dep] if dep != imgsz else [])
+        for z in sizes:
+            tag = "학습=배포" if len(sizes) == 1 else ("학습" if z == imgsz else "배포")
+            with tempfile.TemporaryDirectory() as td:
+                r = subprocess.run([str(PY), str(KISA_ITEMS), "--item", kitem,
+                                    "--videos", str(vids), "--gt", str(vids), "--maps", str(KP.ZONE_MAPS),
+                                    "--out", str(Path(td) / "sa"), "--person-weights", str(pt),
+                                    "--person-imgsz", str(z)],
+                                   capture_output=True, text=True, cwd=V, timeout=14400)
+                hit = [ln.strip() for ln in (r.stdout or "").splitlines() if ln.strip().startswith(f"[{kitem}]")]
+                got = hit[-1] if hit else "(채점 실패) " + ((r.stderr or "")[-200:])
+            lines.append(f"{item} {tag}해상도 {z}: {got}")
+            log(exp["name"] + " " + lines[-1])
+    return chr(10).join(lines)
 
 
 def boxdump_later(name):

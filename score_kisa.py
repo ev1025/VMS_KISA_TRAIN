@@ -17,6 +17,30 @@ from ultralytics import YOLO, RTDETR
 DELAY, BEFORE, AFTER, DESC = 10.0, 2.0, 10.0, "FireDetection"
 NAMES = {0: "fire", 1: "smoke"}
 
+# 배포 규칙은 손으로 옮겨 적지 않는다. 제출 도구에서 읽는다.
+# 2026-09-16: 여기 운영 규칙이 09-15 판 그대로 남아 있어, 실제 배포가 불 0.40 창 20 3회로
+#   바뀐 뒤에도 옛 규칙 점수를 운영이라고 찍고 있었다.
+sys.path.insert(0, str(Path(__file__).resolve().parent / "_kisa_port/tools"))
+try:
+    from kisa_items import ITEMS as _ITEMS
+    _FIRE = _ITEMS["fire"]
+    DELAY = float(_FIRE.get("delay", DELAY))
+except Exception as _e:                  # 못 읽으면 조용히 옛 값으로 가지 않는다. 눈에 띄게 알린다
+    _FIRE = None
+    print(f"[경고] 제출 도구 규칙을 못 읽었다({_e!r}). 배포 줄이 빠진다.", flush=True)
+
+
+def deploy_rule():
+    """지금 배포되는 방화 규칙 하나를 (이름, 설정) 으로 돌려준다."""
+    if _FIRE is None or _FIRE.get("rule") == "new":
+        return None, None                # 신규칙은 아래 스윕에서 따로 본다
+    c = _FIRE
+    name = f"배포 불{c['fire']:.2f} {c['hits']}/{c['win']}"
+    if c.get("smoke", 9.9) <= 1.0:
+        return name + f" 연기{c['smoke']:.2f}", dict(kind="combined", fire=c["fire"],
+                                                     smoke=c["smoke"], window=c["win"], hits=c["hits"])
+    return name + " 연기안씀", dict(kind="fire_only", fire=c["fire"], window=c["win"], hits=c["hits"])
+
 def hms_to_s(t):
     h, m, s = (t or "0:0:0").split(":"); return int(h)*3600 + int(m)*60 + int(s)
 
@@ -150,8 +174,12 @@ def main():
         "결합+타일가정 3/5": dict(kind="combined", fire=0.4, smoke=0.6, window=5, hits=3),
         # 2026-09-15 채택. 덤프 44개 합산에서 기존 4/6 대비 정검 +18 · 미검 -18 · 오검 -6.
         # 진짜 화재는 검출이 띄엄띄엄 떠서 '3초 안에 4번' 을 못 채운다. 5초 창에 3번이면 담긴다.
-        "불만 0.45 3/10(운영)": dict(kind="fire_only", fire=0.45, window=10, hits=3),
+        "옛 불만 0.45 3/10": dict(kind="fire_only", fire=0.45, window=10, hits=3),   # 지나간 규칙. 비교용
     }
+    # 지금 배포되는 규칙을 맨 끝에 붙인다(제출 도구에서 읽은 값이라 어긋날 수 없다).
+    _dn, _dr = deploy_rule()
+    if _dr is not None:
+        rules[_dn] = _dr
     print(f"\n=== {a.tag or a.model} (tiles={a.tiles}) ===")
     best = None
     for name, rule in rules.items():
@@ -160,6 +188,8 @@ def main():
         if best is None or res["score"] > best[2]:
             best = (name, rule, res["score"])
     # 클립별 판정(최고 규칙) — 어떤 클립을 늘 놓치는지 보려고. 대시보드 결과탭 히트맵이 이 줄을 읽는다
+    if _dr is not None:                   # 클립별은 '최고' 가 아니라 '배포' 규칙으로 본다
+        best = (_dn, _dr, 0.0)
     if best:
         bn, br, _ = best
         print(f"\n=== 클립별 ({bn}) ===")
