@@ -105,6 +105,26 @@ python _kisa_port/tools/kisa_items.py --item <fire|intrusion|loitering|falldown>
 | `python scripts/check_layout.py` | 산출물이 규약 자리에 있는가 |
 | `python scripts/audit_stale.py` | 판정 중복·죽은 경로·낡은 산출물·미참조 스크립트 |
 
+### 판단할 때 쓰는 도구
+
+점수 하나만 보고 정하지 않는다. 아래를 같이 본다.
+
+| 명령 | 무엇을 보나 | 언제 |
+| :-- | :-- | :-- |
+| `python scripts/fire_ens_try.py` | 가중치 조합별 방화 점수·못 잡는 편·창 여유가 아슬한 편 | 새 방화 가중치가 나올 때마다 |
+| `python scripts/fragile.py` | **표본 하나를 빼면 판정이 깨지는 편**(취약성) | 방화 규칙·가중치를 바꿀 때마다 |
+| `python scripts/early_late.py` | SA 가 정답보다 이른가 늦은가 · 창 여유 | 조합을 바꿔 조기 경보가 늘었는지 볼 때 |
+| `python scripts/conf_sweep.py` | 침입 신뢰도 문턱 전수 스윕(고원인지 첨점인지) | 문턱을 만지고 싶을 때 |
+| `python scripts/data_worth.py` | 덤프 전부를 배포 규칙으로 재채점 + 데이터 구성 대조 | 어떤 원본을 넣고 뺄지 정할 때 |
+| `python scripts/label_state.py` | 손라벨·전파 현황과 학습셋 반영 여부 | 라벨을 추가한 뒤 |
+| `python scripts/leak_check.py` | **채점셋 라벨이 학습셋에 섞였는가** | 학습셋을 빌드한 뒤 반드시 |
+| `python scripts/sam_state.py` | SAM2 전파 산출물 현황 | 전파를 돌린 뒤 |
+| `python scripts/gt_check.py [클립...]` | 원본 GT 시각이 실제 영상과 맞는가 | GT 가 수상할 때 |
+| `python scripts/show_fire.py <클립> <시각...>` | 그 시각에 무엇을 불로 봤는지 상자로 | 왜 잡았나/못 잡았나 볼 때 |
+| `python scripts/cancel.py` | 대기 중인 실험 취소 표시(도는 학습은 안 건드림) | 큐 순서를 바꿀 때 |
+
+일회성 탐색 스크립트는 `scripts/_archive/<날짜>/` 에 있다. 결론은 전부 문서로 옮겼다.
+
 ## 6. 알아 둘 것
 
 - `fire_small.pt` 의 원본은 `runs/` 에 없다. 2026-09-15 재학습 실패(`train_failed`, epoch 3)가 그 자리를 덮어썼고,
@@ -141,7 +161,7 @@ python _kisa_port/tools/kisa_items.py --item <fire|intrusion|loitering|falldown>
 
 **B200 처리 시간을 실시간 지표로 읽지 말 것.** 배포 성능은 **Thor 수치**가 기준이다.
 
-## 9. 2026-09-16 밤에 돌려 둔 것과 다음에 할 일
+## 8. 2026-09-16 밤에 돌려 둔 것과 다음에 할 일
 
 ### 지금 돌고 있는 것 (아침에 확인)
 
@@ -190,6 +210,8 @@ SA = 검출 + 10초이고 KISA 정답도 발화 + 10초라, 우리 검출이 늦
 | `C00_275_0001` | 야간 안개, 원경 | 0.41 | 0.45 |
 | `C00_255_0001` | **야간 IR, 300px 또렷** | **0.18** | 0.45 |
 
+상자로 직접 보려면 `python scripts/show_fire.py <클립> <시각...>` 을 쓴다(방화용이지만 어느 시각에 무엇을 봤는지 확인하는 방식은 같다).
+
 `C00_255_0001` 이 핵심이다. 크기 문제가 아니라 **야간 IR 도메인을 못 본다**(conf 0.05 에서도 0개).
 여기가 `0.18 → 0.5` 로 오르면 손라벨이 작동하는 것이다. F1 이 낮아도 상관없다. COCO 와 섞으면 해결된다.
 
@@ -197,6 +219,7 @@ SA = 검출 + 10초이고 KISA 정답도 발화 + 10초라, 우리 검출이 늦
 
 ```bash
 python scripts/label_state.py       # 손라벨·전파 현황
+python scripts/sam_state.py         # SAM2 전파 산출물(채점셋 클립이 섞여 있으니 빌더 확인)
 python scripts/leak_check.py        # 채점셋이 학습셋에 섞였는지 (지금은 깨끗)
 python scripts/build_trainset.py person --no-gt --name handset_person_20260916
 ```
