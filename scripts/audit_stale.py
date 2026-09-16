@@ -26,6 +26,8 @@ AUTH = "_kisa_port/tools/kisa_items.py"
 
 # 손으로 돌리는 도구. 아무도 안 부르는 것이 정상이라 D 에서 뺀다.
 # 별도 구현이지만 '있어야 하는 것'. 왜 있어도 되는지 여기 적어 둔다.
+# 화면(js)은 import 가 없다. 서버가 계산한 sa 를 쓰면 중복이 아니다.
+JS_OK = "return row.sa"   # 주석에 이름만 적은 것은 예외가 아니다. 실제로 그 값을 쓰는 코드여야 한다
 KNOWN_DUP = {
     "score_kisa.py": "덤프(dumps/score_tl)를 만드는 쪽. 제출 경로와 같은 값이 나오는지 "
                      "scripts/fire_weight_check.py 로 대조한다. 규칙 상수는 kisa_items 와 같아야 한다.",
@@ -51,8 +53,11 @@ OPTIONAL = {
 
 
 def files():
+    """검사 대상. 화면(js)도 판정을 하는 곳이라 같이 본다.
+    2026-09-16: 파이썬만 보다가 dash_v2/js/core.js 의 낡은 판정 구현을 놓쳤다."""
     out = []
-    for p in list(V.glob("*.py")) + list((V / "scripts").rglob("*.py")) + list((V / "dash_v2").glob("*.py")):
+    for p in (list(V.glob("*.py")) + list((V / "scripts").rglob("*.py"))
+              + list((V / "dash_v2").glob("*.py")) + list((V / "dash_v2/js").glob("*.js"))):
         if any(k in "/" + str(p).replace("\\", "/") for k in SKIP):
             continue
         out.append(p)
@@ -72,18 +77,29 @@ for pat in ("*.md", "*.yaml", "*.sh", "*.py", "*.js"):
         except Exception:
             pass
 
-print(f"검사 대상 파이썬 {len(ALL)}개\n")
+print("검사 대상", len(ALL), "개 · 파이썬",
+      sum(1 for q in ALL if q.suffix == ".py"), "· 화면 js",
+      sum(1 for q in ALL if q.suffix == ".js"))
+print()
 
 print("=== A. 제출 도구와 같은 판정을 따로 구현한 곳")
 MARK = {"침입·배회 판정": ("corners", "settle", "dwell"),
         "방화 창 규칙": ("hits", "window", "smoke"),
         "쓰러짐 SeqNet": ("need", "FALL_WIN", "seqnet")}
+# 화면(js)용 표지. window·hits 는 브라우저 전역·클릭 판정에도 쓰여 그대로 보면 전부 걸린다.
+# 규칙 상수로만 쓰이는 낱말을 본다.
+MARK_JS = {"침입·배회 판정": ("CORNERS", "SETTLE", "DWELL"),
+           "방화 창 규칙": ("FTH", "RISE", "HIT"),
+           "쓰러짐 SeqNet": ("NEED", "TH", "curves")}
 for label, keys in MARK.items():
+    jk = MARK_JS.get(label, keys)
     hit = [p for p in ALL if str(p).replace("\\", "/") != AUTH
            and p.name != "audit_stale.py"                      # 이 파일은 낱말만 들고 있다
            and "kisa_items as" not in TEXT[p]                  # 제출 도구를 불러 쓰면 중복이 아니다
+           and not (p.suffix == ".js" and JS_OK in TEXT[p])    # 화면은 서버가 준 sa 를 쓰면 된다
            and "from kisa_items import" not in TEXT[p]          # (주석에 이름만 적은 것은 예외가 아니다)
-           and sum(1 for k in keys if k.lower() in TEXT[p].lower()) >= 2]
+           and sum(1 for k in (jk if p.suffix == ".js" else keys)
+                   if (k in TEXT[p] if p.suffix == ".js" else k.lower() in TEXT[p].lower())) >= 2]
     real = [p for p in hit if p.name not in KNOWN_DUP]
     known = [p for p in hit if p.name in KNOWN_DUP]
     if real:
@@ -134,6 +150,8 @@ print()
 print("=== D. 어디서도 참조되지 않는 스크립트")
 n = 0
 for p in ALL:
+    if p.suffix == ".js":                       # 화면 파일은 dashboard.html 이 불러온다
+        continue
     if p.name in ("model.py", "score_kisa.py", "config.py") or p.name in HAND_TOOLS:
         continue
     if REFS.count(p.name) + REFS.count(p.stem) <= 2:

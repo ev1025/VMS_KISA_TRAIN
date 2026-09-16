@@ -5,7 +5,8 @@
 대시보드가 매번 헤매지 않도록 한 번 스캔해 dash_v2/dash_meta.json 으로 만든다.
 영상은 서버에 있으므로 상대 경로만 담고, 실제 스트리밍은 서버가 한다.
 """
-import json, re, xml.etree.ElementTree as ET
+import json
+import math, re, xml.etree.ElementTree as ET
 from pathlib import Path
 import numpy as np
 
@@ -20,7 +21,9 @@ ITEMS = {
     "방화": {"key": "fire", "dir_kw": "방화", "signal": G/"dumps/score_tl/_deploy.json"},
     "침입": {"key": "intrusion", "dir_kw": "침입", "dump": G/"dumps/intrusion_tile_v3", "zone": ["Intrusion"]},
     "배회": {"key": "loiter", "dir_kw": "배회", "dump": G/"dumps/loiter_botsort_v2", "zone": ["Loitering", "Intrusion"]},
-    "쓰러짐": {"key": "fall", "dir_kw": "쓰러짐", "logits": G/"runs/fall_track/deploy_track_logits.npz"},
+    # 자세 1280 확률 덤프. 옛 npz(2026-09-07, 자세 640)를 쓰면 화면이 배포와 다른 곡선을 보여 준다.
+    "쓰러짐": {"key": "fall", "dir_kw": "쓰러짐", "seq": G/"dumps/fall_seq_1280",
+             "logits": G/"runs/fall_track/deploy_track_logits.npz"},
 }
 
 def hms(t):
@@ -109,6 +112,18 @@ def build_person(item):
                      "tracks": dump, "signal": sig, "signal_type": "person"})
     return rows
 
+def fall_curves_1280(stem):
+    """배포와 같은 자세 1280 확률 곡선. 없으면 None 을 돌려 옛 npz 로 넘어간다."""
+    f = ITEMS["쓰러짐"]["seq"]/(stem+".json")
+    if not f.exists():
+        return None
+    d = json.loads(f.read_text(encoding="utf-8"))
+    out = []
+    for c in d.get("curves", []):
+        out.append([[round(t,1), round(1/(1+math.exp(-z)),3)] for t,z in c])
+    return out
+
+
 def build_fall():
     d = np.load(ITEMS["쓰러짐"]["logits"])
     names = sorted({k.split("__")[0] for k in d.files})
@@ -116,6 +131,13 @@ def build_fall():
     for v in videos_of("쓰러짐"):
         stem = v.stem
         g = gt_of(v.with_suffix(".xml"))
+        c1280 = fall_curves_1280(stem)
+        if c1280 is not None:
+            rows.append({"name": stem, "video": str(v.relative_to(G)),
+                         "gt": g.get("gt"), "gt_dur": g.get("gt_dur", 0),
+                         "tod": g.get("tod"), "weather": g.get("weather", []),
+                         "curves": c1280, "signal_type": "fall"})
+            continue
         if stem in names:
             n = int(d[f"{stem}__n"][0])
             curves = []
@@ -161,10 +183,13 @@ def build_labelset():
 
 def main():
     data = {"items": {}}
-    data["items"]["fire"] = {"title": "방화", "rows": build_fire()}
-    data["items"]["intrusion"] = {"title": "침입", "rows": build_person("침입")}
-    data["items"]["loiter"] = {"title": "배회", "rows": build_person("배회")}
-    data["items"]["fall"] = {"title": "쓰러짐", "rows": build_fall()}
+    # 예측 알람(sa)은 제출 도구의 규칙으로 서버에서 계산해 싣는다.
+    # 화면이 따로 구현하면 상수가 낡아 정검/오검/미검이 실측과 달라진다(2026-09-16 에 네 항목 다 그랬다).
+    import dash_sa
+    data["items"]["fire"] = {"title": "방화", "rows": dash_sa.attach("방화", build_fire())}
+    data["items"]["intrusion"] = {"title": "침입", "rows": dash_sa.attach("침입", build_person("침입"))}
+    data["items"]["loiter"] = {"title": "배회", "rows": dash_sa.attach("배회", build_person("배회"))}
+    data["items"]["fall"] = {"title": "쓰러짐", "rows": dash_sa.attach("쓰러짐", build_fall())}
     data["items"]["labelset"] = {"title": "손라벨(연구개발)", "rows": build_labelset()}
     out = G/"dash_v2/dash_meta.json"
     json.dump(data, open(out, "w", encoding="utf-8"), ensure_ascii=False)

@@ -98,7 +98,18 @@ function fallAlarm(row) {
   }
   return best;
 }
+// 예측 알람은 서버가 제출 도구(_kisa_port/tools/kisa_items.py)의 규칙으로 계산해
+// dash_meta 의 row.sa 로 실어 준다(dash_v2/dash_sa.py). 화면은 그 값을 쓴다.
+//
+// [주의] 아래 fireAlarm/personAlarm/fallAlarm 은 화면이 따로 구현해 둔 옛 규칙이다.
+//        2026-09-16 에 네 항목 모두 상수가 낡아 화면의 정검/오검/미검이 실측과 달랐다.
+//          방화   화면 불 0.12 · 20창 12회 · 연기 사용   |  제출 불 0.40 · 20창 3회 · 연기 미사용
+//          쓰러짐 화면 th 0.269                          |  제출 th 0.755
+//          배회   늦은 일행 조건 없음                     |  제출 20초/3명/방금 도착
+//          침입   gap 없음                               |  제출 gap 2
+//        row.sa 가 없을 때(옛 dash_meta)만 쓰는 대비책이다. 상수를 여기서 고치지 말 것.
 function alarmOf(row, item) {
+  if (row && row.sa !== undefined) return row.sa;      // 서버가 계산한 값
   if (item === "fire") return fireAlarm(row);
   if (item === "fall") return fallAlarm(row);
   return personAlarm(row, item);

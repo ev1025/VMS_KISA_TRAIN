@@ -112,7 +112,7 @@ function estDur(row) {
 }
 function renderCenter(row) {
   const c = $("#center"); c.innerHTML = "";
-  const gt = row.gt, sa = ("sa" in row) ? row.sa : alarmOf(row, CUR.item), gdur = row.gt_dur || 0;
+  const gt = row.gt, sa = alarmOf(row, CUR.item), gdur = row.gt_dur || 0;   // alarmOf 가 row.sa 를 먼저 본다
   const stage = el("div", "stage");
   const v = el("video"); v.controls = false; v.preload = "metadata";
   v.src = "/vid/" + row.video.replace(/\\/g, "/").split("/").map(encodeURIComponent).join("/");
