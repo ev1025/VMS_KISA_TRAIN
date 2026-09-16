@@ -18,6 +18,7 @@
 | **대시보드(`dash_v2`) 수정** | `docs/dashboard.md` |
 | **성능 판단 및 수치 보고** | `docs/kisa/B200_평가.md` |
 | **채점 규칙 및 F1 수식 확인** | `docs/kisa/평가.md` |
+| **안내서에 뭐라고 쓰여 있나** | `docs/kisa/안내서_원문발췌.md` (PDF 원문 발췌. PDF 자체는 레포에 없다) |
 | **시험장 절차 및 RTSP 준비** | `docs/kisa/KISA_시험_체크리스트.md` |
 | **본시험 제출물(SA XML) 생성** | `docs/kisa/SA_생성_매뉴얼.md` |
 | **지금 배포된 구성 확인** | `docs/DEPLOY.md` (가중치·입력·판정·자주 틀리는 곳) |
