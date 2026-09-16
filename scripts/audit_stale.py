@@ -24,6 +24,25 @@ V = Path(".")
 SKIP = ("/.venv/", "/_archive/", "/__pycache__/", "/node_modules/")
 AUTH = "_kisa_port/tools/kisa_items.py"
 
+# 손으로 돌리는 도구. 아무도 안 부르는 것이 정상이라 D 에서 뺀다.
+# 별도 구현이지만 '있어야 하는 것'. 왜 있어도 되는지 여기 적어 둔다.
+KNOWN_DUP = {
+    "score_kisa.py": "덤프(dumps/score_tl)를 만드는 쪽. 제출 경로와 같은 값이 나오는지 "
+                     "scripts/fire_weight_check.py 로 대조한다. 규칙 상수는 kisa_items 와 같아야 한다.",
+    "fire_rule2.py": "신규칙의 원본 설계. 참고용이고 채점에 반영되지 않는다.",
+    "fall_track.py": "쓰러짐 SeqNet 학습기. 학습 쪽 코드라 판정기 중복이 아니다.",
+}
+HAND_TOOLS = {
+    "audit_stale.py", "check_repro.py", "check_thor.py", "check_layout.py",
+    "fire_weight_check.py", "fail_probe3.py", "merge_labels.py", "weather_aug.py",
+    "build_coco_person.py", "build_snowfog_set.py", "find_snowfog.py",
+    "server_pdump.py", "server_kptdump.py", "server_tdump.py",
+    "01_build_manifest.py", "02_subsample_split.py", "04_convert_to_yolo.py",
+    "patch_aihubshell.py", "serve_kisa.py", "build_dash_meta.py",
+}
+# 아직 안 만들었어도 정상인 산출물. 없다고 해서 코드가 낡은 것이 아니다.
+OPTIONAL = {"data/학습데이터/손라벨/full/meta.json", "data/학습데이터/손라벨/full"}
+
 
 def files():
     out = []
@@ -55,9 +74,16 @@ MARK = {"침입·배회 판정": ("corners", "settle", "dwell"),
         "쓰러짐 SeqNet": ("need", "FALL_WIN", "seqnet")}
 for label, keys in MARK.items():
     hit = [p for p in ALL if str(p).replace("\\", "/") != AUTH
+           and p.name != "audit_stale.py"                      # 이 파일은 낱말만 들고 있다
+           and "kisa_items as" not in TEXT[p]                  # 제출 도구를 불러 쓰면 중복이 아니다
+           and "from kisa_items import" not in TEXT[p]          # (주석에 이름만 적은 것은 예외가 아니다)
            and sum(1 for k in keys if k.lower() in TEXT[p].lower()) >= 2]
-    if hit:
-        print(f"  [{label}]  " + ", ".join(str(p) for p in hit))
+    real = [p for p in hit if p.name not in KNOWN_DUP]
+    known = [p for p in hit if p.name in KNOWN_DUP]
+    if real:
+        print(f"  [{label}]  " + ", ".join(str(p) for p in real) + "   <-- 확인 필요")
+    for p in known:
+        print(f"  [{label}]  {p}  (알려진 것) {KNOWN_DUP[p.name]}")
 print("  (제출 도구를 import 하면 중복이 아니다. 복사해 뒀으면 언젠가 갈라진다)\n")
 
 WRITE = re.compile(r"mkdir|\bwrite|\bdump\(|savefig|to_csv|OUT\b|DST\b|out_dir|outdir")
@@ -71,6 +97,8 @@ for p in ALL:
         for m in set(PATH_RE.findall(line)):
             if any(c in m for c in "*?{}%<>") or " " in m:
                 continue
+            if m in OPTIONAL:
+                continue
             if not (V / m).exists():
                 bad[p].append(f"{i}: {m}")
 for p, ms in sorted(bad.items()):
@@ -82,7 +110,7 @@ if not bad:
 print()
 
 print("=== C. 산출물이 입력보다 오래된 것")
-GEN = [("dash_v2/dash_meta.json", ["dumps/intrusion_tile", "dumps/loiter_trk_id",
+GEN = [("dash_v2/dash_meta.json", ["dumps/intrusion_tile_v3", "dumps/loiter_botsort_v2",
                                    "dumps/score_tl", "_kisa_port/tools/kisa_items.py"]),
        ("dash_v2/dataset_meta.json", ["data/학습데이터"]),
        ("results/MODELS.json", ["_kisa_port/weights/kisa"])]
@@ -100,7 +128,7 @@ print()
 print("=== D. 어디서도 참조되지 않는 스크립트")
 n = 0
 for p in ALL:
-    if p.name in ("model.py", "score_kisa.py", "config.py"):
+    if p.name in ("model.py", "score_kisa.py", "config.py") or p.name in HAND_TOOLS:
         continue
     if REFS.count(p.name) + REFS.count(p.stem) <= 2:
         print(f"  {p}"); n += 1

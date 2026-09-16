@@ -1,28 +1,82 @@
 2026-09-16 정리
 
-점수를 내는 코드가 여러 벌이었고 일부가 낡아 실측과 어긋났다.
-침입을 오프라인으로 재면 85.71 인데 제출 경로 실측은 94.74 였던 것이 계기다.
+쓰지 않기로 한 것을 눈앞에서 치웠다. 지우지는 않았다.
 
-기준(이것만 씁니다)
-  제출·실측  _kisa_port/tools/kisa_items.py
-  방화 오프라인 채점  score_kisa.py
+[낡은경로]
+  loocv_all.py
+      SP 가 scripts/ 기준인데 덤프는 dumps/ 에 있다. 판정도 kisa_items 와 별개 구현이라 값이 어긋난다.
+  fire_boxdump.py
+      data/rnd/rnd_rest 가 없다.
+  fire_sig.py
+      data/rnd/rnd_rest 가 없다.
+  fire_deploy_boxdump.py
+      runs/par/human_full 이 없다.
+  pick_hardframes.py
+      runs/par/human_full 이 없다.
+[접은접근]
+  mog2_dump.py
+      배경차분(MOG2) 침입 보조. dumps/intrusion_mog2 도 없다. 타일 검출로 94.74 를 냈다.
+  posec3d_train.py
+      PoseC3D 식 쓰러짐. SeqNet 으로 100.00 을 냈다.
+  posec3d_v2.py
+      위와 같음.
+  posec3d_v3.py
+      위와 같음.
+  fall_feats.py
+      쓰러짐 중간 버전. 현행은 fall_track.py + SeqNet + fall_sweep.py.
+  fall_seq_v2.py
+      쓰러짐 중간 버전(BiGRU). 현행 SeqNet 이 대체.
+  fall_merge.py
+      트랙 분절 병합. 자세 해상도 1280 으로 분절이 사라져 필요 없어졌다.
+  fall_verify.py
+      쓰러짐 2차 자세 검증. 문턱 0.755 로 해결돼 쓰지 않는다.
+  rtdetr_train.py
+      RT-DETR 아키텍처 비교. YOLO11 로 확정.
+  sr_test.py
+      초해상(Real-ESRGAN) 재탐지. docs/EXPERIMENTS.md J 절에 폐기 기록.
+  world_smoke.py
+      YOLO-World 교사. 쓰지 않는다.
+  fire_onset_ml.py
+      온셋 분류기로 규칙을 대체하려던 것. 규칙으로 100.00 을 냈다.
+  fire_synth.py
+      불 패치 합성 증강. weather_aug.py 와 같은 이유로 쓰지 않는다(실패 원인과 열화가 다르다).
+  lum_fire.py
+      고휘도 클러스터 팽창 규칙. 채택 안 함.
+[의사라벨]
+  pl_ai_fire.py
+      의사라벨은 학습에 쓰지 않기로 했다.
+  pl_fire75.py
+      위와 같음.
+  pl_person.py
+      위와 같음.
+  pl_person_track.py
+      위와 같음.
+  pl_pose.py
+      위와 같음.
+[일회성진단]
+  miss_diag.py
+      미검 원인 진단. scripts/fail_probe3.py 가 대체(구역 제한 + 창 전체).
+  fire_tilescan.py
+      타일·해상도 훑기. 결론은 6뷰 타일로 굳었다.
+  person_tilescan.py
+      침입 타일 훑기. 3x3@960 으로 굳었다(1280 은 84.21 로 더 나빴다).
+  grab_miss.py
+      미검 프레임 뽑기. 설명 문서 없는 즉석 스크립트.
+  make_label_frames.py
+      라벨용 프레임 뽑기. 즉석 스크립트.
+  test_frameat.py
+      프레임 뽑기 자체 점검. 한 번 쓰고 끝났다.
+  analyze_labels.py
+      AI허브 71751 구조 파악. 끝났다.
+  analyze_zip.py
+      위와 같음.
 
-내린 것
-  sa_runner.py
-    2026-09-05 판 SA 산출기. _kisa_port/tools/kisa_items.py 로 대체됨. 이 경로로 재면 침입 45점대(실측 94.74).
-  score_sa.py
-    sa_runner.py 가 뽑은 XML 을 채점하던 것. 산출기가 대체돼 같이 내린다.
-  score_intrusion.py
-    침입 자립형 채점기. kisa_items.py 의 IntrusionRule 과 다른 구현이라 점수가 어긋난다.
-  _exp_queue4.sh
-    09-08 큐 스크립트. exp_queue.py + _run_queues.sh 로 대체됨.
-  fire_rule_sweep.py
-    어디서도 참조되지 않음. 신규칙은 fire_rule2.py 로 정리됨.
-  fire_fuse.py
-    어디서도 참조되지 않음.
-  fire_detail.py
-    _archive 안에서만 참조됨.
-  fall_boost2.py
-    어디서도 참조되지 않음.
-  fall_probe.py
-    어디서도 참조되지 않음.
+남긴 것(데이터 재생산에 필요)
+  scripts/data_prep/*        AI허브 원천 -> YOLO 학습셋
+  scripts/build_coco_person.py · build_snowfog_set.py · find_snowfog.py   학습셋 생성
+  scripts/server_pdump.py · server_kptdump.py   덤프 생성기
+
+  fire_feats.py
+      방화 시계열 피처 + 분류기. 규칙으로 100.00 을 내서 쓰지 않는다.
+  make_crops.py
+      손라벨용 크롭 생성. 지금은 대시보드 라벨 편집(Thor 포함)으로 대체됐다.

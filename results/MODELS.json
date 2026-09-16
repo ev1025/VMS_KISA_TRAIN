@@ -5,7 +5,7 @@
   "학습 데이터셋을 지우기 전에 train 의 구성(장수·출처)을 여기로 옮겨 적는다. person_v2/v3·fire_snowfull 은 그걸 안 해서 dataset_deleted 가 됐다.",
   "모르는 값은 비우지 말고 null 로 두고 note 에 이유를 적는다. 비워 두면 다음 사람이 또 찾아 헤맨다."
  ],
- "_갱신": "2026-09-15 14:05",
+ "_갱신": "2026-09-16",
  "models": {
   "person_v3.pt": {
    "sha256_16": "4006bb79730cc250",
@@ -162,11 +162,14 @@
     "쓰러짐"
    ],
    "kisa_f1": {
-    "쓰러짐": 90.0
+    "쓰러짐": 100.0
    },
    "base_model": null,
    "train": {
-    "note": "yolo11x-pose 키포인트 시계열로 학습. 판정 임계 0.269, 연속 4창."
+    "학습기": "scripts/fall_track.py",
+    "입력": "yolo11x-pose 키포인트 시계열(59차원 x 10초 창, 0.1초 간격)",
+    "판정": "문턱 0.755 · 연속 4창 (2026-09-15 에 0.269 -> 0.755 로 바꿔 90.00 -> 100.00)",
+    "note": "학습 데이터셋 구성 기록이 없다. 재학습하려면 fall_track.py 의 입력 경로부터 확인해야 한다."
    },
    "dataset": {
     "total": null,
@@ -176,6 +179,88 @@
    },
    "evidence": "runs/fall_track/deploy_track_logits.npz (배포 10편 추론 로짓)",
    "note": "기록이 없는 유일한 운영 가중치."
+  },
+  "fire_fog.pt": {
+   "sha256_16": "689ba18d53651931",
+   "path": "vms/_kisa_port/weights/kisa/fire_fog.pt",
+   "실험": "fresh_48k_wildall_20260909",
+   "원본": "runs/fresh_48k_wildall_20260909/yolo11s/weights/best.pt",
+   "task": "fire/smoke detect",
+   "used_by": [
+    "방화"
+   ],
+   "역할": "앙상블 1번. 안개편 C00_195_0001 을 본다(학습에 안개 네거티브 wildfire_fog_neg 가 들어갔다).",
+   "추론": {
+    "view_imgsz": 640,
+    "뷰": "6분할 타일",
+    "추론방식": "타일 낱장(배치로 넣으면 값이 달라진다)"
+   },
+   "base_model": "yolo11s.pt",
+   "train": {
+    "epochs": 80,
+    "batch": 128,
+    "imgsz": 640,
+    "multi_scale": 0.5,
+    "cache": "ram",
+    "workers": 16
+   },
+   "dataset": {
+    "base": "aihub71751_48k",
+    "extras": [
+     "fasdd_snowfog",
+     "fasdd_yolo",
+     "wildfire_pos_yolo",
+     "wildfire_fog_neg"
+    ],
+    "oversample": {
+     "human_fire": 5
+    }
+   },
+   "note": "이 한 벌만으로는 눈편 C00_216_0003 을 못 본다(불 0.063). fire_small.pt 와 같이 쓴다."
+  },
+  "fire_small.pt": {
+   "sha256_16": "dbec41d2a2e97091",
+   "path": "vms/_kisa_port/weights/kisa/fire_small.pt",
+   "실험": "s2_s960_20260913",
+   "원본": "logs/_archive/2026-09-15/r960오염실험/runs/s2_s960_20260913/yolo11s/weights/best.pt",
+   "task": "fire/smoke detect",
+   "used_by": [
+    "방화"
+   ],
+   "역할": "앙상블 2번. 눈편 C00_216_0003 의 25x12px 불씨를 본다(960 학습).",
+   "추론": {
+    "view_imgsz": 960,
+    "뷰": "6분할 타일",
+    "추론방식": "타일 낱장"
+   },
+   "base_model": "yolo11s.pt",
+   "train": {
+    "epochs": 80,
+    "batch": 48,
+    "imgsz": 960,
+    "multi_scale": 0.5,
+    "cache": false,
+    "workers": 24
+   },
+   "dataset": {
+    "base": "aihub71751_48k",
+    "extras": [
+     "fasdd_snowfog",
+     "fasdd_yolo",
+     "azimjaan_yolo",
+     "wildfire_pos_yolo"
+    ],
+    "oversample": {
+     "handset_fire_hn": 4
+    }
+   },
+   "note": [
+    "원본이 runs/ 에 없다. 2026-09-15 재학습이 실패(train_failed, epoch 3)하며 그 자리를 덮어썼고,",
+    "쓸 수 있는 것은 아카이브 사본뿐이다. scripts/fire_weight_check.py 로 덤프 재현을 확인했다.",
+    "아카이브된 이유는 '요구 해상도 1440 인데 960 사본을 확대해 학습' 한 해상도 그리드서치 결함이다.",
+    "채점셋 누수는 없고 검출기로는 정상 완주본(epoch -1)이라 앙상블 부품으로는 쓸 수 있다.",
+    "지금 도는 f960_best_s / f1280_best_s 가 눈편을 잡으면 이 의존을 없앤다."
+   ]
   }
  },
  "alternatives": {

@@ -32,8 +32,10 @@ BASE = json.loads((V / "results/BASELINE.json").read_text(encoding="utf-8"))
 
 # 항목 -> (덤프 후보들, 영상 폴더 이름, kisa_items 의 항목 키)
 DUMPS = {
-    "침입": (["intrusion_tile_v3", "intrusion_tile_v2", "intrusion_tile"], "침입", "intrusion"),
-    "배회": (["loiter_botsort_v2", "loiter_trk_id"], "배회", "loitering"),
+    # 살아 있는 덤프만 둔다. 옛 덤프는 dumps/_archive/2026-09-16/ 로 내렸다.
+    # (제출 경로와 다른 방식으로 만들어져 재현이 어긋났다: 침입 87.72 · 배회 68.97)
+    "침입": (["intrusion_tile_v3"], "침입", "intrusion"),
+    "배회": (["loiter_botsort_v2"], "배회", "loitering"),
 }
 
 

@@ -24,9 +24,10 @@ V = KP.V
 # 루트에 둘 수 있는 파이썬 파일. 러너가 프로세스 이름으로 찾거나 상대경로로 부르는 진입점들이다.
 ROOT_PY = {"model.py", "score_kisa.py", "config.py"}
 # results/ 바로 아래에 둘 수 있는 파일. 실험 하나에 매이지 않는 가로지르는 기록들이다.
-RESULTS_FILES = {"MODELS.json", "loocv_results.json"}
+# BASELINE.json 은 4항목 실측의 단일 기준이라 일부러 루트에 둔다(check_repro 가 이것만 읽는다).
+RESULTS_FILES = {"MODELS.json", "loocv_results.json", "BASELINE.json"}
 # 학습 가중치가 아닌 산출물이 들어가는 runs 폴더(SeqNet 등). best.pt 가 없는 게 정상이다.
-RUNS_EXCEPT = {"fall_track", "fall_seq"}
+RUNS_EXCEPT = {"fall_track", "fall_seq", "_eval", "_archive"}
 
 bad, ok = [], []
 
