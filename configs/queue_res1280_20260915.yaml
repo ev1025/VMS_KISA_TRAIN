@@ -88,13 +88,14 @@ experiments:
       val_set: data/학습데이터/evalset_fire/val.txt,
       train: { imgsz: 960, multi_scale: 0.5, batch: 64, epochs: 60, cache: False, workers: 8 } }
 
+  # ==== 아래 둘은 2026-09-17 에 잠시 내림. 주석만 풀면 다시 돈다 ====
   # ---- COCO + 최신 손라벨 (2026-09-16). 지금 배포본(person_v3)의 합법적 대체재 ----
   # person_v2/v3 는 학습 데이터의 57%가 의사라벨이고 그 데이터셋은 삭제됐다. 재현이 안 된다.
   # 손라벨만(4,697장) 학습으로 야간 IR 편이 0.000 -> 0.915 가 됐다. 손라벨이 그 도메인을 푼다.
   # 다만 원경 소형은 손라벨만으로 안 된다(화면 전체 최고 0.29~0.53). COCO 가 있어야 한다.
   # 그래서 둘을 섞는다. 해상도는 침입 타일과 같은 960.
-  - { name: p960_coco_hand_20260916, model: yolo11s, item: 사람, names: [person],
-      base: trainset_person_20260915, extras: [],
-      oversample: { handset_person_20260916: 8 },
-      val_set: data/학습데이터/evalset_person/val.txt,
-      train: { imgsz: 960, multi_scale: 0.333, batch: 64, epochs: 60, cache: False, workers: 8 } }
+  #   - { name: p960_coco_hand_20260916, model: yolo11s, item: 사람, names: [person],
+  #       base: trainset_person_20260915, extras: [],
+  #       oversample: { handset_person_20260916: 8 },
+  #       val_set: data/학습데이터/evalset_person/val.txt,
+  #       train: { imgsz: 960, multi_scale: 0.333, batch: 64, epochs: 60, cache: False, workers: 8 } }

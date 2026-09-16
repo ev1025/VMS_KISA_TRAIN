@@ -468,12 +468,19 @@ def running_elsewhere():
     names = set()
     for line in out.splitlines():
         w = line.split()
-        # 형태가 정확히 "... exp_queue.py _one <큐> <실험명>" 인 줄만 본다.
-        # 줄 끝 단어를 그냥 집으면 엉뚱한 명령(내 ps 호출 등)까지 이름으로 들어온다.
+        # (1) 러너가 띄운 잡: "... exp_queue.py _one <큐> <실험명>"
+        #     줄 끝 단어를 그냥 집으면 엉뚱한 명령(내 ps 호출 등)까지 이름으로 들어온다.
         for i, x in enumerate(w):
             if x.endswith("exp_queue.py") and i + 3 < len(w) and w[i + 1] == "_one":
-                names.add(w[i + 3])
-                break
+                names.add(w[i + 3]); break
+        # (2) 부모(_one)가 죽고 학습만 살아남은 고아. _exp/<실험명>/data.yaml 로 알아본다.
+        #     2026-09-17 에 _one 을 잘못 kill 해서 f960_diet 가 고아가 됐고,
+        #     러너가 그것을 못 봐서 같은 실험을 또 띄울 뻔했다.
+        for x in w:
+            if "/_exp/" in x:
+                seg = x.split("/_exp/", 1)[1].split("/", 1)[0]
+                if seg:
+                    names.add(seg)
     return names
 
 
