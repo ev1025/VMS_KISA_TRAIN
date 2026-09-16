@@ -19,7 +19,7 @@ from pathlib import Path
 import cv2
 import numpy as np
 
-G = Path("/NHNHOME/WORKSPACE/26mss002_E3/vms")
+G = Path(__file__).resolve().parents[1]
 SRC = G / "data/학습데이터/fasdd_yolo"
 
 

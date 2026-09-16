@@ -379,6 +379,11 @@ def write_meta(exp, defaults, n_train, pt, started, status):
 
 def run_one(exp, defaults):
     """한 실험 전체(목록→학습→채점→meta). 실패해도 예외를 밖으로 던지지 않는다."""
+    # 러너는 시작할 때 한 번만 todo 를 고른다. 도는 중에 실험을 취소하려면 여기서도 봐야 한다.
+    # (머리말에 "score.txt 있으면 전부 생략" 이라 적어 두고 실제로는 안 보고 있었다. 2026-09-16)
+    if is_done(exp):
+        log(exp["name"] + " 건너뜀(results/ 에 score.txt 가 이미 있다)")
+        return
     name = exp["name"]; started = _kst("%Y-%m-%d %H:%M:%S")
     try:
         pt = best_pt(exp)

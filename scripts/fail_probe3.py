@@ -12,7 +12,7 @@
 import sys, xml.etree.ElementTree as ET
 from pathlib import Path
 import cv2
-V = Path("/NHNHOME/WORKSPACE/26mss002_E3/vms")
+V = Path(__file__).resolve().parents[1]
 for s in ("scripts", "_kisa_port/tools", "_kisa_port"):
     sys.path.insert(0, str(V / s))
 import kisa_paths as KP, kisa_items as K

@@ -8,7 +8,7 @@ import json
 import sys
 from pathlib import Path
 
-V = Path("/NHNHOME/WORKSPACE/26mss002_E3/vms")
+V = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(V / "_kisa_port/tools"))
 sys.path.insert(0, str(V / "scripts"))
 import kisa_items as K          # noqa: E402

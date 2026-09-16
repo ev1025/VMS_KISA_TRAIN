@@ -21,7 +21,7 @@ import numpy as np
 import torch
 import torch.nn as nn
 
-G = Path("/NHNHOME/WORKSPACE/26mss002_E3/vms")
+G = Path(__file__).resolve().parents[1]
 KPTS = G / "feats/fall_kpts"
 OUT = G / "runs/fall_track"
 STRIDE_SRC = 0.1          # fall_kpts 저장 간격(초)

@@ -7,7 +7,7 @@
 """
 import cv2, json, xml.etree.ElementTree as ET
 from pathlib import Path
-G = Path("/NHNHOME/WORKSPACE/26mss002_E3/vms")
+G = Path(__file__).resolve().parents[1]
 SRC = G/"data/원본데이터/kisa_연구개발_방화영상"; OUT = G/"data/학습데이터/손라벨/full"; OUT.mkdir(exist_ok=True)
 FIX = G/"data/학습데이터/정답라벨/_gt_정정.json"
 fix = {k: v["start"] for k, v in json.load(open(FIX, encoding="utf-8")).items()
