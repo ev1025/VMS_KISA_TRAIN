@@ -1,4 +1,8 @@
 # -*- coding: utf-8 -*-
+# 손으로 돌린다: .venv/bin/python dash_v2/build_dataset_meta.py
+#   데이터 확인 탭이 읽는 dataset_meta.json 을 만든다.
+#   훑는 학습셋 중 일부는 학습 뒤 지웠다(aihub71751_24k · human_synth · person_v3 · aihub_int_pl).
+#   없으면 그 탭만 건너뛴다. 구성 기록은 results/MODELS.json 에 있다.
 """데이터 확인 탭용 메타. 학습 데이터셋들(24k·FASDD·손라벨·설경·person)의 이미지·라벨 목록을 모은다.
 
 영상 검수(KISA 배포)와 별개다. 여기는 '학습에 쓴 데이터가 어떻게 생겼나'를 이미지+박스로 둘러보는 용도.

@@ -38,10 +38,16 @@ HAND_TOOLS = {
     "build_coco_person.py", "build_snowfog_set.py", "find_snowfog.py",
     "server_pdump.py", "server_kptdump.py", "server_tdump.py",
     "01_build_manifest.py", "02_subsample_split.py", "04_convert_to_yolo.py",
-    "patch_aihubshell.py", "serve_kisa.py", "build_dash_meta.py",
+    "patch_aihubshell.py", "serve_kisa.py", "build_dash_meta.py", "build_dataset_meta.py",
 }
 # 아직 안 만들었어도 정상인 산출물. 없다고 해서 코드가 낡은 것이 아니다.
-OPTIONAL = {"data/학습데이터/손라벨/full/meta.json", "data/학습데이터/손라벨/full"}
+OPTIONAL = {
+    "data/학습데이터/손라벨/full/meta.json", "data/학습데이터/손라벨/full",
+    # build_dataset_meta.py 가 훑는 학습셋. 학습을 마치고 지웠다(구성은 results/MODELS.json 에 옮겨 적음).
+    # 없으면 그 탭을 건너뛰도록 만들어져 있으므로 없는 것이 정상이다.
+    "data/학습데이터/aihub71751_24k", "data/학습데이터/human_synth",
+    "data/학습데이터/person_v3", "data/학습데이터/aihub_int_pl",
+}
 
 
 def files():
