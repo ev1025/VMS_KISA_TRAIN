@@ -169,4 +169,4 @@
 일부러 망가뜨린 것을 잡는지, 멀쩡한 것을 안 잡는지 둘 다 본다.
 지금 있는 것: `scripts/stale_scan.py --selfcheck` · `_kisa_port/tools/kisa_items.py --selfcheck`.
 
-왜 이 표가 생겼는지는 `docs/오류기록.md` 에 있다.
+이 표가 생긴 이유는 `docs/미검원인.md` 9장에 있다.
