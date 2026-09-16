@@ -454,6 +454,29 @@ def wait_no_train_procs():
         time.sleep(60)
 
 
+def running_elsewhere():
+    """지금 다른 프로세스가 돌고 있는 실험 이름.
+
+    러너에는 잠금이 없다. 그래서 러너를 두 번 띄우면 같은 실험을 동시에 학습시킨다.
+    같은 runs/<실험>/ 에 둘이 쓰면 체크포인트가 깨진다.
+    2026-09-17 에 실제로 그렇게 됐다(f960_union 이 두 벌 돌았다).
+    """
+    try:
+        out = subprocess.run(["ps", "-eo", "args"], capture_output=True, text=True, timeout=20).stdout
+    except Exception:
+        return set()
+    names = set()
+    for line in out.splitlines():
+        w = line.split()
+        # 형태가 정확히 "... exp_queue.py _one <큐> <실험명>" 인 줄만 본다.
+        # 줄 끝 단어를 그냥 집으면 엉뚱한 명령(내 ps 호출 등)까지 이름으로 들어온다.
+        for i, x in enumerate(w):
+            if x.endswith("exp_queue.py") and i + 3 < len(w) and w[i + 1] == "_one":
+                names.add(w[i + 3])
+                break
+    return names
+
+
 def cmd_run(a):
     q = yaml.safe_load(open(a.queue, encoding="utf-8"))
     defaults = q.get("defaults", {}); exps = q["experiments"]
@@ -464,7 +487,10 @@ def cmd_run(a):
         log("human_fire 재빌드(손라벨 최신화)")
         subprocess.run([str(PY), str(V / "scripts/build_humanset.py")], cwd=V)
     kill_orphan_trainers()             # 지난 러너가 SIGKILL 로 죽어 남은 학습 프로세스부터 치운다
-    todo = [e for e in exps if not is_done(e)]
+    busy = running_elsewhere()
+    if busy:
+        log(f"다른 프로세스가 도는 중이라 건너뜀: {', '.join(sorted(busy))}")
+    todo = [e for e in exps if not is_done(e) and e["name"] not in busy]
     log(f"큐 {a.queue}: 총 {len(exps)}개, 남은 {len(todo)}개, 동시 {a.jobs}잡")
     running = []                       # (proc, exp)
     seen = {e["name"] for e in exps}   # 도는 중에 yaml 에 추가된 실험을 알아보려고
@@ -489,6 +515,9 @@ def cmd_run(a):
         gb = free_gb()
         if todo and len(running) < a.jobs and gpu_used_mib() < vram_gate and gb >= min_free:
             e = todo.pop(0)
+            if e["name"] in running_elsewhere():   # 고르고 띄우는 사이에 다른 러너가 먼저 띄웠을 수 있다
+                log(f"{e['name']} 은 다른 프로세스가 이미 돌고 있다. 건너뛴다")
+                continue
             p = subprocess.Popen([sys.executable, __file__, "_one", a.queue, e["name"]], cwd=V, preexec_fn=_pdeathsig)
             running.append((p, e)); time.sleep(int(defaults.get("stagger_sec", 90)))
         else:
