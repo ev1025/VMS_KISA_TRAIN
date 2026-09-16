@@ -81,6 +81,27 @@ def main():
     check(not now, "runs/ 가중치",
           f"{len(now)}개에 .pt 가 없다(중단된 학습 잔해 → logs/_archive 로): {', '.join(now[:6])}")
 
+    # 4-2) 가중치 깊이가 규약(runs/<실험>/<모델>/weights/best.pt)과 맞나
+    #      ultralytics 는 --project 를 줘도 기본 runs/detect 아래에 또 만드는 일이 있다.
+    #      2026-09-16 에 runs/detect/runs/p960_hand_20260916/... 이 그렇게 생겼고 위 검사는 못 잡았다.
+    # 규약이 runs/<실험>/<모델>/weights/ 로 바뀌기 전(2026-09-15 이전)에 만든 것들.
+    # 다시 학습할 일이 없어 그대로 둔다. 새로 생기는 것만 잡으면 된다.
+    OLD_LAYOUT = {
+        "fire_base_20260908", "fire_fasdd_20260908", "fire_fog1_20260908", "fire_fogsnow_20260908",
+        "fire_m_snowmix_20260908", "fire_s960_20260908", "fire_snow2_20260908",
+        "fire_snowfull_20260908", "fire_snowmix_20260908_1028",
+        "fresh_48k_base_20260909", "fresh_48k_fasdd_20260909", "person_v2", "person_v3",
+    }
+    deep = []
+    if rd.is_dir():
+        for pt in rd.rglob("weights/*.pt"):
+            rel = pt.relative_to(rd).parts          # (<실험>, <모델>, weights, x.pt)
+            if len(rel) == 4 or rel[0] in RUNS_EXCEPT or rel[0] in OLD_LAYOUT:
+                continue
+            deep.append(str(pt.relative_to(V)))
+    check(not deep, "runs/ 가중치 깊이",
+          f"{len(deep)}개가 runs/<실험>/<모델>/weights/ 자리가 아니다: {', '.join(deep[:3])}")
+
     # 5) 큐 로그는 logs/queue/<실험>.log 만
     qd = V / "logs/queue"
     odd = sorted(p.name for p in qd.iterdir() if p.is_file() and p.suffix != ".log") if qd.is_dir() else []
