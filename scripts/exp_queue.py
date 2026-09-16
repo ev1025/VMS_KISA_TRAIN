@@ -467,11 +467,25 @@ def cmd_run(a):
     todo = [e for e in exps if not is_done(e)]
     log(f"큐 {a.queue}: 총 {len(exps)}개, 남은 {len(todo)}개, 동시 {a.jobs}잡")
     running = []                       # (proc, exp)
+    seen = {e["name"] for e in exps}   # 도는 중에 yaml 에 추가된 실험을 알아보려고
     vram_gate = int(defaults.get("vram_gate_mib", 120000))
     min_free = float(defaults.get("min_free_gb", 300))   # 컨테이너 메모리 한도를 안에서 못 읽으니 가용 RAM 으로 대신 막는다
     warned = 0
     while todo or running:
         running = [(p, e) for p, e in running if p.poll() is None]
+        # 도는 중에 yaml 에 실험을 추가해도 집어 간다.
+        # 예전에는 시작할 때 고른 todo 만 알아서, 추가하려면 러너를 하나 더 띄워야 했다.
+        # 그런데 러너에 잠금이 없어 둘이 같은 실험을 동시에 띄울 수 있었다(2026-09-16).
+        try:
+            fresh = yaml.safe_load(open(a.queue, encoding="utf-8"))["experiments"]
+        except Exception as e:
+            fresh = []
+            log(f"큐 파일 다시 읽기 실패(무시하고 진행): {e!r}")
+        for e in fresh:
+            if e["name"] not in seen:
+                seen.add(e["name"])
+                if not is_done(e):
+                    todo.append(e); log(f"큐에 추가됨: {e['name']}")
         gb = free_gb()
         if todo and len(running) < a.jobs and gpu_used_mib() < vram_gate and gb >= min_free:
             e = todo.pop(0)
