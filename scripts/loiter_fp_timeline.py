@@ -22,7 +22,7 @@ import kisa_paths as KP  # noqa: E402
 import loiter_rule4 as L  # noqa: E402  (sa_now · load 와 같은 판정 경로)
 
 CFG = K.ITEMS["loitering"]
-DUMPS = [("배포", "dumps/loiter_botsort_v2"), ("손라벨32.6%", "dumps/loiter_p1280hand_1280"), ("손라벨10.8%", "dumps/loiter_p1280ov2_1280")]
+DUMPS = [("배포", "dumps/loiter_botsort_v2"), ("손라벨32.6%", "dumps/loiter_p1280hand_bs1280"), ("손라벨10.8%", "dumps/loiter_p1280ov2_bs1280")]
 
 
 def tracks_in_zone(rows, poly):

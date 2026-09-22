@@ -124,7 +124,7 @@ def fmt(res):
 GRID = dict(conf_th=[0.25, 0.30, 0.35, 0.40], corners=[0], win_s=[8.0, 10.0, 12.0],
             need_s=[4.0, 5.0, 6.0], gap_s=[3.0, 6.0, 10.0], settle_s=[5.0])
 
-dumps = sys.argv[1:] or ["dumps/loiter_botsort_v2", "dumps/loiter_p1280hand_1280", "dumps/loiter_p1280ov2_1280"]
+dumps = sys.argv[1:] or ["dumps/loiter_botsort_v2", "dumps/loiter_p1280hand_bs1280", "dumps/loiter_p1280ov2_bs1280"]
 for dump in dumps:
     rows, poly, gt = load(dump)
     if not rows:

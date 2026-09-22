@@ -25,8 +25,8 @@ import kisa_paths as KP  # noqa: E402
 
 CFG = K.ITEMS["loitering"]
 DUMPS = [("deploy", "dumps/loiter_botsort_v2", (80, 220, 80)),
-         ("hand32", "dumps/loiter_p1280hand_1280", (60, 140, 255)),
-         ("hand10", "dumps/loiter_p1280ov2_1280", (255, 200, 60))]
+         ("hand32", "dumps/loiter_p1280hand_bs1280", (60, 140, 255)),
+         ("hand10", "dumps/loiter_p1280ov2_bs1280", (255, 200, 60))]
 
 
 def nearest_row(rows, t):

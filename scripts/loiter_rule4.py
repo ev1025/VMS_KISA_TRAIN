@@ -173,7 +173,7 @@ GRID = dict(conf_th=[0.35, 0.40], dwell=[4.0, 6.0], warm_s=[0], dedupe=[0], crow
 
 
 def main(dumps=None):
-    dumps = dumps or sys.argv[1:] or ["dumps/loiter_botsort_v2", "dumps/loiter_p1280hand_1280", "dumps/loiter_p1280ov2_1280"]
+    dumps = dumps or sys.argv[1:] or ["dumps/loiter_botsort_v2", "dumps/loiter_p1280hand_bs1280", "dumps/loiter_p1280ov2_bs1280"]
     for dump in dumps:
         rows, poly, gt = load(dump)
         if not rows:
