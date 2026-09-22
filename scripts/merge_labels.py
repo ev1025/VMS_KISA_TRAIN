@@ -241,13 +241,24 @@ def main():
     if not a.dry:
         import dedup_fire_labels as D
         f = HAND / "fire_labels.json"
+        inc_f = inc / "손라벨" / "fire_labels.json"
         if f.is_file():
             rows = json.loads(f.read_text(encoding="utf-8"))
-            keep_rows, gone = D.dedup(rows)
+            # 겹치면 들어온 쪽(라벨 작업대)을 남긴다. 사용자 지시(2026-09-22).
+            # 방금 다시 그린 것이 서버에 남은 옛 박스보다 정확하다.
+            prefer = set()
+            if inc_f.is_file():
+                try:
+                    inc_ids = {ident(r) for r in json.loads(inc_f.read_text(encoding="utf-8"))}
+                    prefer = {i for i, r in enumerate(rows) if ident(r) in inc_ids}
+                except Exception:
+                    prefer = set()
+            keep_rows, gone = D.dedup(rows, prefer=prefer or None)
             if gone:
                 shutil.copy2(f, f.with_suffix(".json.dedup_before"))
                 f.write_text(json.dumps(keep_rows, ensure_ascii=False), encoding="utf-8")
-                print(f"{'중복박스':9s} {len(gone)}건 제거 (같은 프레임·같은 클래스·IoU 0.5 이상)")
+                how = "들어온 쪽 우선" if prefer else "큰 쪽 남김"
+                print(f"{'중복박스':9s} {len(gone)}건 제거 (같은 프레임·같은 클래스·IoU 0.5 이상, {how})")
     return 0
 
 

@@ -39,8 +39,14 @@ def iou(a, b):
     return inter / union if union > 0 else 0.0
 
 
-def dedup(rows):
-    """(남길 행, 뺄 행). 한 프레임 안에서 겹치는 것끼리 묶어 넓이가 가장 큰 하나만 남긴다."""
+def dedup(rows, prefer=None):
+    """(남길 행, 뺄 행). 한 프레임 안에서 겹치는 것끼리 묶어 하나만 남긴다.
+
+    prefer 는 '이쪽을 우선한다' 는 행 번호 집합. 합칠 때 들어온 쪽(라벨 작업대)을 넣는다.
+    사용자 지시(2026-09-22): "겹치는 박스가 있으면 무조건 토르 우선".
+    작업대에서 방금 다시 그린 것이 서버에 남은 옛 박스보다 정확하기 때문이다.
+    prefer 가 없거나 한 덩어리에 prefer 가 없으면 넓이가 큰 것을 남긴다(불꽃을 덜 잘라 먹는 쪽).
+    """
     groups = collections.defaultdict(list)
     for i, r in enumerate(rows):
         groups[(r.get("file"), r.get("cls"))].append(i)
@@ -64,7 +70,9 @@ def dedup(rows):
             members = list(members)
             if len(members) < 2:
                 continue
-            keep = max(members, key=lambda i: rows[i]["w"] * rows[i]["h"])
+            pref = [i for i in members if prefer and i in prefer]
+            pool = pref or members                 # 우선할 것이 있으면 그 안에서만 고른다
+            keep = max(pool, key=lambda i: rows[i]["w"] * rows[i]["h"])
             drop.update(m for m in members if m != keep)
     return [r for i, r in enumerate(rows) if i not in drop], [rows[i] for i in sorted(drop)]
 
@@ -91,5 +99,25 @@ def main():
     print("  썼다. 사본 %s" % p.with_suffix(".json.dedup_before").name)
 
 
+def selfcheck():
+    """겹칠 때 무엇을 남기는지. 규칙이 뒤집히면 라벨이 조용히 옛것으로 되돌아간다."""
+    a = {"file": "x.png", "cls": 0, "x": .5, "y": .5, "w": .10, "h": .10}   # 서버에 있던 것
+    b = {"file": "x.png", "cls": 0, "x": .5, "y": .5, "w": .08, "h": .08}   # 작업대에서 다시 그린 것
+    c = {"file": "x.png", "cls": 1, "x": .5, "y": .5, "w": .10, "h": .10}   # 클래스가 다르면 남남
+    keep, _ = dedup([a, b])
+    assert len(keep) == 1 and keep[0]["w"] == .10, "우선순위가 없으면 큰 쪽"
+    keep, _ = dedup([a, b], prefer={1})
+    assert len(keep) == 1 and keep[0]["w"] == .08, "들어온 쪽은 작아도 이긴다"
+    keep, _ = dedup([a, b], prefer={99})
+    assert keep[0]["w"] == .10, "그 덩어리에 우선할 것이 없으면 큰 쪽"
+    assert len(dedup([a, c])[0]) == 2, "클래스가 다르면 겹쳐도 그대로 둔다"
+    assert len(dedup([a])[0]) == 1, "하나뿐이면 그대로"
+    print("자체 점검 통과 (5건)")
+
+
 if __name__ == "__main__":
-    main()
+    import sys
+    if "--selfcheck" in sys.argv:
+        selfcheck()
+    else:
+        main()
