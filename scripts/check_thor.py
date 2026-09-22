@@ -18,7 +18,7 @@
     되돌아온 값: 어긋난 파일이 있으면 1
 
     SRV_HOST  서버 ssh 이름 (기본 nhn-yolo)
-    THOR_HOST Thor ssh 주소 (기본 mrod1@10.37.27.28)
+    THOR_HOST Thor ssh 주소(사용자@호스트). ~/.ssh/config 의 별칭을 쓰는 것이 낫다
     서버는 키 인증. Thor 는 키가 없으면 환경변수 MROD_PW 로 붙는다(비밀번호는 코드에 안 적는다).
 """
 import os
@@ -28,8 +28,8 @@ from pathlib import Path
 
 SRV = os.environ.get("SRV_HOST", "nhn-yolo")
 SRV_ROOT = os.environ.get("SRV_ROOT", "/NHNHOME/WORKSPACE/26mss002_E3/vms")   # 서버 쪽 경로라 원격 기본값
-HOST = os.environ.get("THOR_HOST", "mrod1@10.37.27.28")
-THOR = "/home/mrod1/Desktop/Project/Kisa"
+HOST = os.environ.get("THOR_HOST", "thor")   # ~/.ssh/config 의 별칭
+THOR = os.environ.get("THOR_ROOT", "~/Desktop/Project/Kisa")
 
 # (서버 경로, Thor 경로) — 시험장에서 실제로 도는 것만 본다
 PAIRS = [
