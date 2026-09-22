@@ -9,6 +9,10 @@ Conv1D+GRU 경량 시계열 분류기 (환경 리스크 없는 자체 구현).
   양성 = 창이 [GT, GT+dur] 와 50% 이상 겹침 / 음성 = 완전 밖
 검증: 배포 10편의 창별 로짓 시퀀스를 npz 로 저장 (+간단 임계 스윕 F1 출력)
 """
+import sys as _sys
+from pathlib import Path as _P
+_sys.path.insert(0, str(_P(__file__).resolve().parent))
+import kisa_paths as _KP   # 경로는 한 곳에서만 정한다(docs/file_path.md 1절)
 import random
 from pathlib import Path
 
@@ -16,8 +20,8 @@ import numpy as np
 import torch
 import torch.nn as nn
 
-FEATS = Path("/NHNHOME/WORKSPACE/26mss002_E3/vms/feats/fall_seq")
-OUT = Path("/NHNHOME/WORKSPACE/26mss002_E3/vms/runs/fall_seq")
+FEATS = _KP.V / "feats/fall_seq"
+OUT = _KP.V / "runs/fall_seq"
 WIN = 20            # 10초 (0.5초 표본)
 DIM = 59
 DEPLOY_PREFIX = "C00_"      # 배포용 파일명, 해외는 C0xxxxx

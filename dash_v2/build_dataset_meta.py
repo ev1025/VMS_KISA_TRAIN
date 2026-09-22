@@ -13,7 +13,7 @@ import json
 import os
 from pathlib import Path
 
-G = Path("/NHNHOME/WORKSPACE/26mss002_E3/vms")
+G = Path(os.environ.get("VMS_ROOT") or Path(__file__).resolve().parents[1])   # 이 파일의 상위 = 저장소 뿌리
 
 # 보여줄 데이터셋: 원본·대표만 (파생 실험셋 fire_v2/v3/v4, kfold 등은 제외)
 DATASETS = [

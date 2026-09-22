@@ -12,6 +12,10 @@
 그래서: 타일로 검출 → 겹친 박스 합치기(NMS) → 단순 IoU 트래커로 번호 부여 → 기존과 같은 형식으로 저장.
 출력 한 줄 = {"t": 초, "boxes": [[트랙번호, 신뢰도, x1, y1, x2, y2], ...]}
 """
+import sys as _sys
+from pathlib import Path as _P
+_sys.path.insert(0, str(_P(__file__).resolve().parent))
+import kisa_paths as _KP   # 경로는 한 곳에서만 정한다(docs/file_path.md 1절)
 import argparse
 import json
 from pathlib import Path
@@ -19,7 +23,7 @@ from pathlib import Path
 import cv2
 import numpy as np
 
-W = Path("/NHNHOME/WORKSPACE/26mss002_E3")
+W = _KP.V.parent
 G = W / "vms"
 
 

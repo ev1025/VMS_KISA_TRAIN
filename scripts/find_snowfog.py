@@ -8,6 +8,10 @@
   안개 = 밝은데 명암 대비가 낮음(V 표준편차 작음) + 채도 낮음
 찾은 영상은 화재 시각 주변 프레임을 손라벨 폴더에 저장한다.
 """
+import sys as _sys
+from pathlib import Path as _P
+_sys.path.insert(0, str(_P(__file__).resolve().parent))
+import kisa_paths as _KP   # 경로는 한 곳에서만 정한다(docs/file_path.md 1절)
 import argparse
 import json
 import xml.etree.ElementTree as ET
@@ -16,7 +20,7 @@ from pathlib import Path
 import cv2
 import numpy as np
 
-W = Path("/NHNHOME/WORKSPACE/26mss002_E3")
+W = _KP.V.parent
 G = W / "vms"
 
 

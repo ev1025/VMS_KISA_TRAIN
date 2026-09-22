@@ -27,7 +27,7 @@ import sys
 from pathlib import Path
 
 SRV = os.environ.get("SRV_HOST", "nhn-yolo")
-SRV_ROOT = "/NHNHOME/WORKSPACE/26mss002_E3/vms"
+SRV_ROOT = os.environ.get("SRV_ROOT", "/NHNHOME/WORKSPACE/26mss002_E3/vms")   # 서버 쪽 경로라 원격 기본값
 HOST = os.environ.get("THOR_HOST", "mrod1@10.37.27.28")
 THOR = "/home/mrod1/Desktop/Project/Kisa"
 

@@ -3,6 +3,10 @@
    전 구간 0.5초 스트라이드, 6뷰 타일. base 스트림 = 타일 conf. SR 스트림 = 약신호 타일(base 0.10~0.40)만
    Real-ESRGAN ×2 → 1280 추론으로 갱신. 두 스트림 각각 규칙(6프레임 중 4 ≥0.4) 온셋 → GT 대조.
    음성(비화재 20편)에서 온셋이 뜨면 오탐."""
+import sys as _sys
+from pathlib import Path as _P
+_sys.path.insert(0, str(_P(__file__).resolve().parent))
+import kisa_paths as _KP   # 경로는 한 곳에서만 정한다(docs/file_path.md 1절)
 import sys, types, xml.etree.ElementTree as ET
 from collections import deque
 from pathlib import Path
@@ -14,7 +18,7 @@ from realesrgan import RealESRGANer
 from basicsr.archs.rrdbnet_arch import RRDBNet
 from ultralytics import YOLO
 
-W = Path("/NHNHOME/WORKSPACE/26mss002_E3"); G = W / "vms"
+W = _KP.V.parent; G = _KP.V
 STRIDE, DELAY, BEFORE, AFTER = 0.5, 10.0, 2.0, 10.0
 LO, HI, TH, WIN, HITS = 0.10, 0.40, 0.40, 6, 4
 

@@ -1,11 +1,15 @@
 # -*- coding: utf-8 -*-
 """방화 10편 타임라인: 0.5s 6뷰 타일 → 프레임별 max fire/smoke conf. CPU. → fire_tl.json"""
+import sys as _sys
+from pathlib import Path as _P
+_sys.path.insert(0, str(_P(__file__).resolve().parent))
+import kisa_paths as _KP   # 경로는 한 곳에서만 정한다(docs/file_path.md 1절)
 import json, xml.etree.ElementTree as ET
 from pathlib import Path
 import cv2
 from ultralytics import YOLO
 
-W = Path("/NHNHOME/WORKSPACE/26mss002_E3"); G = W / "vms"
+W = _KP.V.parent; G = _KP.V
 
 
 def hms(t):

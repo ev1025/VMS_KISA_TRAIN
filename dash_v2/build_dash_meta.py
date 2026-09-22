@@ -6,11 +6,12 @@
 영상은 서버에 있으므로 상대 경로만 담고, 실제 스트리밍은 서버가 한다.
 """
 import json
+import os
 import math, re, xml.etree.ElementTree as ET
 from pathlib import Path
 import numpy as np
 
-G = Path("/NHNHOME/WORKSPACE/26mss002_E3/vms")
+G = Path(os.environ.get("VMS_ROOT") or Path(__file__).resolve().parents[1])   # 이 파일의 상위 = 저장소 뿌리
 DEPLOY = G/"data/원본데이터/kisa_배포_검증영상/deploy_val"
 MAPS = G/"data/원본데이터/kisa_배포_검증영상/zone_maps"
 BEFORE, AFTER, DELAY = 2.0, 10.0, 10.0
