@@ -10,6 +10,10 @@
   서버: python frame_probe.py save --videos <쓰러짐 견본 폴더> --out <폴더> --clips C00_153_0005:113.0,113.5 C00_235_0002:15.0,16.0,17.0
   Thor: python frame_probe.py thor --videos /data/영상/falldown --npy <서버 npy 폴더> --out <폴더>
 """
+import sys as _sys
+from pathlib import Path as _P
+_sys.path.insert(0, str(_P(__file__).resolve().parent))
+import kisa_paths as _KP
 import argparse
 import hashlib
 import json
@@ -57,7 +61,7 @@ def main():
     ap.add_argument("--out", required=True)
     ap.add_argument("--npy", default=None)
     ap.add_argument("--clips", nargs="*", default=["C00_153_0005:112.0,113.0,113.5,114.0", "C00_235_0002:14.5,15.0,16.0,17.0,18.0"])
-    ap.add_argument("--weights", default="yolo11x-pose.pt")
+    ap.add_argument("--weights", default=str(_KP.V / "model/yolo11x-pose.pt"))
     a = ap.parse_args()
     out = Path(a.out); out.mkdir(parents=True, exist_ok=True)
     from ultralytics import YOLO

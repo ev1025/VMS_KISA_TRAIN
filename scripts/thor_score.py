@@ -28,6 +28,7 @@ import re
 import subprocess
 import sys
 import tempfile
+import time
 from pathlib import Path
 
 # 주소·경로는 환경변수로 받는다(코드에 IP·계정을 적지 않는다). 기본값은 ssh 별칭이다.
@@ -74,10 +75,18 @@ def fetch(exp, which, tmp):
 def score_on_thor(local_pt, tag, imgsz):
     """Thor 배포 경로로 한 벌만 채점한다(앙상블 끔). 출력 원문을 돌려준다."""
     name = local_pt.name
-    r = run(["scp", "-o", "ConnectTimeout=25", "-q", str(local_pt),
-             f"{THOR}:{THOR_ROOT}/weights/exp/{name}"])
-    if r.returncode:
-        return f"[실패] Thor 로 올리지 못했다: {r.stderr.strip()[:200]}"
+    # 가중치가 19MB 다. 다른 전송이 겹치면 한 번에 실패한다(2026-09-23 실측: 침입 영상 27편을
+    # 보내는 중에 끊겼다). 몇 번 다시 해 본다.
+    for attempt in range(1, 4):
+        r = run(["scp", "-o", "ConnectTimeout=30", "-o", "ServerAliveInterval=15",
+                 "-q", str(local_pt), f"{THOR}:{THOR_ROOT}/weights/exp/{name}"])
+        if not r.returncode:
+            break
+        if attempt < 3:
+            print("  올리기 %d번째 실패, 20초 뒤 다시" % attempt, flush=True)
+            time.sleep(20)
+    else:
+        return f"[실패] Thor 로 올리지 못했다(3번 시도): {r.stderr.strip()[:200]}"
     out = f"{THOR_ROOT}/_thor_score/{tag}"
     cmd = (
         f"mkdir -p {out} && docker run --rm --runtime=nvidia --network host "

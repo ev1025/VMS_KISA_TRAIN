@@ -7,6 +7,10 @@
    --batch  프레임을 이만큼 모아 한 번에 추론(기본 1 = 기존과 동일). 학습과 GPU 를 나눠 쓸 때 편당 2.5분 → 배치 16 으로 줄인다.
             ultralytics 는 배치 안 이미지를 각각 letterbox 하므로 결과는 낱장 추론과 같다.
 """
+import sys as _sys
+from pathlib import Path as _P
+_sys.path.insert(0, str(_P(__file__).resolve().parent))
+import kisa_paths as _KP
 import argparse, xml.etree.ElementTree as ET
 from pathlib import Path
 import cv2, numpy as np
@@ -48,7 +52,7 @@ def main():
     ap.add_argument("--noise", type=int, default=0, help="픽셀의 N%% 에 ±1 무작위 잡음(프레임 번호로 결정적). 디코더 반올림 무늬 흉내(2026-09-21)")
     a = ap.parse_args()
     out = Path(a.out); out.mkdir(parents=True, exist_ok=True)
-    model = YOLO("yolo11x-pose.pt")
+    model = YOLO(str(_KP.V / "model/yolo11x-pose.pt"))
     vids = []
     for d in a.videos:
         vids += sorted(Path(d).rglob("*.mp4"))
