@@ -22,9 +22,11 @@ body{background:var(--bg);color:var(--tx);font:13px/1.5 -apple-system,BlinkMacSy
 .stat{color:var(--mut);font-size:12px}.stat b{color:var(--tx);font-variant-numeric:tabular-nums}
 .main{flex:1;display:flex;min-height:0}
 /* 좌 */
-.left{width:270px;flex:0 0 auto;border-right:1px solid var(--line);display:flex;flex-direction:column;min-height:0}
-.srcbox{padding:10px;border-bottom:1px solid var(--line)}
-.srcbox label{display:block;color:var(--mut);font-size:11px;margin-bottom:4px}
+.left{width:330px;   /* 칩 세 줄이 안 접히는 최소 폭(실측 2026-09-17, 3자리 편수 기준) */flex:0 0 auto;border-right:1px solid var(--line);display:flex;flex-direction:column;min-height:0}
+.srcbox{padding:8px 10px 10px;border-bottom:1px solid var(--line);display:flex;flex-direction:column;gap:6px}
+.srcbox .tools{display:flex;gap:6px;align-items:stretch;margin-bottom:2px}   /* 도구 줄: 보내기·새로고침. 맨 위에 둔다 */
+.srcbox label[hidden]{display:none}   /* .srcbox label 의 display:block 이 [hidden] 보다 우선순위가 높아 따로 적어야 먹는다 */
+.srcbox label{display:block;color:var(--mut);font-size:11px;font-weight:700;margin:0 0 -2px}   /* 바로 아래 드롭다운의 이름표 */
 .srcbox select{width:100%;background:var(--panel);color:var(--tx);border:1px solid var(--line);border-radius:7px;padding:7px 9px;font-size:13px;font-weight:600}
 .filt{display:flex;gap:4px;margin-top:8px}
 .filt[hidden]{display:none}

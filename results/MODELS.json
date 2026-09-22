@@ -1,324 +1,83 @@
 {
- "_설명": "인증에 실제로 쓰는 가중치의 계보. 모델 출처를 묻는 질문은 여기 하나만 본다. scripts/check_models.py 가 검사한다.",
- "_규칙": [
-  "새 가중치를 weights/kisa/ 에 걸면 여기에 한 항목을 같이 추가한다. check_models.py 가 빠진 것을 잡는다.",
-  "학습 데이터셋을 지우기 전에 train 의 구성(장수·출처)을 여기로 옮겨 적는다. person_v2/v3·fire_snowfull 은 그걸 안 해서 dataset_deleted 가 됐다.",
-  "모르는 값은 비우지 말고 null 로 두고 note 에 이유를 적는다. 비워 두면 다음 사람이 또 찾아 헤맨다."
- ],
- "_갱신": "2026-09-16",
- "models": {
-  "person_v3.pt": {
-   "sha256_16": "4006bb79730cc250",
-   "path": "vms/model/person_v3.pt",
-   "task": "person detect",
-   "used_by": [
-    "침입"
-   ],
-   "kisa_f1": {
-    "침입": 94.74
-   },
-   "base_model": "yolo11s.pt",
-   "train": {
-    "imgsz": 640,
-    "epochs": 60,
-    "batch": 128,
-    "multi_scale": true
-   },
-   "val_map50": 0.89,
-   "dataset": {
-    "total": 33074,
-    "backgrounds": 9488,
-    "composition": [
-     {
-      "source": "COCO2017 person",
-      "n": 12000
-     },
-     {
-      "source": "COCO2017 배경(사람 없음)",
-      "n": 2000
-     },
-     {
-      "source": "person_pl (의사라벨)",
-      "n": 18532,
-      "pseudo_label": true
-     },
-     {
-      "source": "야간 트랙 검증 라벨 (rnd_person 야간 24편)",
-      "n": 542
-     }
-    ],
-    "val": "person_pl 949장",
-    "status": "dataset_deleted",
-    "note": "general_yolo/datasets/person_v3 는 2026-09-11 의사라벨 정리 때 삭제. 재현 불가."
-   },
-   "evidence": "logs/_archive/v3_chain.log.gz",
-   "note": "의사라벨 18,532장이 성능의 핵심. 빼고 학습한 person_coco_kisa_s 는 침입 69.23 으로 떨어진다."
-  },
-  "person_v2.pt": {
-   "sha256_16": "1b25d92bfc56453b",
-   "path": "vms/model/person_v2.pt",
-   "task": "person detect",
-   "used_by": [
-    "배회"
-   ],
-   "kisa_f1": {
-    "배회": 93.1
-   },
-   "base_model": "yolo11s.pt",
-   "train": {
-    "imgsz": 640,
-    "epochs": 60,
-    "batch": 128,
-    "multi_scale": true
-   },
-   "val_map50": 0.907,
-   "dataset": {
-    "total": 32532,
-    "backgrounds": 9488,
-    "composition": [
-     {
-      "source": "COCO2017 person",
-      "n": 12000
-     },
-     {
-      "source": "COCO2017 배경(사람 없음)",
-      "n": 2000
-     },
-     {
-      "source": "person_pl (의사라벨)",
-      "n": 18532,
-      "pseudo_label": true
-     }
-    ],
-    "val": "person_pl 949장",
-    "status": "dataset_deleted",
-    "note": "person_v3 와 같은 이유로 삭제."
-   },
-   "evidence": "logs/_archive/person_v2.log.gz",
-   "note": "person_v3 = 이 데이터 + 야간 트랙 542장."
-  },
-  "fire_snowfull.pt": {
-   "sha256_16": "c76b7d69a275e4dc",
-   "path": "/NHNHOME/WORKSPACE/26mss002_E3/vms/runs/g_wildpos_20260912/yolo11s/weights/best.pt",
-   "task": "fire/smoke detect (2class)",
-   "used_by": [
-    "방화"
-   ],
-   "kisa_f1": {
-    "방화": 88.89
-   },
-   "base_model": "yolo11s.pt",
-   "train": {
-    "epochs": 40,
-    "batch": 96,
-    "imgsz": 640,
-    "multi_scale": 0.5,
-    "cache": "ram",
-    "workers": 16
-   },
-   "val_map50": 0.3853,
-   "dataset": {
-    "base": "aihub71751_48k",
-    "extras": [
-     "fasdd_snowfog",
-     "fasdd_yolo",
-     "azimjaan_yolo",
-     "wildfire_pos_yolo"
-    ],
-    "oversample": {
-     "handset_fire_hn": 4
-    },
-    "total": 210921,
-    "status": "ok",
-    "note": "구성이 configs/queue_grid_fire_20260912.yaml 에 남아 있어 재현 가능하다."
-   },
-   "evidence": "results/g_wildpos_20260912/ · logs/queue/val_fire_wildpos.log",
-   "note": "파일 이름은 fire_snowfull.pt 그대로 두었다(kisa_items.py 가 ITEMS['fire']['model'] 로 이 이름을 찾는다). 실체는 g_wildpos_20260912 다. 2026-09-15 교체."
-  },
-  "yolo11x-pose.pt": {
-   "sha256_16": "013c43543b0751b8",
-   "path": "vms/model/yolo11x-pose.pt",
-   "task": "pose",
-   "used_by": [
-    "쓰러짐"
-   ],
-   "kisa_f1": {
-    "쓰러짐": 90.0
-   },
-   "base_model": null,
-   "train": null,
-   "dataset": {
-    "status": "not_trained_by_us",
-    "note": "ultralytics 사전학습 모델 그대로. 파인튜닝 안 함."
-   },
-   "evidence": "ultralytics 공식 배포본",
-   "note": "파인튜닝을 안 했기에 추론 해상도를 1280 으로 올리면 좋아진다(640 대비 84.21→90.00). 640 으로 파인튜닝한 모델들과 반대 방향."
-  },
   "fall_track.pt": {
-   "sha256_16": "b79a36e344b250cf",
-   "path": "vms/runs/fall_track/fall_track.pt",
-   "task": "SeqNet (59차원 x 10초 창 → 쓰러짐 확률)",
-   "used_by": [
-    "쓰러짐"
-   ],
-   "kisa_f1": {
-    "쓰러짐": 100.0
-   },
-   "base_model": null,
-   "train": {
-    "학습기": "scripts/fall_track.py",
-    "입력": "yolo11x-pose 키포인트 시계열(59차원 x 10초 창, 0.1초 간격)",
-    "판정": "문턱 0.755 · 연속 4창 (2026-09-15 에 0.269 -> 0.755 로 바꿔 90.00 -> 100.00)",
-    "note": "학습 데이터셋 구성 기록이 없다. 재학습하려면 fall_track.py 의 입력 경로부터 확인해야 한다."
-   },
-   "dataset": {
-    "total": null,
-    "composition": null,
-    "status": "record_missing",
-    "note": "학습 스크립트·로그를 찾지 못했다. runs/fall_track/ 에 가중치와 deploy_track_logits.npz 만 있다. 재학습이 필요해지면 먼저 이 기록부터 복원할 것."
-   },
-   "evidence": "runs/fall_track/deploy_track_logits.npz (배포 10편 추론 로짓)",
-   "note": "기록이 없는 유일한 운영 가중치."
+    "sha256_16": "b79a36e344b250cf",
+    "size_mb": 1.4,
+    "experiment": "(불명)",
+    "found_at": [
+      "(학습 산출물과 일치하는 파일 없음)"
+    ],
+    "best_score_10clips": null
+  },
+  "fall_track_1280_s0.pt": {
+    "sha256_16": "693b052187619f3e",
+    "size_mb": 1.4,
+    "experiment": "(불명)",
+    "found_at": [
+      "(학습 산출물과 일치하는 파일 없음)"
+    ],
+    "best_score_10clips": null
+  },
+  "fall_track_1280_s1.pt": {
+    "sha256_16": "085b32f856c6b71c",
+    "size_mb": 1.4,
+    "experiment": "(불명)",
+    "found_at": [
+      "(학습 산출물과 일치하는 파일 없음)"
+    ],
+    "best_score_10clips": null
   },
   "fire_fog.pt": {
-   "sha256_16": "689ba18d53651931",
-   "path": "vms/_kisa_port/weights/kisa/fire_fog.pt",
-   "실험": "fresh_48k_wildall_20260909",
-   "원본": "runs/fresh_48k_wildall_20260909/yolo11s/weights/best.pt",
-   "task": "fire/smoke detect",
-   "used_by": [
-    "방화"
-   ],
-   "역할": "앙상블 1번. 안개편 C00_195_0001 을 본다(학습에 안개 네거티브 wildfire_fog_neg 가 들어갔다).",
-   "추론": {
-    "view_imgsz": 640,
-    "뷰": "6분할 타일",
-    "추론방식": "타일 낱장(배치로 넣으면 값이 달라진다)"
-   },
-   "base_model": "yolo11s.pt",
-   "train": {
-    "epochs": 80,
-    "batch": 128,
-    "imgsz": 640,
-    "multi_scale": 0.5,
-    "cache": "ram",
-    "workers": 16
-   },
-   "dataset": {
-    "base": "aihub71751_48k",
-    "extras": [
-     "fasdd_snowfog",
-     "fasdd_yolo",
-     "wildfire_pos_yolo",
-     "wildfire_fog_neg"
+    "sha256_16": "689ba18d53651931",
+    "size_mb": 19.2,
+    "experiment": "fresh_48k_wildall_20260909",
+    "found_at": [
+      "runs/fresh_48k_wildall_20260909/yolo11s/weights/best.pt"
     ],
-    "oversample": {
-     "human_fire": 5
-    }
-   },
-   "note": "이 한 벌만으로는 눈편 C00_216_0003 을 못 본다(불 0.063). fire_small.pt 와 같이 쓴다."
+    "best_score_10clips": 94.74
   },
   "fire_small.pt": {
-   "sha256_16": "dbec41d2a2e97091",
-   "path": "vms/_kisa_port/weights/kisa/fire_small.pt",
-   "실험": "s2_s960_20260913",
-   "원본": "logs/_archive/2026-09-15/r960오염실험/runs/s2_s960_20260913/yolo11s/weights/best.pt",
-   "task": "fire/smoke detect",
-   "used_by": [
-    "방화"
-   ],
-   "역할": "앙상블 2번. 눈편 C00_216_0003 의 25x12px 불씨를 본다(960 학습).",
-   "추론": {
-    "view_imgsz": 960,
-    "뷰": "6분할 타일",
-    "추론방식": "타일 낱장"
-   },
-   "base_model": "yolo11s.pt",
-   "train": {
-    "epochs": 80,
-    "batch": 48,
-    "imgsz": 960,
-    "multi_scale": 0.5,
-    "cache": false,
-    "workers": 24
-   },
-   "dataset": {
-    "base": "aihub71751_48k",
-    "extras": [
-     "fasdd_snowfog",
-     "fasdd_yolo",
-     "azimjaan_yolo",
-     "wildfire_pos_yolo"
+    "sha256_16": "dbec41d2a2e97091",
+    "size_mb": 19.2,
+    "experiment": "s2_s960_20260913",
+    "found_at": [
+      "logs/_archive/2026-09-15/r960오염실험/runs/s2_s960_20260913/yolo11s/weights/best.pt"
     ],
-    "oversample": {
-     "handset_fire_hn": 4
-    }
-   },
-   "note": [
-    "원본이 runs/ 에 없다. 2026-09-15 재학습이 실패(train_failed, epoch 3)하며 그 자리를 덮어썼고,",
-    "쓸 수 있는 것은 아카이브 사본뿐이다. scripts/fire_weight_check.py 로 덤프 재현을 확인했다.",
-    "아카이브된 이유는 '요구 해상도 1440 인데 960 사본을 확대해 학습' 한 해상도 그리드서치 결함이다.",
-    "채점셋 누수는 없고 검출기로는 정상 완주본(epoch -1)이라 앙상블 부품으로는 쓸 수 있다.",
-    "지금 도는 f960_best_s / f1280_best_s 가 눈편을 잡으면 이 의존을 없앤다."
-   ]
+    "best_score_10clips": null
+  },
+  "fire_snowfull.pt": {
+    "sha256_16": "c76b7d69a275e4dc",
+    "size_mb": 19.2,
+    "experiment": "g_wildpos_20260912",
+    "found_at": [
+      "runs/g_wildpos_20260912/yolo11s/weights/best.pt"
+    ],
+    "best_score_10clips": 88.89
+  },
+  "person_v2.pt": {
+    "sha256_16": "1b25d92bfc56453b",
+    "size_mb": 19.2,
+    "experiment": "person_v2",
+    "found_at": [
+      "runs/person_v2/weights/best.pt"
+    ],
+    "best_score_10clips": null
+  },
+  "person_v3.pt": {
+    "sha256_16": "4006bb79730cc250",
+    "size_mb": 19.2,
+    "experiment": "person_v3",
+    "found_at": [
+      "runs/person_v3/weights/best.pt"
+    ],
+    "best_score_10clips": null
+  },
+  "yolo11x-pose.pt": {
+    "sha256_16": "013c43543b0751b8",
+    "size_mb": 118.5,
+    "experiment": "(불명)",
+    "found_at": [
+      "(학습 산출물과 일치하는 파일 없음)"
+    ],
+    "best_score_10clips": null
   }
- },
- "alternatives": {
-  "_설명": "의사라벨 없이 학습한 사람 모델. 정책상 이쪽이 맞지만 점수가 크게 떨어져 채택하지 못했다.",
-  "person_coco_kisa_s_20260911": {
-   "base": "trainset_person_20260911",
-   "n_train": 112841,
-   "imgsz": 640,
-   "kisa_f1": {
-    "침입": 69.23,
-    "배회": 75.0
-   }
-  },
-  "person_coco_kisa_s960_20260911": {
-   "base": "trainset_person_20260911",
-   "imgsz": 960,
-   "kisa_f1": null
-  },
-  "person_coco_kisa_m_20260911": {
-   "base": "trainset_person_20260911",
-   "imgsz": 640,
-   "model": "yolo11m",
-   "kisa_f1": null
-  },
-  "person_kisa_only_s_20260911": {
-   "base": "handset_person",
-   "n_train": 1189,
-   "imgsz": 640,
-   "kisa_f1": {
-    "침입": 45.45,
-    "배회": 41.67
-   }
-  },
-  "fire_snowfull.pt(2026-09-15 이전 배포)": {
-   "sha256_16": "77741a01590b419b",
-   "path": "vms/runs/fire_snowfull_20260908/weights/best.pt",
-   "task": "fire/smoke detect (2class)",
-   "used_by": [
-    "방화"
-   ],
-   "kisa_f1": {
-    "방화": 88.89
-   },
-   "base_model": "yolo11s.pt",
-   "train": {
-    "imgsz": 640,
-    "epochs": 80,
-    "batch": 128
-   },
-   "val_map50": null,
-   "dataset": {
-    "total": null,
-    "composition": null,
-    "status": "dataset_deleted",
-    "note": "data/학습데이터/mix_fire_snowfull_20260908 삭제됨. args.yaml 에 경로만 남아 구성 복구 불가."
-   },
-   "evidence": "runs/fire_snowfull_20260908/args.yaml · results/fire_snowfull_20260908.txt",
-   "note": "이름의 snowfull = 눈 증강 전량 투입. 정확한 혼합비는 남아 있지 않다. · 2026-09-15 배포에서 내려옴. 새 규칙에서 82.35 (정검 7 미검 3 오검 0). 학습셋이 지워져 재현 불가."
-  }
- }
 }

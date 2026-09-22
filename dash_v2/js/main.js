@@ -1,10 +1,19 @@
 // dash_v2/js/main.js — 모드 전환·결과 탭·boot(). app.js 에서 분리(2026-09-09). 로드 순서: core → review → data → editor → main (dashboard.html)
 // ---------- 모드 ----------
+let IS_BENCH = false;                 // 라벨 작업대(서버로 보내는 쪽)인가. boot 에서 /api/pushinfo 로 정한다
 function buildMode() {
   const box = $("#modeBox"); box.innerHTML = "";
-  [["data", "데이터 확인"], ["review", "영상 검수"], ["results", "결과"]].forEach(([k, label]) => {
+  const TABS = IS_BENCH ? [["data", "데이터 확인"]]                                  // 작업대는 라벨만 한다
+                        : [["data", "데이터 확인"], ["review", "영상 검수"], ["results", "결과"]];
+  TABS.forEach(([k, label]) => {
     const b = el("button", k === CUR.mode ? "on" : "", label);
-    b.onclick = () => { if (CUR.mode === k) return; CUR.mode = k; buildMode(); applyMode(); };
+    b.onclick = () => {
+      if (CUR.mode === k) return;
+      if (CUR.mode === "data" && typeof saveSession === "function") {          // 탭을 오갔다 와도 자리를 지키려고 떠나기 전에 적는다
+        try { saveSession({ dsKind: DS_KIND, dsSel: DS_SEL }); } catch (e) {}
+      }
+      CUR.mode = k; buildMode(); applyMode();
+    };
     box.appendChild(b);
   });
 }
@@ -19,6 +28,10 @@ function applyMode() {
   if (CUR.mode === "data") {
     buildDatasetSrc();
   if (typeof initPushButton === "function") initPushButton();
+    if (!applyMode._first && typeof restoreLast === "function") {              // 첫 진입은 boot 이 복원한다. 탭을 오갔다 온 경우만 여기서
+      try { restoreLast(loadSession()); } catch (e) {}
+    }
+    applyMode._first = false;
   } else if (CUR.mode === "results") {
     $("#list").innerHTML = ""; buildResults();
   } else {
@@ -62,6 +75,35 @@ async function buildResults() {
 
   // ---- 큐 상태 (exp_queue.py): 실행 중 실험 + 러너 로그 끝 ----
   const qb = el("div"); qb.style.cssText = "margin-top:10px;padding:10px 12px;border:1px solid var(--line);border-radius:8px;background:var(--panel);font-size:11px;line-height:1.7";
+  // GPU 한 줄. 자리가 많이 남는데 대기 실험이 있으면 눈에 띄게 적는다(놀리지 않으려고).
+  const gpuLine = q => {
+    const g = q.gpu;
+    if (!g) return "";
+    const freeGb = (g.free_mib / 1024).toFixed(0), totGb = (g.total_mib / 1024).toFixed(0);
+    const idle = g.free_mib > 30000 && (q.waiting || []).length > 0;   // 30GB 넘게 남는데 줄 선 것이 있다
+    const noRunner = q.runners === 0 && (q.waiting || []).length > 0;
+    const warn = idle || noRunner;
+    return `<div style="margin-top:6px;color:${warn ? "#f85149" : "var(--mut)"}">` +
+      `GPU 메모리 ${freeGb}GB 남음 / ${totGb}GB (${((g.used_mib / g.total_mib) * 100).toFixed(0)}% 사용)` +
+      ` · <span title="커널이 하나라도 돌던 시간 비율. 연산 여력이 아니다. 작은 작업 하나가 쉬지 않고 돌아도 높게 나온다">가동 ${g.util}%</span>` +
+      (noRunner ? " · <b>러너가 없습니다. 대기 실험이 안 돕니다</b>" :
+        idle ? ` · <b>메모리가 ${freeGb}GB 남는데 대기 실험 ${(q.waiting || []).length}건이 안 돕니다</b>` +
+               `<span title="러너는 'GPU 사용량 < vram_gate_mib' 일 때만 새 잡을 띄운다. 지금 한 잡이 문턱 가까이 쓰고 있어 막혀 있다."> (러너 문턱에 막힘)</span>` : "") + `</div>`;
+  };
+  // 대기 목록. 러너가 집는 순서 그대로.
+  const waitLine = q => {
+    const w = q.waiting || [];
+    if (!w.length) return `<div style="margin-top:4px;color:var(--mut)">대기 중인 실험 없음</div>`;
+    return `<div style="margin-top:6px"><span style="color:var(--mut)">대기 중 ${w.length}건</span>` +
+      `<table style="border-collapse:collapse;margin-top:4px;font-size:11px"><tbody>` +
+      w.map((e, i) => `<tr>` +
+        `<td style="padding:2px 8px 2px 0;color:var(--mut);font-variant-numeric:tabular-nums">${i + 1}</td>` +
+        `<td style="padding:2px 10px 2px 0;font-weight:700;white-space:nowrap">${e.name}</td>` +
+        `<td style="padding:2px 10px;color:var(--mut)">${e.item || ""}</td>` +
+        `<td style="padding:2px 10px;color:var(--mut);font-variant-numeric:tabular-nums">imgsz ${e.imgsz ?? "–"} · batch ${e.batch ?? "–"}</td>` +
+        `<td style="padding:2px 10px;color:var(--mut)">${e.queue}</td></tr>`).join("") +
+      `</tbody></table></div>`;
+  };
   const renderQueue = q => {                        // 큐 상자만 다시 그린다(30초 갱신 때 화면 전체를 다시 만들지 않게: 펼친 행·스크롤 유지)
   const Y = new Date().getFullYear();
   const kst = l => l.replace(/^\[(\d\d)-(\d\d) (\d\d):(\d\d)\]/, (_, mo, da, h, mi) => {   // 옛 러너 줄(UTC, KST 표기 없음) → +9시간. 새 줄은 러너가 KST 로 쓴다
@@ -80,7 +122,8 @@ async function buildResults() {
         `<td style="padding:3px 10px;font-variant-numeric:tabular-nums">${j.it_s} it/s</td><td style="padding:3px 10px">${j.epoch_min != null ? j.epoch_min + "분" : "–"}</td>` +
         `<td style="padding:3px 10px;font-variant-numeric:tabular-nums">${j.remain_h}시간 → <b>${j.finish_kst || "–"}</b></td>` +
         `<td style="padding:3px 10px;font-variant-numeric:tabular-nums">${j.val ? `${j.val.map50.toFixed(3)} / ${j.val.map5095.toFixed(3)} <span style="color:var(--mut)">(P ${j.val.P.toFixed(2)} R ${j.val.R.toFixed(2)})</span>` : '<span style="color:var(--mut)">첫 검증 전</span>'}</td>` +
-        `<td style="padding:3px 10px">${j.mem}</td></tr>`).join("") + `</tbody></table>` : "") +
+        `<td style="padding:3px 10px">${j.mem ? j.mem : (j.phase && j.phase !== "학습 중" ? `<span style="color:#d29922">${j.phase}</span>` : "–")}</td></tr>`).join("") + `</tbody></table>` : "") +
+    gpuLine(q) + waitLine(q) +
     `<details><summary style="cursor:pointer;color:var(--mut)">러너 로그</summary>${lastLog || '<div style="color:var(--mut)">로그 없음</div>'}</details>`;
     if (open) qb.querySelector("details").open = true;
   };
@@ -330,10 +373,13 @@ async function boot() {
   try { PLABELS = await (await fetch("/api/labels?kind=person")).json(); } catch (e) { PLABELS = null; }
   try { IMGLABELS = await (await fetch("/api/labels?kind=image")).json(); } catch (e) { IMGLABELS = []; }
   try { SAMFR = await (await fetch("/api/sam2frames")).json(); } catch (e) { SAMFR = {}; }   // SAM 전파 프레임(목록 배지 합산용)
+  await loadClipStates();   // 클립 표시(기본/전파/손)·전파 구간. 목록을 그리기 전에 한 번만 읽는다
   try { DATASETS = await (await fetch("/api/datasets")).json(); } catch (e) { DATASETS = {}; }   // 데이터 규격(카테고리별 mode·gt·use)
   for (const [k, v] of Object.entries(META.items)) v.rows.forEach(row => row.item = k);
+  try { IS_BENCH = !!(await (await fetch("/api/pushinfo")).json()).enabled; } catch (e) { IS_BENCH = false; }
   const last = (typeof loadSession === "function") ? loadSession() : {};
   if (last.mode === "data" || last.mode === "review" || last.mode === "results") CUR.mode = last.mode;
+  if (IS_BENCH) CUR.mode = "data";     // 작업대엔 다른 탭이 없다(지난 세션이 검수였어도 데이터 확인으로)
   DS_KIND = "raw";                                  // 학습 데이터 탭은 없다
   if (last.dsSel && String(last.dsSel).startsWith("raw:")) DS_SEL = last.dsSel;
   buildMode(); applyMode();   // 시작 모드에 맞는 좌측/중앙 패널을 그린다(데이터 확인=데이터셋 패널)

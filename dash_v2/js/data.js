@@ -17,19 +17,30 @@ async function buildDatasetSrc() {
   $("#filtBox").hidden = true;
   // 드롭다운 위: 원본 데이터 / 학습 데이터 고르는 버튼
   let kb = $("#dsKind");
-  if (!kb) { kb = el("div"); kb.id = "dsKind"; $(".srcbox").insertBefore(kb, sel); }
+  if (!kb) { kb = el("div"); kb.id = "dsKind"; $(".srcbox").insertBefore(kb, $(".srcbox").firstChild); }   // srcbox 맨 위(이름표보다 위)로. 이름표는 바로 아래 드롭다운의 것이다
   kb.hidden = false;
-  kb.style.cssText = "display:flex;gap:4px;margin-bottom:6px";
+  kb.className = "tools"; kb.style.cssText = "";   // 모양은 dashboard.html 의 .srcbox .tools 가 정한다
   kb.innerHTML = "";
   DS_KIND = "raw";                                  // 학습 데이터(의사라벨 세트) 탭은 뺐다. 원본만 본다
   // 고를 종류가 원본 하나뿐이라 '원본 데이터' 버튼은 없앴다(2026-09-15). 새로고침만 남긴다.
-  const cb = el("button", null, "\u21bb"); cb.title = "서버 폴더 캐시 새로고침(데이터 폴더를 옮기거나 이름 바꾼 뒤)";
-  cb.style.cssText = "margin-left:auto;flex:0 0 30px;border-radius:6px;padding:5px 0;cursor:pointer;font-size:12px;background:var(--panel);color:var(--mut);border:1px solid var(--line)";
+  // 새로고침은 카테고리 드롭다운 오른쪽에 둔다(무엇을 다시 읽는 단추인지 붙어 있어야 분명하다)
+  let sr = document.getElementById("srcRow");
+  if (!sr) {
+    sr = el("div"); sr.id = "srcRow";
+    sr.style.cssText = "display:flex;gap:6px;align-items:stretch";
+    sel.parentElement.insertBefore(sr, sel); sr.appendChild(sel);
+    sel.style.flex = "1 1 auto"; sel.style.minWidth = "0";   // 드롭다운이 남는 폭을 쓰고, 좁아져도 단추를 밀지 않게
+  }
+  { const _old = document.getElementById("refreshBtn"); if (_old) _old.remove(); }
+  const cb = el("button", null, "\u21bb"); cb.id = "refreshBtn";
+  cb.title = "서버 폴더 캐시 새로고침(데이터 폴더를 옮기거나 이름 바꾼 뒤)";
+  cb.style.cssText = "flex:0 0 34px;border-radius:7px;padding:0;cursor:pointer;font-size:13px;background:var(--panel);color:var(--mut);border:1px solid var(--line)";
   cb.onclick = async () => { cb.textContent = "\u2026"; try { await fetch("/api/refresh_cache", { method: "POST" }); } catch (e) {} SOURCES = null; DSMETA = null; buildDatasetSrc(); };
-  kb.appendChild(cb);
+  sr.appendChild(cb);
+  initPushButton();                               // 보내기 버튼은 이 줄(새로고침 왼쪽)에 붙는다
   // 드롭다운은 고른 쪽만
   if (DS_KIND === "raw") {
-    $(".srcbox label").textContent = "원본 카테고리";
+    $(".srcbox label").hidden = true;   // 드롭다운만 봐도 알아볼 수 있어 이름표를 안 둔다
     SOURCES.forEach(x => {
       const o = el("option"); o.value = "raw:" + x.key;
       o.textContent = x.count ? `${x.key} (영상 ${x.count}편)` : x.key;
@@ -77,23 +88,19 @@ async function renderRawList(cat) {
   // 한 목록에 다 쏟아지면 고르기 어렵다. 폴더별로 추려 보는 드롭다운을 위에 둔다.
   const subs = [...new Set(r.videos.map(v => subOf(cat, v)).filter(Boolean))].sort();
   if (subs.length > 1) {
-    const row = el("div"); row.id = "subFilterRow";
-    const ss = el("select");
-    // 크기는 위쪽 '데이터 원본' 드롭다운(.srcbox select)과 같게 맞춘다
-    ss.style.cssText = "width:100%;padding:7px 9px;font-size:13px;font-weight:600;border-radius:7px;" +
-      "background:var(--panel);color:var(--tx);border:1px solid var(--line);cursor:pointer";
-    const add = (val, label) => { const o = el("option"); o.value = val; o.textContent = label; ss.appendChild(o); };
-    add("", `전체 (${r.videos.length}편)`);
-    subs.forEach(sub => {
-      const n = r.videos.filter(v => subOf(cat, v) === sub).length;
-      add(sub, `${sub.replace(/^\d+\.\s*/, "").replace(/\s*\(\d+개\)\s*$/, "")} (${n}편)`);
-    });
-    ss.onchange = () => {
-      SUBSEL = ss.value;
-      if (COND_REDRAW) COND_REDRAW();      // 조건칩 개수도 고른 폴더 기준으로
-      applyCondFilter(box); openFirstVisible(box);
+    const row = filterRow("항목");         // 드롭다운 대신 칩. 조건·표시 줄과 같은 모양이라 한눈에 읽힌다
+    row.id = "subFilterRow";
+    const pretty = sub => sub.replace(/^\d+\.\s*/, "").replace(/\s*\(\d+개\)\s*$/, "");
+    const drawSubs = () => {
+      row.wrap.innerHTML = "";
+      const pick = v => { SUBSEL = v; drawSubs(); if (COND_REDRAW) COND_REDRAW(); applyCondFilter(box); openFirstVisible(box); };
+      row.wrap.appendChild(filterChip("전체", r.videos.length, SUBSEL === "", () => pick("")));
+      subs.forEach(sub => {
+        const n = r.videos.filter(v => subOf(cat, v) === sub).length;
+        row.wrap.appendChild(filterChip(pretty(sub), n, SUBSEL === sub, () => pick(sub)));
+      });
     };
-    row.appendChild(ss); head.appendChild(row);
+    drawSubs(); head.appendChild(row);
   }
   // 촬영조건 필터(야간·눈·비·안개). 조건 XML 이 있는 카테고리에서만 뜬다.
   if (r.videos.length) {
@@ -104,19 +111,25 @@ async function renderRawList(cat) {
     {
       CONDS = cd || {}; CLIPFILTER = "";
       const draw = () => {
-        cf.innerHTML = ""; cf.style.cssText = "display:flex;flex-wrap:wrap;gap:4px";   // 고정은 바깥 #listHead 가 한다
+        cf.innerHTML = ""; cf.style.cssText = "display:flex;flex-direction:column;gap:5px";   // 고정은 바깥 #listHead 가 한다
+        const rowC = filterRow("조건"), rowM = filterRow("표시");
         const cnt = key => { const k0 = CLIPFILTER; CLIPFILTER = key; const n = r.videos.filter(v => (!SUBSEL || subOf(cat, v) === SUBSEL) && passFilter(v.split("/").pop().replace(/\.mp4$/, ""))).length; CLIPFILTER = k0; return n; };
-        [["", "전체"], ["night", "야간"], ["day", "주간"], ["snow", "눈"], ["rain", "비"], ["fog", "안개"], ["hard", "야간·악천후"]]
+        [["", "전체"], ["night", "야간"], ["day", "주간"]]   // 눈·비·안개는 편수가 적고, 야간·악천후는 야간과 같은 편이라 뺐다
           .forEach(([key, label]) => {
             const n = cnt(key);
             if (key && !n) return;
-            const b = el("button", null, `${label} ${n}`);
-            const on = CLIPFILTER === key;
-            b.style.cssText = "flex:0 0 auto;width:auto;padding:2px 8px;font-size:11px;font-weight:700;border-radius:6px;cursor:pointer;" +
-              (on ? "background:#58a6ff22;color:#cfe4ff;border:1px solid #58a6ff55" : "background:var(--panel);color:var(--mut);border:1px solid var(--line)");
-            b.onclick = () => { CLIPFILTER = key; draw(); applyCondFilter(box); };
-            cf.appendChild(b);
+            rowC.wrap.appendChild(filterChip(label, n, CLIPFILTER === key,
+              () => { CLIPFILTER = key; draw(); applyCondFilter(box); }));
           });
+        // 표시 필터(손·전파·기본). 조건 칩과 같은 기준(하위폴더·조건)으로 센다
+        const mcnt = key => { const k0 = MARKFILTER; MARKFILTER = key; const n = r.videos.filter(v => {
+            const st = v.split("/").pop().replace(/\.mp4$/, "");
+            return (!SUBSEL || subOf(cat, v) === SUBSEL) && passFilter(st) && passMark(st); }).length; MARKFILTER = k0; return n; };
+        [["", "전체"], ["hand", "완료"], ["prop", "전파"], ["base", "기본"], ["smoke", "연기미완"]].forEach(([key, label]) => {
+          rowM.wrap.appendChild(filterChip(label, mcnt(key), MARKFILTER === key,
+            () => { MARKFILTER = key; draw(); applyCondFilter(box); }));
+        });
+        cf.appendChild(rowC); cf.appendChild(rowM);
       };
       draw(); COND_REDRAW = draw;
     }
@@ -129,8 +142,7 @@ async function renderRawList(cat) {
   if (r.images.length) {
     r.images.forEach(rel => {
       const it = el("div", "item"); it.dataset.rel = rel;   // 강조·배지가 영상과 같은 규칙으로 찾을 수 있게
-      const _in = labeledCount("img:" + rel);                // 손라벨 있으면 개수 배지(영상과 같은 모양)
-      if (_in) { const _ib = el("span", null, String(_in)); _ib.style.cssText = BADGE_CSS; it.appendChild(_ib); }
+      { const _b = listBadge("img:" + rel); if (_b) it.appendChild(_b); }   // 영상과 같은 배지
       const nm = el("span", "nm", rel.split("/").pop()); nm.title = rel; nm.style.userSelect = "text"; nm.style.cursor = "text";
       it.appendChild(nm);
       it.onclick = () => { if (window.getSelection && String(window.getSelection())) return; openImage(rel); };
@@ -141,8 +153,7 @@ async function renderRawList(cat) {
   if (r.videos.length) {
     r.videos.forEach(rel => {
       const it = el("div", "item"); it.dataset.rel = rel;
-      const _vn = labeledCount(rel.split("/").pop().replace(/\.mp4$/, ""));   // 손라벨 있으면 개수 뱃지
-      if (_vn) { const _vb = el("span", null, String(_vn)); _vb.style.cssText = BADGE_CSS; it.appendChild(_vb); }
+      { const _b = listBadge(rel.split("/").pop().replace(/\.mp4$/, ""), rel); if (_b) it.appendChild(_b); }   // [표시 숫자][파일명]
       const nm = el("span", "nm", rel.split("/").pop()); nm.title = rel; nm.style.userSelect = "text"; nm.style.cursor = "text";
       it.appendChild(nm);
       it.onclick = () => { if (window.getSelection && String(window.getSelection())) return; openClip(rel); };
@@ -163,7 +174,8 @@ function applyCondFilter(box) {
     const rel = (nm && (nm.title || nm.textContent)) || "";
     if (!/\.mp4$/i.test(rel)) return;                 // 이미지 항목은 조건이 없다
     const okSub = !SUBSEL || subOf(RAW_CAT, rel) === SUBSEL;
-    it.hidden = !(okSub && passFilter(rel.split("/").pop().replace(/\.mp4$/, "")));
+    const stem = rel.split("/").pop().replace(/\.mp4$/, "");
+    it.hidden = !(okSub && passFilter(stem) && passMark(stem));
   });
 }
 
@@ -255,6 +267,12 @@ function catModeAuto(cat) {                        // 이름으로 짐작하는 
   if (/사람|침입|쓰러짐|배회|스토킹|이상행동|다각도|person|human|llvip|coco/i.test(cat)) return "person";
   return "fire";                                   // 나머지는 불·연기로 연다. 다르면 사용자가 바꾼다
 }
+function clipMode(rel) {                           // 클립 하나의 라벨 모드. 한 카테고리에 항목이 섞여 있을 때 폴더 이름으로 가른다
+  const p = String(rel || "");
+  if (/(^|\/)[^/]*(방화|화재|fire)[^/]*\//i.test(p)) return "fire";
+  if (/(^|\/)[^/]*(침입|배회|쓰러짐|사람|person)[^/]*\//i.test(p)) return "person";
+  return catMode(rel);                            // 폴더로 못 가르면 카테고리 규격대로
+}
 function catMode(rel) {
   const v = (DATASETS[catOf(rel)] || {}).mode;
   return (v === "fire" || v === "person" || v === "none") ? v : catModeAuto(catOf(rel));
@@ -278,21 +296,102 @@ function catModeRow(rel, onApply) {
   row.appendChild(lab); row.appendChild(sel); row.appendChild(ap);
   return row;
 }
-const BADGE_CSS = "flex:0 0 auto;display:inline-flex;align-items:center;justify-content:center;min-width:26px;height:18px;padding:0 6px;border-radius:6px;font:700 11px/1 ui-monospace,Menlo,monospace;color:#cfe4ff;background:#58a6ff22;border:1px solid #58a6ff55;margin-right:6px";   // 목록 배지(영상·이미지 공통)
+// ---------- 클립 상태(표시 기본/전파/손 + 전파 구간) ----------
+// 서버 저장이라 다른 PC·Thor 에서도 같이 보인다(손라벨 폴더에 있어 '서버로 라벨 보내기' 에 같이 간다).
+let CLIPST = {};                       // stem -> {mark, a, b, smoke}   smoke:"todo" = 불은 쳤고 연기가 아직 덜 쳐진 편
+const MARK_TXT = { hand: "완료", prop: "전파" };   // 저장값은 hand 그대로(이미 적힌 것·병합 규칙이 그 값을 쓴다)
+const MARK_COL = { hand: "#3fb950", prop: "#f85149" };
+async function loadClipStates() {
+  try { CLIPST = await (await fetch("/api/clipstates")).json(); } catch (e) { CLIPST = {}; }
+}
+async function saveClipState(stem, patch) {   // patch 에 넣은 항목만 고친다. mark:"base" 나 a:null 이면 지운다
+  const cur = Object.assign({}, CLIPST[stem] || {});
+  Object.keys(patch).forEach(k => { if (patch[k] === null || patch[k] === "base") delete cur[k]; else cur[k] = patch[k]; });
+  CLIPST[stem] = cur;
+  if (!Object.keys(cur).length) delete CLIPST[stem];
+  try { await fetch("/api/clipstate", { method: "POST", headers: { "Content-Type": "application/json" },
+                                        body: JSON.stringify(Object.assign({ clip: stem }, patch)) }); } catch (e) {}
+}
+let MARKFILTER = "";                   // "" 전체 · hand 손 · prop 전파 · base 기본(표시 없음)
+function passMark(stem) {
+  if (!MARKFILTER) return true;
+  const st = CLIPST[stem] || {};
+  if (MARKFILTER === "smoke") return st.smoke === "todo";   // 연기 미완은 표시와 따로 본다(완료 편에도 붙는다)
+  return (st.mark || "base") === MARKFILTER;
+}
+function filterChip(label, n, on, onclick) {           // 필터 줄에 쓰는 칩. 모양을 한 곳에서 만든다
+  const b = el("button", null, n == null ? label : `${label} ${n}`);
+  b.style.cssText = "flex:0 0 auto;width:auto;padding:3px 9px;font-size:11px;font-weight:700;border-radius:6px;cursor:pointer;font-variant-numeric:tabular-nums;white-space:nowrap;" +   // 고정폭 숫자: 825 -> 100 이 돼도 칩 폭이 안 흔들린다
+    (on ? "background:#58a6ff22;color:#cfe4ff;border:1px solid #58a6ff55" : "background:var(--panel);color:var(--mut);border:1px solid var(--line)");
+  b.onclick = onclick;
+  return b;
+}
+function filterRow(title) {                            // [이름표][칩 …] 한 줄. 칩은 넘치면 접힌다
+  const row = el("div");
+  row.style.cssText = "display:flex;align-items:flex-start;gap:6px";
+  const t = el("span", null, title);
+  t.style.cssText = "flex:0 0 26px;padding-top:4px;font-size:11px;font-weight:700;color:var(--mut)";
+  const wrap = el("div");
+  wrap.style.cssText = "flex:1 1 auto;display:flex;flex-wrap:wrap;gap:4px";
+  row.appendChild(t); row.appendChild(wrap); row.wrap = wrap;
+  return row;
+}
+function listBadge(key, rel) {          // 목록 배지 한 덩어리: '전파 32' · '완료' · 기본이면 '32'
+  const n = labeledCount(key, rel ? clipMode(rel) : null);   // 그 클립 모드의 라벨만 센다(방화 클립은 불·연기만)
+  const st = CLIPST[key] || {};
+  const m = st.mark;                   // 표시(hand/prop). 기본이면 없다
+  const sm = st.smoke === "todo";      // 연기가 아직 덜 쳐진 편
+  if (!n && !m && !sm) return null;
+  const b = el("span"); b.className = "bg"; b.style.cssText = BADGE_CSS;
+  const showN = n && m !== "hand";                      // 완료 편은 프레임 수를 안 쓴다
+  if (!showN && !m && !sm) return null;
+  b.innerHTML = (m ? `<span style="color:${MARK_COL[m]}">${MARK_TXT[m]}</span>` : "")
+              + (sm ? `${m ? " " : ""}<span style="color:#d29922">연기</span>` : "")
+              + (showN ? ((m || sm) ? " " : "") + `<span style="color:#fff">${n}</span>` : "");   // 한글만 색 · 숫자는 흰색
+  return b;
+}
+function updateListBadge(key) {        // 라디오를 누르거나 프레임이 늘면 그 항목 배지만 다시 그린다
+  document.querySelectorAll("#list .item").forEach(it => {
+    if (!it.dataset.rel || labelKeyOf(it.dataset.rel) !== key) return;
+    const old = it.querySelector(":scope > span.bg"); if (old) old.remove();
+    const b = listBadge(key, it.dataset.rel);
+    if (b) it.insertBefore(b, it.querySelector(":scope > span.nm"));
+  });
+}
+function markRadioRow(stem) {          // 기본/전파/손 라디오. 고르면 바로 서버에 저장하고 목록도 고친다
+  const row = el("div");
+  row.style.cssText = "display:flex;align-items:center;gap:10px;margin-top:10px;padding-top:10px;border-top:1px solid var(--line)";
+  const lab = el("span", null, "표시");
+  lab.style.cssText = "flex:0 0 auto;font-size:11px;font-weight:700;color:var(--mut)";
+  row.appendChild(lab);
+  const cur = (CLIPST[stem] || {}).mark || "base";
+  [["base", "기본"], ["prop", "전파"], ["hand", "완료"]].forEach(([v, t]) => {
+    const w = el("label"); w.style.cssText = "display:inline-flex;align-items:center;gap:4px;cursor:pointer;font-size:12px;font-weight:700;color:"
+      + (MARK_COL[v] || "var(--tx)");
+    const rb = el("input"); rb.type = "radio"; rb.name = "clipmark_" + stem; rb.value = v; rb.checked = (v === cur);
+    rb.style.cssText = "margin:0;cursor:pointer";
+    rb.onchange = () => { if (rb.checked) { saveClipState(stem, { mark: v }); updateListBadge(stem); if (COND_REDRAW) COND_REDRAW(); } };
+    w.appendChild(rb); w.appendChild(el("span", null, t)); row.appendChild(w);
+  });
+  // 연기 미완: 불만 치고 연기를 아직 안 친 편. 표시를 '완료' 로 올려도 남은 일이 사라지지 않게 따로 적는다.
+  const sw = el("label");
+  sw.style.cssText = "display:inline-flex;align-items:center;gap:4px;cursor:pointer;font-size:12px;font-weight:700;"
+    + "color:#d29922;margin-left:4px;padding-left:10px;border-left:1px solid var(--line)";
+  const cb = el("input"); cb.type = "checkbox"; cb.checked = ((CLIPST[stem] || {}).smoke === "todo");
+  cb.style.cssText = "margin:0;cursor:pointer";
+  cb.onchange = () => { saveClipState(stem, { smoke: cb.checked ? "todo" : null }); updateListBadge(stem); if (COND_REDRAW) COND_REDRAW(); };
+  sw.appendChild(cb); sw.appendChild(el("span", null, "연기 미완"));
+  row.appendChild(sw);
+  return row;
+}
+const BADGE_CSS = "flex:0 0 auto;display:inline-flex;align-items:center;gap:4px;justify-content:center;min-width:26px;height:18px;padding:0 6px;border-radius:6px;font:700 11px/1 ui-monospace,Menlo,monospace;color:#cfe4ff;background:#58a6ff22;border:1px solid #58a6ff55;margin-right:6px";   // 목록 배지(영상·이미지 공통)
 const labelKeyOf = rel => /\.mp4$/i.test(rel) ? rel.split("/").pop().replace(/\.mp4$/, "") : "img:" + rel;   // 목록 항목 → 라벨 저장소 키(영상=stem · 이미지=img:<rel>)
 // 지금 보는 항목을 목록에서 강조(영상·이미지 공통)
 function markListItem(rel) {
   document.querySelectorAll("#list .item").forEach(e => { const on = e.dataset.rel === rel; e.classList.toggle("on", on); if (on) e.scrollIntoView({ block: "nearest" }); });
 }
 // 목록 배지(학습데이터 프레임 수) 한 항목만 다시 그린다 — 전파·삭제 직후. key = 영상 stem 또는 img:<rel>
-function updateRawBadge(key) {
-  document.querySelectorAll("#list .item").forEach(it => {
-    if (!it.dataset.rel || labelKeyOf(it.dataset.rel) !== key) return;
-    const old = it.querySelector(":scope > span:not(.nm)"); if (old) old.remove();
-    const n = labeledCount(key);
-    if (n) { const b = el("span", null, String(n)); b.style.cssText = BADGE_CSS; it.insertBefore(b, it.firstChild); }
-  });
-}
+function updateRawBadge(key) { updateListBadge(key); }   // 표시와 숫자가 한 덩어리라 같은 함수를 쓴다
 // 좌측 영상 클릭: 편집 중이면 그 영상 편집 유지, 아니면 재생
 function openClip(rel) {
   saveSession({ dsKind: DS_KIND, dsSel: DS_SEL, rel: rel, img: null });   // 새로고침 복원용(이미지 기록은 비운다)
@@ -310,7 +409,7 @@ async function showRawVideo(rel) {
   markListItem(rel);                                    // 지금 보는 영상 표시
   const first = events[0] || {};
   document.onkeydown = null;
-  const _mode0 = catMode(rel);
+  const _mode0 = clipMode(rel);   // 배포 검증영상처럼 한 카테고리에 항목이 섞이면 폴더로 가른다
   const _editing = DS_EDIT && _mode0 !== "none";
   if (_editing) {
     await openFrameAt(clip, null, _mode0);   // 시작 프레임은 openFrameAt 이 고른다(자동라벨 첫 검출 → 정답 시각 → 0). 기다려야 새로고침 복원이 두 번 열지 않는다
@@ -345,11 +444,12 @@ async function showRawVideo(rel) {
   const _btn = (txt, primary) => { const b = el("button", null, txt); b.style.cssText = "width:100%;margin-top:10px;padding:8px;border-radius:6px;cursor:pointer;font-weight:700;font-size:12px;" + (primary ? "background:var(--blue);color:#06090f;border:1px solid var(--blue)" : "background:var(--panel2);color:var(--tx);border:1px solid var(--blue)"); return b; };
   if (isScoringCat(catOf(rel))) r.appendChild(KV("주의", "채점 전용 · 라벨해도 학습셋 제외"));
   if (_mode0 !== "none") {
-    { const _n = labeledCount(_stem); r.appendChild(KV("학습 라벨", _n ? _n + "프레임" : "없음")); }   // 손라벨 ∪ SAM
+    { const _n = labeledCount(_stem, clipMode(rel)); r.appendChild(KV("학습 라벨", _n ? _n + "프레임" : "없음")); }   // 손라벨 ∪ SAM
     const _eb = _btn(_editing ? "\u25B6 영상 보기" : "라벨 편집", !_editing);
     _eb.onclick = () => { DS_EDIT = !_editing; showRawVideo(rel); };
     r.appendChild(_eb);
   }
+  if (_mode0 !== "none") r.appendChild(markRadioRow(_stem));   // 이 클립을 무엇으로 채웠나(기본/전파/손) · 고르면 바로 저장
   r.appendChild(catModeRow(rel, () => { DS_EDIT = true; showRawVideo(rel); }));   // 이 데이터셋을 무엇으로 라벨할지
 }
 function renderDatasetList() {
@@ -423,34 +523,52 @@ async function showDatasetImage(d, im) {
   }
 }
 
-// ---------- 서버로 라벨 보내기 (Thor 등 보내는 쪽에서만 보인다) ----------
-// 먼저 미리보기(합치지 않고 무엇이 들어갈지만)를 보여주고, 한 번 더 누르면 실제로 합친다.
+// ---------- 서버와 라벨 맞추기 (Thor 등 보내는 쪽에서만 보인다) ----------
+// 양쪽으로 합친다. 겹치는 값은 이 장비가 이긴다.
+// 먼저 미리보기(합치지 않고 무엇이 오갈지만)를 보여주고, 한 번 더 누르면 실제로 합친다.
 async function initPushButton() {
   let info = {};
   try { info = await (await fetch("/api/pushinfo")).json(); } catch (e) { return; }
   if (!info.enabled) return;                       // 서버 쪽에서는 아예 안 만든다
   const box = document.querySelector(".srcbox");
-  if (!box || document.getElementById("pushBtn")) return;
-  const b = el("button", null, "서버로 라벨 보내기");
+  if (!box) return;
+  const row = document.getElementById("dsKind");     // 새로고침(↻) 이 있는 줄
+  const CSS_ROW = "flex:1 1 auto;padding:6px 9px;font-size:11px;font-weight:700;border-radius:6px;" +
+                  "background:var(--panel);color:var(--tx);border:1px solid var(--line);cursor:pointer";
+  const CSS_BOX = "width:100%;margin-top:8px;padding:7px 9px;font-size:12px;font-weight:700;border-radius:7px;" +
+                  "background:var(--panel);color:var(--tx);border:1px solid var(--line);cursor:pointer";
+  const had = document.getElementById("pushBtn");
+  if (had) {                                        // 화면이 만들어지기 전에 먼저 붙었던 버튼은 줄이 생기면 옮긴다
+    if (row && had.parentElement !== row) { had.style.cssText = CSS_ROW; row.insertBefore(had, row.firstChild); }
+    return;
+  }
+  const b = el("button", null, "서버와 라벨 맞추기");
   b.id = "pushBtn";
-  b.style.cssText = "width:100%;margin-top:8px;padding:7px 9px;font-size:12px;font-weight:700;border-radius:7px;" +
-    "background:var(--panel);color:var(--tx);border:1px solid var(--line);cursor:pointer";
-  const note = el("div", null, "");
-  note.style.cssText = "margin-top:4px;font-size:11px;color:var(--mut);white-space:pre-wrap;line-height:1.5";
+  b.style.cssText = row ? CSS_ROW : CSS_BOX;
+  // 안내 줄은 .srcbox 에 남는데 버튼은 #dsKind 를 비울 때마다 다시 만들어진다.
+  // 그때 안내 줄도 새로 만들면 화면에 안 붙은 채 글자만 쓰게 돼 아무것도 안 보인다. 있으면 그것을 쓴다.
+  let note = document.getElementById("pushNote");
+  if (!note) {
+    note = el("div", null, "");
+    note.id = "pushNote";
+    note.style.cssText = "margin-top:4px;font-size:11px;color:var(--mut);white-space:pre-wrap;line-height:1.5";
+    box.appendChild(note);
+  }
   let staged = false;                               // 미리보기를 본 뒤인가
   b.onclick = async () => {
     b.disabled = true;
     const dry = !staged;
-    b.textContent = dry ? "확인 중…" : "보내는 중…";
+    b.textContent = dry ? "확인 중…" : "맞추는 중…";
     let r;
     try { r = await (await fetch("/api/push_labels?dry=" + (dry ? "1" : "0"),
                                  { method: "POST" })).json(); }
     catch (e) { r = { ok: false, err: String(e) }; }
     b.disabled = false;
-    if (!r.ok) { note.textContent = "실패: " + (r.err || r.log || "").slice(0, 300); b.textContent = "서버로 라벨 보내기"; staged = false; return; }
+    if (!r.ok) { note.textContent = "실패: " + (r.err || r.log || "").slice(0, 300); b.textContent = "서버와 라벨 맞추기"; staged = false; return; }
     note.textContent = (r.log || "").trim();
-    if (dry) { staged = true; b.textContent = "이대로 보내기(한 번 더)"; }
-    else { staged = false; b.textContent = "서버로 라벨 보내기"; }
+    if (dry) { staged = true; b.textContent = "이대로 맞추기(한 번 더)"; }
+    else { staged = false; b.textContent = "서버와 라벨 맞추기"; }
   };
-  box.appendChild(b); box.appendChild(note);
+  if (row) row.insertBefore(b, row.firstChild);   // 새로고침 왼쪽
+  else box.appendChild(b);
 }

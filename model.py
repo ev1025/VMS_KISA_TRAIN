@@ -11,14 +11,27 @@ model.py — 화재/연기 YOLO 모델 통합 CLI (학습·튜닝·비교·평�
   python model.py eval    --weights <best.pt>                           # 단일 상세평가(mAP+FAR)
   python model.py export  <best.pt>                                     # 배포용 onnx
 
-기본 경로는 config.py(DATA_YAML, RUNS_DIR) 사용. 서버 등은 --data/--project/--device로 override.
+--data 는 필수. --project 를 안 주면 이 파일 옆 runs/ 에 쌓는다.
 """
 import os
 os.environ.setdefault("PYTORCH_CUDA_ALLOC_CONF", "expandable_segments:True")   # multi_scale 가변 크기로 예약 VRAM 폭증 방지
 import os, sys, csv, time, argparse, shutil
 sys.stdout.reconfigure(encoding="utf-8")
 from pathlib import Path
-import config as C
+
+# 경로는 이 파일 기준으로 잡는다. 예전에는 config.py 를 import 했는데 그 값이 전부
+# 다른 PC(D:\화재연기_원천데이터 등) 기준이라 이 서버에서는 하나도 안 맞았다(2026-09-17 정리).
+V         = Path(__file__).resolve().parent
+WORK      = V / "work"      # 평가 리포트(eval_<run>.md) · 배포 ONNX 보관(onnx_final)
+RUNS_DIR  = V / "runs"      # --project 를 안 주면 여기에 쌓는다
+
+
+def need_data(a):
+    """--data 는 필수다. 예전에는 config.py 의 고정 데이터셋으로 넘어갔는데
+    그 경로가 이 서버에 없어서 조용히 0장으로 도는 사고가 났다."""
+    if not a.data:
+        sys.exit("--data 가 필요합니다 (예: --data data/학습데이터/<셋>/data.yaml)")
+    return str(a.data)
 
 # 모델 레지스트리(단일 출처): 내부명 -> 비교표 표시명.
 # yolov8m은 이미 학습된 baseline이라 별도.
@@ -70,8 +83,8 @@ def cmd_train(a):
         hp = yaml.safe_load(Path(a.hp).read_text(encoding="utf-8"))
         hp["lr0"], hp["lrf"] = a.lr0, a.lrf   # proxy(짧은ep) 튜닝은 lr을 낮게 편향 -> 검증된 값으로 오버라이드
         print(f"[HP] {a.hp} 적용 (box={hp.get('box')}, opt={hp.get('optimizer')}) + lr0={a.lr0}/lrf={a.lrf} 오버라이드")
-    data    = a.data or str(C.DATA_YAML)
-    project = a.project or str(C.RUNS_DIR)
+    data    = need_data(a)
+    project = a.project or str(RUNS_DIR)
     models  = ALL_MODELS if a.models == ["all"] else a.models
 
     results = []
@@ -111,7 +124,7 @@ def cmd_train(a):
 # ---------------- tune (Optuna HPO, proxy) ----------------
 def cmd_tune(a):
     import optuna, yaml
-    data = a.data or str(C.DATA_YAML)
+    data = need_data(a)
 
     def objective(trial):
         # 유효 + 고가치 파라미터만 (fl_gamma 없음=YOLOv8 미지원, iou는 추론값이라 제외)
@@ -165,8 +178,8 @@ def cmd_tune(a):
 
 # ---------------- compare (다종 비교표) ----------------
 def cmd_compare(a):
-    project = a.project or str(C.RUNS_DIR)
-    data = a.data or str(C.DATA_YAML)
+    project = a.project or str(RUNS_DIR)
+    data = need_data(a)
     # 레지스트리에서 파생(중복 제거) + baseline 추가
     cands = {disp: f"{project}/{name}/weights/best.pt" for name, disp in MODELS.items()}
     cands[BASELINE[1]] = f"{project}/{BASELINE[0]}/weights/best.pt"
@@ -204,21 +217,21 @@ def cmd_eval(a):
     import yaml
     from ultralytics.data.utils import img2label_paths   # 이미지경로 -> 라벨경로 (ultralytics 규칙 그대로)
     model = _YOLO(a.weights)
-    data = a.data or str(C.DATA_YAML)
+    data = need_data(a)
     dy = yaml.safe_load(Path(data).read_text(encoding="utf-8"))
-    # 클래스 이름은 평가 대상 yaml 에서 읽는다(config.py 고정이면 사람 모델에서 IndexError)
+    # 클래스 이름은 평가 대상 yaml 에서 읽는다(코드에 고정하면 사람 모델에서 IndexError)
     names = dy.get("names") or {}
     names = [names[i] for i in sorted(names)] if isinstance(names, dict) else list(names)
     # (A) 검출 지표
     run = Path(a.weights).parent.parent.name                       # runs/<run>/weights/best.pt -> <run>
     # project 를 안 주면 ultralytics 전역 settings 의 runs_dir(남의 폴더일 수 있음)로 저장된다
     m = model.val(data=data, imgsz=a.imgsz, device=a.device, conf=0.001,
-                  project=a.project or str(C.RUNS_DIR), name=f"val_{run}", exist_ok=True)
+                  project=a.project or str(RUNS_DIR), name=f"val_{run}", exist_ok=True)
     det = {"mAP50": float(m.box.map50), "mAP50-95": float(m.box.map),
            "per_class": {names[i]: {"AP50": float(m.box.ap50[i]), "P": float(m.box.p[i]), "R": float(m.box.r[i])}
                          for i in range(len(names))}}
     # (B) image-level 경보 지표 (정상=네거티브)
-    # val 목록은 --data 의 yaml 에서 뽑는다 (서버/로컬 어디서 돌려도 동작. C.DATASET 고정이면 남의 머신에서 0장)
+    # val 목록은 --data 의 yaml 에서 뽑는다 (서버/로컬 어디서 돌려도 동작. 데이터셋을 코드에 고정하면 남의 머신에서 0장)
     vp = Path(dy.get("path", "")) / dy["val"]
     imgs = sorted(vp.glob("*.jpg")) if vp.is_dir() else [Path(s) for s in vp.read_text(encoding="utf-8").split()]
     lbls = img2label_paths([str(i) for i in imgs])
@@ -237,7 +250,7 @@ def cmd_eval(a):
     f1   = 2 * prec * rec / (prec + rec) if prec + rec else 0.0
     far  = FP / (FP + TN) if FP + TN else 0.0
 
-    rp = C.WORK / f"eval_{run}.md"; L = []                          # run 이름별로 (여러 모델 평가시 덮어쓰기 방지)
+    rp = WORK / f"eval_{run}.md"; L = []                          # run 이름별로 (여러 모델 평가시 덮어쓰기 방지)
     rp.parent.mkdir(parents=True, exist_ok=True)                   # work/ 없는 머신(서버)에서 저장 실패 방지
     L.append("# 화재/연기 검출 평가 리포트\n")
     L.append(f"weights: `{a.weights}`  |  conf(경보): {a.conf}\n")
@@ -265,7 +278,7 @@ def cmd_export(a):
     if not p:
         return
     # 배포 ONNX 저장소(work/onnx_final)에 학습 run 이름으로 자동 보관 (단일 출처)
-    reg = C.WORK / "onnx_final"; reg.mkdir(parents=True, exist_ok=True)
+    reg = WORK / "onnx_final"; reg.mkdir(parents=True, exist_ok=True)
     run = Path(a.model).parent.parent.name          # runs/<run>/weights/best.pt -> <run>
     dst = reg / f"{run}{'_static' if a.static else ''}.onnx"
     shutil.copy2(p, dst)
@@ -273,8 +286,8 @@ def cmd_export(a):
 
 
 def _add_io(p, imgsz=1280):
-    p.add_argument("--data", default="", help="data.yaml (기본 config.DATA_YAML)")
-    p.add_argument("--project", default="", help="runs 경로 (기본 config.RUNS_DIR)")
+    p.add_argument("--data", default="", help="data.yaml (필수)")
+    p.add_argument("--project", default="", help="runs 경로 (기본: model.py 옆 runs/)")
     p.add_argument("--imgsz", type=int, default=imgsz)
     p.add_argument("--device", default="0")
 

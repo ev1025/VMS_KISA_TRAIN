@@ -9,6 +9,13 @@
       오버샘플 = 목록에 경로 반복 · 잡별 000.jpg 로 labels.cache 분리 · 동시 잡 N + VRAM 게이트
 산출: runs/<exp>/<model>/weights/best.pt · results/<exp>/{meta.json,score.txt} · logs/queue/<exp>.log
 재실행 안전: best.pt 있으면 학습 생략, score.txt 있으면 전부 생략(idempotent).
+
+무인 운전(2026-09-18, 주말 큐)
+  - 채점은 `_score` 로 떼어 돌린다. 채점은 영상 디코딩이 병목이라 GPU 가 거의 놀았다(잡 하나당 10~40분).
+    학습(_one)이 끝나면 러너는 바로 다음 학습을 띄우고, 채점은 옆에서 따로 끝난다.
+  - rc=-9(OOM 의심) 이면 batch 를 20% 줄여 last.pt 에서 이어간다(최대 2번). 러너 재실행을 기다리지 않는다.
+  - 학습 시작 5분 뒤 GPU 사용량을 한 번 재서 로그·_exp/gpu_probe.json 에 남긴다. 자동으로 batch 를 바꾸지는 않는다.
+    (도는 학습을 죽이고 다시 띄우는 방식은 러너가 다음 실험을 겹쳐 띄우는 사고를 냈다. 2026-09-18)
 """
 import argparse, json, os, random, shutil, subprocess, sys, time
 from pathlib import Path
@@ -377,8 +384,59 @@ def write_meta(exp, defaults, n_train, pt, started, status):
     (rdir / "meta.json").write_text(json.dumps(meta, ensure_ascii=False, indent=1))
 
 
-def run_one(exp, defaults):
-    """한 실험 전체(목록→학습→채점→meta). 실패해도 예외를 밖으로 던지지 않는다."""
+def gpu_total_mib():
+    try:
+        out = subprocess.run(["nvidia-smi", "--query-gpu=memory.total", "--format=csv,noheader,nounits"],
+                             capture_output=True, text=True, timeout=10).stdout
+        return int(out.strip().splitlines()[0])
+    except Exception:
+        return 0
+
+
+def train_and_wait(cmd, name, imgsz, batch):
+    """학습 프로세스를 띄우고 끝날 때까지 기다린다. rc 를 돌려준다.
+    5분 뒤 GPU 사용량을 한 번 재서 로그와 _exp/gpu_probe.json 에 남긴다. 자동으로 batch 를 바꾸지는 않는다."""
+    LOG_DIR.mkdir(parents=True, exist_ok=True)
+    with open(LOG_DIR / f"{name}.log", "a", encoding="utf-8") as lf:
+        p = subprocess.Popen(cmd, cwd=V, stdout=lf, stderr=subprocess.STDOUT, preexec_fn=_pdeathsig,
+                             env=dict(os.environ, CUDA_VISIBLE_DEVICES="0"))
+        t0, probed = time.time(), False
+        while p.poll() is None:
+            time.sleep(15)
+            if not probed and time.time() - t0 >= 300:
+                probed = True
+                used, total = gpu_used_mib(), gpu_total_mib()
+                frac = used / total if total else 0
+                hint = "" if frac >= 0.75 else " · 75% 미만: 다음 실험은 batch 를 키울 여지가 있다"
+                log(f"{name} GPU 실측(5분 뒤) {used / 1024:.0f}/{total / 1024:.0f}GB ({frac:.0%}) · imgsz {imgsz} · batch {batch}{hint}")
+                try:
+                    f = EXP_DIR / "gpu_probe.json"
+                    d = json.loads(f.read_text(encoding="utf-8")) if f.is_file() else {}
+                    d[name] = {"imgsz": imgsz, "batch": batch, "used_mib": used, "total_mib": total, "when": _kst("%Y-%m-%d %H:%M")}
+                    f.write_text(json.dumps(d, ensure_ascii=False, indent=1), encoding="utf-8")
+                except Exception:
+                    pass
+        return p.returncode
+
+
+def unfinished_ckpt(last_pt, name):
+    """last.pt 가 목표 에폭 전에 멈춘 것인가(끝난 학습은 epoch=-1 로 저장된다)."""
+    if not last_pt.is_file():
+        return False
+    try:
+        import torch
+        ck = torch.load(str(last_pt), map_location="cpu", weights_only=False)
+        ep = int(ck.get("epoch", -1)); tgt = int((ck.get("train_args") or {}).get("epochs", 0))
+        del ck
+        return ep >= 0 and ep + 1 < tgt
+    except Exception as e:
+        log(f"{name} last.pt 확인 실패: {e!r}")
+        return False
+
+
+def run_one(exp, defaults, queue=None):
+    """한 실험의 학습(목록→학습→OOM 재시도). 채점은 queue 를 알면 _score 로 떼어 돌린다.
+    실패해도 예외를 밖으로 던지지 않는다."""
     # 러너는 시작할 때 한 번만 todo 를 고른다. 도는 중에 실험을 취소하려면 여기서도 봐야 한다.
     # (머리말에 "score.txt 있으면 전부 생략" 이라 적어 두고 실제로는 안 보고 있었다. 2026-09-16)
     if is_done(exp):
@@ -389,51 +447,57 @@ def run_one(exp, defaults):
         pt = best_pt(exp)
         n_train = None
         last_pt = V / "runs" / name / exp["model"] / "weights" / "last.pt"
-        unfinished = False
-        if last_pt.is_file() and (EXP_DIR / name / "data.yaml").is_file():
-            try:                                          # 마지막 에폭 < 목표 에폭 = 중단된 학습(끝난 학습은 epoch=-1 로 저장됨)
-                import torch
-                ck = torch.load(str(last_pt), map_location="cpu", weights_only=False)
-                ep = int(ck.get("epoch", -1)); tgt = int((ck.get("train_args") or {}).get("epochs", 0))
-                unfinished = ep >= 0 and ep + 1 < tgt
-                del ck
-            except Exception as e:
-                log(f"{name} last.pt 확인 실패: {e!r}")
-        if unfinished:
+        a_ = dict(defaults.get("train", {}), **exp.get("train", {}))
+        batch = int(a_.get("batch", 128)); imgsz = int(a_.get("imgsz", 640))
+        d = EXP_DIR / name
+        if unfinished_ckpt(last_pt, name) and (d / "data.yaml").is_file():
             pt = None                                     # 중간 best.pt 로 완료 처리하지 않는다
-        if pt is None and last_pt.is_file() and unfinished:
-            # 중단된 학습 → last.pt 에서 이어간다(에폭 유지). 캐시/워커는 큐 설정을 따른다
-            a_ = dict(defaults.get("train", {}), **exp.get("train", {}))
-            cache = a_.get("cache", "ram")
-            n_lines = sum(1 for _ in open(EXP_DIR / name / "train.txt", encoding="utf-8")) if (EXP_DIR / name / "train.txt").is_file() else 0
-            if cache == "ram" and n_lines > int(defaults.get("ram_cache_max", 60000)):
-                cache = False
-            log(f"{name} 이어서 학습(last.pt, {n_lines}장, cache={cache}, workers={a_.get('workers', 8)}, batch={a_.get('batch', 128)})")
-            LOG_DIR.mkdir(parents=True, exist_ok=True)
-            with open(LOG_DIR / f"{name}.log", "a", encoding="utf-8") as lf:
-                rc = subprocess.run([str(PY), str(V / "scripts/resume_train.py"), str(last_pt), "--cache", str(cache), "--workers", str(a_.get("workers", 8)), "--batch", str(a_.get("batch", 128))],
-                                    cwd=V, stdout=lf, stderr=subprocess.STDOUT, preexec_fn=_pdeathsig, env=dict(os.environ, CUDA_VISIBLE_DEVICES="0")).returncode
+        # OOM(rc=-9) 이면 batch 를 20% 줄여 last.pt 에서 이어간다. 최대 2번. 러너 재실행 없이 스스로 회복한다(주말 무인 운전).
+        for attempt in range(3):
+            if pt is not None:
+                break
+            if unfinished_ckpt(last_pt, name) and (d / "data.yaml").is_file():
+                # 중단된 학습 → last.pt 에서 이어간다(에폭 유지). 캐시/워커는 큐 설정을 따른다
+                cache = a_.get("cache", "ram")
+                n_lines = sum(1 for _ in open(d / "train.txt", encoding="utf-8")) if (d / "train.txt").is_file() else 0
+                if cache == "ram" and n_lines > int(defaults.get("ram_cache_max", 60000)):
+                    cache = False
+                n_train = n_train or n_lines
+                log(f"{name} 이어서 학습(last.pt, {n_lines}장, cache={cache}, workers={a_.get('workers', 8)}, batch={batch})")
+                rc = train_and_wait([str(PY), str(V / "scripts/resume_train.py"), str(last_pt), "--cache", str(cache),
+                                     "--workers", str(a_.get("workers", 8)), "--batch", str(batch)], name, imgsz, batch)
+            else:
+                if n_train is None or not (d / "data.yaml").is_file():
+                    d, n_train = build_lists(exp, defaults)
+                log(f"{name} 학습 시작 ({exp['model']}, {n_train}장, +{exp.get('extras', [])}, extra={exp.get('extra', {})}, batch={batch})")
+                cmd = train_cmd(exp, defaults, d / "data.yaml", n_train)
+                cmd[cmd.index("--batch") + 1] = str(batch)
+                rc = train_and_wait(cmd, name, imgsz, batch)
             pt = best_pt(exp)
-            if rc != 0 or pt is None:
-                log(f"{name} 이어서 학습 실패 rc={rc}{' (SIGKILL: OOM 의심 → 캐시/동시잡 확인)' if rc == -9 else ''} (logs/queue/{name}.log)")
-                kill_orphan_trainers()   # 죽은 학습의 데이터로더 워커가 RAM·shm·GPU 를 쥔 채 남는다.
-                                         # 두면 다음 잡이 그것 때문에 또 죽는다(2026-09-15 네 번 반복).
-                write_meta(exp, defaults, n_lines, pt, started, "train_failed"); return
-        elif pt is None:
-            d, n_train = build_lists(exp, defaults)
-            log(f"{name} 학습 시작 ({exp['model']}, {n_train}장, +{exp.get('extras', [])}, extra={exp.get('extra', {})})")
-            LOG_DIR.mkdir(parents=True, exist_ok=True)
-            with open(LOG_DIR / f"{name}.log", "a", encoding="utf-8") as lf:
-                rc = subprocess.run(train_cmd(exp, defaults, d / "data.yaml", n_train), cwd=V, stdout=lf, stderr=subprocess.STDOUT, preexec_fn=_pdeathsig,
-                                    env=dict(os.environ, CUDA_VISIBLE_DEVICES="0")).returncode
-            pt = best_pt(exp)
-            if rc != 0 or pt is None:
-                log(f"{name} 학습 실패 rc={rc}{' (SIGKILL: OOM 의심 → 캐시/동시잡 확인)' if rc == -9 else ''} (logs/queue/{name}.log). 러너 재실행 시 자동 재시도")
-                kill_orphan_trainers()   # 죽은 학습의 데이터로더 워커가 RAM·shm·GPU 를 쥔 채 남는다.
-                                         # 두면 다음 잡이 그것 때문에 또 죽는다(2026-09-15 네 번 반복).
-                write_meta(exp, defaults, n_train, pt, started, "train_failed"); return
-        else:
+            if rc == 0 and pt is not None and not unfinished_ckpt(last_pt, name):
+                break
+            pt = None
+            kill_orphan_trainers()   # 죽은 학습의 데이터로더 워커가 RAM·shm·GPU 를 쥔 채 남는다.
+                                     # 두면 다음 잡이 그것 때문에 또 죽는다(2026-09-15 네 번 반복).
+            if rc == -9 and attempt < 2:
+                batch = max(8, int(batch * 0.8))
+                how = "last.pt 에서 이어서" if last_pt.is_file() else "처음부터"
+                log(f"{name} rc=-9(SIGKILL: OOM 의심) → batch {batch} 로 줄여 {how} 다시 (재시도 {attempt + 1}/2)")
+                continue
+            log(f"{name} 학습 실패 rc={rc} (logs/queue/{name}.log). 러너 재실행 시 자동 재시도")
+            write_meta(exp, defaults, n_train, None, started, "train_failed"); return
+        if pt is None:
+            write_meta(exp, defaults, n_train, None, started, "train_failed"); return
+        if n_train is None:
             log(f"{name} best.pt 있음 → 학습 생략, 채점만")
+        if queue:
+            # 채점은 떼어서 돌린다. 채점 중 GPU 는 거의 논다(영상 디코딩 병목) → 다음 학습이 바로 GPU 를 쓰게 한다.
+            write_meta(exp, defaults, n_train, pt, started, "trained")
+            with open(LOG_DIR / f"{name}.log", "a", encoding="utf-8") as lf:
+                subprocess.Popen([str(PY), __file__, "_score", str(queue), name], cwd=V,
+                                 stdout=lf, stderr=subprocess.STDOUT, start_new_session=True)
+            log(f"{name} 학습 끝 → 채점은 떼어 돌린다(_score). 러너는 다음 실험으로")
+            return
         log(f"{name} 채점")
         score(exp, pt, defaults)
         write_meta(exp, defaults, n_train, pt, started, "done")
@@ -442,6 +506,33 @@ def run_one(exp, defaults):
     except Exception as e:
         log(f"{name} 예외: {e!r}")
         write_meta(exp, defaults, None, None, started, f"error: {e!r}")
+
+
+def cmd_score(a):
+    """학습이 끝난 실험의 채점만 한다. run_one 이 떼어서 띄운다(러너가 죽어도 끝까지 돈다)."""
+    q = yaml.safe_load(open(a.queue, encoding="utf-8")); defaults = q.get("defaults", {})
+    exp = next(e for e in q["experiments"] if e["name"] == a.name)
+    name = exp["name"]
+    if is_done(exp):
+        log(f"{name} 채점 건너뜀(score.txt 가 이미 있다)"); return
+    pt = best_pt(exp)
+    if pt is None:
+        log(f"{name} 채점 불가(best.pt 없음)"); return
+    old = {}
+    try:
+        old = json.loads((V / "results" / name / "meta.json").read_text(encoding="utf-8"))
+    except Exception:
+        pass
+    started = old.get("started") or _kst("%Y-%m-%d %H:%M:%S")
+    try:
+        log(f"{name} 채점(떼어서 · GPU 는 다음 학습이 쓴다)")
+        score(exp, pt, defaults)
+        write_meta(exp, defaults, old.get("n_train"), pt, started, "done")
+        shutil.rmtree(EXP_DIR / name, ignore_errors=True)
+        log(f"{name} 완료 → results/{name}/score.txt")
+    except Exception as e:
+        log(f"{name} 채점 예외: {e!r}")
+        write_meta(exp, defaults, old.get("n_train"), pt, started, f"error: {e!r}")
 
 
 def wait_tmux_gone(session):
@@ -471,8 +562,8 @@ def running_elsewhere():
         # (1) 러너가 띄운 잡: "... exp_queue.py _one <큐> <실험명>"
         #     줄 끝 단어를 그냥 집으면 엉뚱한 명령(내 ps 호출 등)까지 이름으로 들어온다.
         for i, x in enumerate(w):
-            if x.endswith("exp_queue.py") and i + 3 < len(w) and w[i + 1] == "_one":
-                names.add(w[i + 3]); break
+            if x.endswith("exp_queue.py") and i + 3 < len(w) and w[i + 1] in ("_one", "_score"):
+                names.add(w[i + 3]); break        # 떼어 돌리는 채점(_score)도 같은 실험을 두 번 채점하지 않게 본다
         # (2) 부모(_one)가 죽고 학습만 살아남은 고아. _exp/<실험명>/data.yaml 로 알아본다.
         #     2026-09-17 에 _one 을 잘못 kill 해서 f960_diet 가 고아가 됐고,
         #     러너가 그것을 못 봐서 같은 실험을 또 띄울 뻔했다.
@@ -537,7 +628,7 @@ def cmd_run(a):
 def cmd_one(a):
     q = yaml.safe_load(open(a.queue, encoding="utf-8"))
     exp = next(e for e in q["experiments"] if e["name"] == a.name)
-    run_one(exp, q.get("defaults", {}))
+    run_one(exp, q.get("defaults", {}), queue=a.queue)
 
 
 def cmd_status(a):
@@ -549,8 +640,9 @@ def cmd_status(a):
 
 if __name__ == "__main__":
     ap = argparse.ArgumentParser(); sp = ap.add_subparsers(dest="cmd", required=True)
-    r = sp.add_parser("run"); r.add_argument("queue"); r.add_argument("--jobs", type=int, default=3)
+    r = sp.add_parser("run"); r.add_argument("queue"); r.add_argument("--jobs", type=int, default=1)   # 학습은 한 번에 하나(CLAUDE.md 실험 규칙 2)
     r.add_argument("--wait-tmux", default=None); r.add_argument("--rebuild-human", action="store_true"); r.set_defaults(f=cmd_run)
     o = sp.add_parser("_one"); o.add_argument("queue"); o.add_argument("name"); o.set_defaults(f=cmd_one)
+    sc = sp.add_parser("_score"); sc.add_argument("queue"); sc.add_argument("name"); sc.set_defaults(f=cmd_score)
     s = sp.add_parser("status"); s.add_argument("queue"); s.set_defaults(f=cmd_status)
     a = ap.parse_args(); a.f(a)

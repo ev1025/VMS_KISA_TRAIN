@@ -4,7 +4,8 @@
 const REVIEW_ITEMS = ["fire", "intrusion", "loiter", "fall"];
 function buildSrc() {
   const sel = $("#srcSel"); sel.innerHTML = "";
-  $(".srcbox label").textContent = "검수 항목";
+  $(".srcbox label").hidden = false; $(".srcbox label").textContent = "검수 항목";
+  { const _rb = document.getElementById("refreshBtn"); if (_rb) _rb.remove(); }   // 데이터 탭이 드롭다운 옆에 붙인 새로고침은 여기엔 안 쓴다   // 데이터 탭이 숨긴 것을 되살린다
   $("#filtBox").hidden = false;
   for (const k of REVIEW_ITEMS) {
     const v = META.items[k]; if (!v) continue;

@@ -78,7 +78,15 @@ def person_f1(exp):
     f = V / "results" / exp / "score.txt"
     if not f.is_file():
         return None
-    vals = [float(x) for x in re.findall(r"→\s*([0-9.]+)\s*\(정검", f.read_text(encoding="utf-8", errors="replace"))]
+    tx = f.read_text(encoding="utf-8", errors="replace")
+    # 형식이 두 가지다(2026-09-16 에 바뀜). 둘 다 읽는다.
+    #   옛  : intrusion → 69.23 (정검 18 ...)
+    #   지금: 침입 배포해상도 960: [intrusion] 정검 25 ... → 점수 89.29 (90 미달)
+    vals = [float(x) for x in re.findall(r"→\s*([0-9.]+)\s*\(정검", tx)]
+    if not vals:
+        # 지금 형식. 해상도가 둘이면 배포 해상도 줄만 쓴다(실제로 나가는 값이라).
+        dep = re.findall(r"배포해상도.*→\s*점수\s*([0-9.]+)", tx)
+        vals = [float(x) for x in dep] or [float(x) for x in re.findall(r"→\s*점수\s*([0-9.]+)", tx)]
     return round(sum(vals) / len(vals), 2) if vals else None
 
 
@@ -106,9 +114,41 @@ def weights_of(exp):
     return None
 
 
+def deployed():
+    """배포 중인 가중치(model/*.pt). 실험이 아니라 results/ 에 없어서 따로 읽는다.
+    갈래·점수는 results/MODELS.json 하나만 본다(가중치 계보 단일 기준)."""
+    out = []
+    mj = V / "results/MODELS.json"
+    if not mj.is_file():
+        return out
+    try:
+        models = (json.loads(mj.read_text(encoding="utf-8")) or {}).get("models") or {}
+    except Exception:
+        return out
+    for fn, d in models.items():
+        pt = V / "model" / fn
+        if not pt.is_file():
+            continue
+        task = str(d.get("task") or "")
+        if "person" in task:
+            kind = "person"
+        elif "fire" in task:
+            kind = "fire"
+        else:
+            continue                       # 자세·SeqNet 은 박스 오버레이 대상이 아니다
+        f1s = [v for v in (d.get("kisa_f1") or {}).values() if isinstance(v, (int, float))]
+        used = ",".join(d.get("used_by") or []) or "배포"
+        if f1s:
+            key, why = (1, round(sum(f1s) / len(f1s), 2)), "배포(%s) KISA F1 %.2f" % (used, sum(f1s) / len(f1s))
+        else:
+            key, why = (0, 0.0), "배포(%s) 점수 기록 없음" % used
+        out.append(("deploy:" + fn, kind, key, why))
+    return out
+
+
 def rank():
     """[(실험, 갈래, 정렬키, 근거)] 를 좋은 순으로."""
-    out = []
+    out = deployed()
     for mj in sorted((V / "results").glob("*/meta.json")):
         exp = mj.parent.name
         if not weights_of(exp):
@@ -124,8 +164,12 @@ def rank():
         else:
             key, why = (0, map50(exp)), f"mAP {map50(exp):.3f} (F1 없음)"
         out.append((exp, kind, key, why))
-    # 배포본 먼저, 그 다음 F1 있는 것(높은 순), 마지막에 F1 없는 것(mAP 순)
-    out.sort(key=lambda r: (0 if r[0] in DEPLOY else 1, -r[2][0], -r[2][1]))
+    # F1 내림차순만 본다(2026-09-18). 배포본을 맨 앞에 고정하던 것을 뺐다.
+    # 고정하면 목록이 점수 순으로 보이는데 실제로는 아니라서 오해를 부른다.
+    #   (예전 순서: 1위 94.74 · 2위 88.89 · 3위 84.21 · 4위 88.89 <- 3위가 4위보다 낮았다)
+    # 배포본은 순서 대신 이름표(DEPLOY)로 알아본다.
+    # 정렬키 r[2] = (F1 있으면 1 없으면 0, 점수). F1 있는 것이 먼저, 그 안에서 높은 순.
+    out.sort(key=lambda r: (-r[2][0], -r[2][1]))
     return out
 
 

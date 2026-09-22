@@ -65,6 +65,7 @@ KP.DEFAULT_IMGSZ    # 기본 입력 크기 (640)
 * 학습 하이퍼파라미터: `runs/<실험>/args.yaml`
 * 실행 과정 로그: `logs/queue/<실행>.log`
 * 규칙 설정 교차검증(LOOCV): `results/loocv_results.json` (`scripts/loocv_all.py` 가 씀. 실험 하나에 매이지 않아 `results/` 바로 아래 둡니다)
+* 규칙 훑기 결과(한 실험의 덤프로 침입·배회 규칙을 훑은 표, LOOCV 포함): `results/<실험>/rules.txt` (`scripts/rule_eval.py` 가 씁니다. 실험에 매이므로 그 실험 폴더 안에 둡니다. 2026-09-18)
 
 배치가 이 규칙과 맞는지는 `.venv/bin/python scripts/check_layout.py --all` 로 확인합니다.
 

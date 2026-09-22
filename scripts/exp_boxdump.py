@@ -32,7 +32,11 @@ FLUSH_EVERY = 40                   # 이 표본마다 중간 결과를 내준다
 
 
 def best_pt(exp):
-    """학습 결과 가중치 경로. meta.json 우선, 없으면 runs/ 탐색."""
+    """학습 결과 가중치 경로. meta.json 우선, 없으면 runs/ 탐색.
+    'deploy:<파일명>' 은 실험이 아니라 배포 가중치라 model/ 에서 바로 찾는다."""
+    if exp.startswith("deploy:"):
+        p = V / "model" / exp.split(":", 1)[1]
+        return p if p.is_file() else None
     mj = V / "results" / exp / "meta.json"
     if mj.is_file():
         try:

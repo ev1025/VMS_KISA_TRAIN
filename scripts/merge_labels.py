@@ -64,6 +64,41 @@ def backup(path):
     return b
 
 
+def merge_clip_state(incoming, dry, take_incoming):
+    """클립 표시(기본/전파/손)와 전파 시작·종료(a/b)를 합친다. 클립 단위·항목 단위로 본다."""
+    dst = HAND / "clip_state.json"
+    src = incoming / "손라벨" / "clip_state.json"
+    if not src.is_file():
+        return None
+    cur = json.loads(dst.read_text(encoding="utf-8")) if dst.is_file() else {}
+    inc = json.loads(src.read_text(encoding="utf-8"))
+    added, changed, kept = 0, 0, 0
+    out = {k: dict(v) for k, v in cur.items()}
+    for stem, sv in inc.items():
+        if not isinstance(sv, dict):
+            continue
+        mine = out.setdefault(stem, {})
+        for k in ("mark", "a", "b", "smoke"):
+            if k not in sv:
+                continue
+            if k not in mine:
+                mine[k] = sv[k]; added += 1
+            elif mine[k] != sv[k]:
+                if take_incoming:
+                    mine[k] = sv[k]; changed += 1
+                else:
+                    kept += 1
+        if not mine:
+            out.pop(stem, None)
+    if not dry:
+        backup(dst)
+        dst.parent.mkdir(parents=True, exist_ok=True)
+        tmp = dst.with_suffix(".json.tmpmerge")     # 편집기가 같은 파일을 쓰는 장비에서도 찢기지 않게
+        tmp.write_text(json.dumps(out, ensure_ascii=False, indent=1), encoding="utf-8")
+        tmp.replace(dst)
+    return {"추가": added, "덮음": changed, "이쪽유지": kept}
+
+
 def merge_hand(name, incoming, dry, take_incoming):
     dst = HAND / f"{name}_labels.json"
     src = incoming / "손라벨" / f"{name}_labels.json"
@@ -77,6 +112,14 @@ def merge_hand(name, incoming, dry, take_incoming):
     for r in cur:
         slots.setdefault(slot(r), []).append(r)
 
+    # 한 자리에 박스가 여럿이면 어느 것이 어느 것인지 짝지을 수 없다.
+    # 화재 라벨은 객체가 불·연기 둘뿐이라 한 프레임에 불을 2개 치면 같은 자리가 된다.
+    # 그럴 때 충돌로 보면 두 번째 박스부터 조용히 버려지므로, 그냥 새 박스로 추가한다.
+    inc_slots = {}
+    for r in inc:
+        inc_slots[slot(r)] = inc_slots.get(slot(r), 0) + 1
+    pairable = lambda k: len(slots.get(k, ())) == 1 and inc_slots.get(k, 0) == 1
+
     added, dup, conflict, skipped_eval = [], 0, [], 0
     for r in inc:
         if r.get("eval"):                       # 채점 전용 행은 학습 저장소에 넣지 않는다
@@ -85,7 +128,7 @@ def merge_hand(name, incoming, dry, take_incoming):
         if ident(r) in have:
             dup += 1
             continue
-        if slot(r) in slots:
+        if slot(r) in slots and pairable(slot(r)):
             conflict.append(r)
             if take_incoming:
                 for old in slots[slot(r)]:
@@ -160,24 +203,51 @@ def main():
     if not inc.is_dir():
         print(f"폴더 없음: {inc}"); return 2
 
-    print(f"들어온 곳: {inc}" + ("  (미리보기)" if a.dry else ""))
-    total_add = 0
+    # 화면에는 "무엇을 몇 건 보낼 수 있나"만 쓴다(사용자 요청 2026-09-16).
+    KO = {"person": "사람 라벨", "fire": "화재 라벨", "image": "이미지 라벨"}
+    rows, total_add, conflicts = [], 0, []
     for name in ("person", "fire", "image"):
         r = merge_hand(name, inc, a.dry, a.take_incoming)
         if r is None:
             continue
         total_add += r["추가"]
-        print(f"  손라벨 {r['이름']:6s} 들어온 {r['들어온행']:5d} · 추가 {r['추가']:4d} · 중복 {r['중복']:5d}"
-              f" · 충돌 {r['충돌']:3d} · eval제외 {r['제외:eval']:4d} -> 결과 {r['결과행']}행")
-        for c in r["_충돌목록"]:
-            print(f"      충돌: {c}")
+        conflicts += [(KO[name], c) for c in r["_충돌목록"]]
+        if r["추가"]:
+            rows.append((KO[name], f"{r['추가']:,}건"))
+    rcs = merge_clip_state(inc, a.dry, a.take_incoming)
+    if rcs and (rcs["추가"] or rcs["덮음"]):
+        total_add += rcs["추가"]
+        rows.append(("클립 표시·전파구간", f"{rcs['추가']:,}건" + (f" (덮음 {rcs['덮음']:,})" if rcs["덮음"] else "")))
+    if rcs and rcs["이쪽유지"]:
+        rows.append(("클립 표시·전파구간", f"값이 달라 이쪽 유지 {rcs['이쪽유지']:,}건 (--take-incoming 이면 덮는다)"))
     r = merge_auto(inc, a.dry)
-    if r:
-        print(f"  자동라벨  새 클립 {r['새 클립']} · 추가된 프레임 {r['추가된 프레임']}")
+    if r and r["추가된 프레임"]:
         total_add += r["추가된 프레임"]
-    print(f"\n{'추가될' if a.dry else '추가한'} 것 합계 {total_add}건")
-    if a.dry:
-        print("실제로 합치려면 --dry 를 빼고 다시 실행하세요.")
+        rows.append(("전파 프레임", f"{r['추가된 프레임']:,}건"))
+
+    if not rows:
+        print("보낼 것 없음")
+    else:
+        for name, cnt in rows:
+            print(f"{name:9s} {cnt}")
+        print(f"{'합계':9s} {total_add:,}건")
+    if conflicts:
+        keep = "들어온 값으로 덮음" if a.take_incoming else "이쪽 값 유지"   # 양쪽에서 돌리므로 장비 이름을 쓰지 않는다
+        print(f"{'충돌':9s} {len(conflicts)}건 ({keep})")
+
+    # 합치고 나면 같은 불에 박스가 두 겹 남는다. 양쪽 편집기에서 같은 불꽃을 따로 그린 것이라
+    # 정체성(좌표)이 달라 중복으로 걸리지 않는다. 사람이 따로 돌리는 것을 잊으면 되살아나므로
+    # 여기서 바로 정리한다(2026-09-22: 75개가 이렇게 들어가 있었다).
+    if not a.dry:
+        import dedup_fire_labels as D
+        f = HAND / "fire_labels.json"
+        if f.is_file():
+            rows = json.loads(f.read_text(encoding="utf-8"))
+            keep_rows, gone = D.dedup(rows)
+            if gone:
+                shutil.copy2(f, f.with_suffix(".json.dedup_before"))
+                f.write_text(json.dumps(keep_rows, ensure_ascii=False), encoding="utf-8")
+                print(f"{'중복박스':9s} {len(gone)}건 제거 (같은 프레임·같은 클래스·IoU 0.5 이상)")
     return 0
 
 

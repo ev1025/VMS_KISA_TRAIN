@@ -1,5 +1,10 @@
 # -*- coding: utf-8 -*-
-"""트랙 덤프: botsort ID 포함 (t, [[id,conf,x1,y1,x2,y2],...]). GSI 평활 스윕용."""
+"""트랙 덤프: botsort ID 포함 (t, [[id,conf,x1,y1,x2,y2],...]). GSI 평활 스윕용.
+
+--imgsz · --iou (2026-09-18 추가): 제출 도구 BotSortPersons 는 입력 크기만 바꾸고 NMS 는 ultralytics 기본(iou 0.7)이다.
+    손라벨 모델은 1280 입력에서 한 사람에 박스가 2~3개 나와(부분 박스) 트랙이 갈라진다. NMS 문턱을 바꿔 덤프를 다시 떠서
+    같은 판정기로 점수를 비교하려고 인자로 뺐다. 기본값(640 · 0.7)은 예전 덤프와 같다.
+"""
 import argparse
 import json
 import time
@@ -17,6 +22,8 @@ def main():
     ap.add_argument("--stride", type=float, default=1.0)
     ap.add_argument("--conf", type=float, default=0.10)
     ap.add_argument("--tiles", action="store_true")
+    ap.add_argument("--imgsz", type=int, default=640)
+    ap.add_argument("--iou", type=float, default=0.7, help="NMS IoU 문턱(ultralytics 기본 0.7)")
     a = ap.parse_args()
 
     out = Path(a.out)
@@ -46,7 +53,7 @@ def main():
                                 x1,y1,x2,y2 = (float(v) for v in b_.xyxy[0])
                                 boxes.append([-1, round(float(b_.conf),3), round(x1+ox), round(y1+oy), round(x2+ox), round(y2+oy)])
                     else:
-                        r = model.track(fr, persist=True, conf=a.conf, imgsz=640, classes=[0],
+                        r = model.track(fr, persist=True, conf=a.conf, iou=a.iou, imgsz=a.imgsz, classes=[0],
                                         verbose=False, tracker="botsort.yaml")[0]
                         if r.boxes.id is not None:
                             for b_ in r.boxes:

@@ -44,7 +44,10 @@ ITEMS = {
     # track_imgsz: 배포영상 1280x720 을 640 으로 줄여 통째로 넣고 있었다(타일 없음). 쓰러짐에서 같은 조건을
     # 960 으로 올리자 84.21→94.74 가 됐으므로 여기도 검증 대상. 기본은 기존 동작(640) 유지.
     "loitering": dict(desc="Loitering", model="person_v2.pt", zone="Loitering", stride=0.5, delay=10.0,
-                      conf=0.40, corners=0, dwell=6.0, settle=5.0, gap=6, track_imgsz=640,
+                      # 2026-09-20: 끊김 6 → 10 표본, 발끝 여유 margin 10px(구역 경계에서 10px 안쪽이어야 "안"). 손라벨 모델 3벌 합의(rule_search):
+                      # 84.21 → 91.23~94.74, 배포 모델은 96.55 그대로, 한 축을 흔들어도 최저 점수 유지 78%(고원). 경계를 걷는 사람이 진입·이탈을 반복해
+                      # 체류가 끊기던 것을 막는다.
+                      conf=0.40, corners=0, dwell=6.0, settle=5.0, gap=10, margin=10, track_imgsz=640,
                       # 늦게 온 일행 받기(2026-09-16): 20초 안 · 구역 인원 3명 이하 · 고른 사람 아직 구역 안 · 방금 도착
                       # C00_211_0002(두 사람 13.5초 차) 를 살리면서 붐비는 편(039_0002)을 안 깨는 값.
                       # 덤프 30편 재계산 93.10 -> 96.55(오검 0), LOOCV 89.66 -> 96.55.
@@ -55,8 +58,12 @@ ITEMS = {
     # 자세 1280 확률 덤프로 문턱을 훑으니 0.70~0.81 구간에서만 10편 전부 정검이었다(그 밖은 전부 90.00).
     # 통로 가운데 0.755 를 쓴다. 아래 벽 0.70 = 235 의 이른 가짜 신호, 위 벽 0.82 = 가장 약한 진짜 낙상.
     # 전수 100.00 · LOOCV 90.00 (변별하는 편이 235 하나뿐이라 낙관 +10). 최악이어도 지금(90.00)과 같다.
-    "falldown": dict(desc="Falldown", model="yolo11x-pose.pt", stride=0.1, delay=0.0, th=0.755, need=4,
-                     pose_imgsz=1280),
+    # 2026-09-20: 0.755·4 → 0.80·5 + 경보 지연 1초. 330편이 SeqNet 학습셋임을 확인하고 장면 묶음 교차검증으로 다시 잰 결과
+    # (docs/EXPERIMENTS.md 4.17): 채점 10편 100 유지(최소 여유 0.0 → 3.0초, 235 편이 창 시작 정각에 울리던 것 해소),
+    # 교차검증 87.34 → 89.63(오검 26 → 16). 더 엄격하면(0.85 이상·연속 6 이상) 채점 153 야간비와 AI허브 미학습 35편에서 진짜 낙상을 잃는다.
+    # net: 시계열 분류기 가중치 목록. 두 벌 이상이면 로짓 평균(2026-09-21). 한 벌이면 예전과 완전히 같다.
+    "falldown": dict(desc="Falldown", model="yolo11x-pose.pt", stride=0.1, delay=1.0, th=0.80, need=5,
+                     pose_imgsz=1280, pose_conf=0.10, net=["fall_track.pt", "fall_track_1280_s0.pt", "fall_track_1280_s1.pt"], pre_median=0),
     # 방화: score_kisa.py 와 같은 6뷰 타일(전체+4분할+중앙) → 표본별 최고 conf → 창 규칙. 기본 규칙 = '결합+타일가정 3/5'
     # (불 ≥0.4 또는 불 ≥0.3&연기 ≥0.6 이 5스텝 창에 3회). --fire-rule new 면 fire_rule2 신규칙(불 0.5 5/12 + 연기 기준선Δ0.2).
     # 규칙 변경(2026-09-15): 불 0.4 4회/6스텝 → 불 0.45 3회/10스텝, 연기 기준 사용 안 함.
@@ -325,6 +332,13 @@ def in_poly(x, y, poly):
     return inside
 
 
+def foot_inside(box, poly, margin):
+    """발끝(하단 중앙)이 구역 안에 margin 픽셀 여유를 두고 들어와 있나. 좌우로 margin 만큼 옮겨도 안이어야 한다."""
+    x1, _y1, x2, y2 = box
+    cx = (x1 + x2) / 2
+    return in_poly(cx - margin, y2, poly) and in_poly(cx + margin, y2, poly)
+
+
 def entered(box, poly, corners):
     """발끝(하단 중앙)이 구역 안 + corners 개 이상 꼭짓점이 구역 안. corners 0 = 발끝만(배회), 3 = 몸전체(침입)."""
     x1, y1, x2, y2 = box
@@ -381,8 +395,9 @@ class LoiterRule:
     """구역 발끝 체류 dwell 초(gap 프레임까지 끊김 허용) → 배회자. 마지막 배회자의 진입 시각(+delay 는 밖에서)."""
 
     def __init__(self, poly, conf, corners, dwell, settle, gap, step,
-                 maxgap=20.0, crowd=3, still_in=1.0):
+                 maxgap=20.0, crowd=3, still_in=1.0, margin=0.0):
         self.poly, self.conf, self.corners = poly, conf, corners
+        self.margin = margin    # 발끝이 구역 경계에서 이만큼 안쪽이어야 "안"(2026-09-20). 0 이면 예전과 같다
         self.dwell_s, self.settle, self.gap, self.step = dwell, settle, gap, step
         # 늦게 도착한 일행을 받아들이는 조건(2026-09-16). 셋을 모두 만족할 때만 settle 을 넘겨 받는다.
         self.maxgap, self.crowd, self.still_in = maxgap, crowd, still_in
@@ -400,6 +415,8 @@ class LoiterRule:
         for pid, conf, x1, y1, x2, y2 in boxes:
             if conf < self.conf or not entered((x1, y1, x2, y2), self.poly, self.corners):
                 continue
+            if self.margin and not foot_inside((x1, y1, x2, y2), self.poly, self.margin):
+                continue                      # 경계 위를 걷는 사람은 안으로 안 친다(scripts/loiter_rule4.py 의 margin 과 같은 계산)
             seen.add(pid)
             self.lastseen[pid] = t
             self.first_in.setdefault(pid, t)
@@ -503,20 +520,35 @@ class FallJudge:
     """10fps 키포인트 → 트랙(중심거리 연결) → 0.5초마다 트랙별 최신 10초 창을 SeqNet 에 → 연속 need 창 돌파.
     fall_track.py 의 배치 계산을 프레임 단위 증분으로 옮긴 것. 첫 돌파 트랙 = 처음 쓰러진 사람."""
 
-    def __init__(self, pose_weights, net_weights, th, need, device=None, pose_imgsz=640):
+    def __init__(self, pose_weights, net_weights, th, need, device=None, pose_imgsz=640, pose_conf=0.10, pre_median=0):
         import torch
         from ultralytics import YOLO
         self.pose = YOLO(str(pose_weights))
         self.device = device or ("cuda" if torch.cuda.is_available() else "cpu")
-        self.net = build_seqnet().to(self.device)
-        self.net.load_state_dict(torch.load(str(net_weights), map_location=self.device))
-        self.net.eval()
+        # 2026-09-21: 분류기 가중치를 여러 개 주면(list/tuple) 로짓을 평균한다(앙상블). 하나면 예전과 완전히 같다.
+        paths = list(net_weights) if isinstance(net_weights, (list, tuple)) else [net_weights]
+        self.nets = []
+        for w in paths:
+            n = build_seqnet().to(self.device)
+            n.load_state_dict(torch.load(str(w), map_location=self.device)); n.eval(); self.nets.append(n)
+        self.net = self.nets[0]
         self.th, self.need = th, need
         self.pose_imgsz = pose_imgsz
+        self.pre_median = pre_median  # N>1 이면 최근 N장의 화소별 중앙값을 자세 모델에 넣는다(2026-09-21).
+                                      #  왜: 야간 눈 편에서 떨어지는 눈발이 화면을 덮어 쓰러진 사람이 검출 0 이었다.
+                                      #  눈발은 프레임마다 자리가 바뀌고 쓰러진 사람은 그대로라, 중앙값이 눈발만 지운다.
+        self._buf = []                # 중앙값용 최근 프레임
+        self.pose_conf = pose_conf   # 자세 검출 신뢰도 문턱(2026-09-20: 상수 0.10 을 설정으로. 디코더 픽셀 ±1 차이가 0.10 근처 검출을 뒤집는 것을 재기 위해)
         self.i = 0                 # 0.1초 프레임 번호
         self.WH = None
         self.tracks = []           # {"frames": {i: kp}, "last_c", "last_i", "xs": [feat], "pres": [bool], "ts": [t], "run": 0, "fired": None}
         self.decided = None
+
+    def _logit(self, x):
+        """분류기(들)의 로짓. 여러 개면 평균(2026-09-21)."""
+        if len(self.nets) == 1:
+            return self.nets[0](x)                       # (1,) 텐서. 호출부가 .cpu()[0] 로 꺼낸다(원래 self.net(x) 와 같은 모양)
+        return sum(n(x) for n in self.nets) / len(self.nets)
 
     def _link(self, kps):
         dets = [(kp, c) for kp in kps if (c := kp_center(kp)) is not None]
@@ -544,7 +576,14 @@ class FallJudge:
             return self.decided
         if self.WH is None:
             self.WH = (bgr.shape[1], bgr.shape[0])
-        r = self.pose.predict(bgr, conf=0.10, imgsz=self.pose_imgsz, verbose=False, device=self.device)[0]
+        src = bgr
+        if self.pre_median and self.pre_median > 1:
+            self._buf.append(bgr)
+            if len(self._buf) > self.pre_median:
+                del self._buf[0]
+            if len(self._buf) == self.pre_median:
+                src = np.median(np.stack(self._buf), axis=0).astype(np.uint8)
+        r = self.pose.predict(src, conf=self.pose_conf, imgsz=self.pose_imgsz, verbose=False, device=self.device)[0]
         kps = []
         if r.keypoints is not None and len(r.boxes):
             confs = [float(b.conf) for b in r.boxes]
@@ -578,7 +617,7 @@ class FallJudge:
                     if sum(pres) < FALL_WIN // 4:
                         continue                                 # 배치는 이런 창을 목록에서 빼기만 한다(연속 카운터 유지)
                     with torch.no_grad():
-                        z = float(self.net(torch.tensor(np.stack(seg)[None], dtype=torch.float32,
+                        z = float(self._logit(torch.tensor(np.stack(seg)[None], dtype=torch.float32,
                                                         device=self.device)).cpu()[0])
                     p = 1.0 / (1.0 + math.exp(-z))
                     tr.setdefault("curve", []).append((round(float(tr["ts"][-1]), 2), round(z, 3)))   # 디버그: (창끝 시각, 로짓)
@@ -708,7 +747,7 @@ def make_judge(item, cfg, stem, maps_dir, frame_wh, dets):
     if item == "loitering":
         poly = zone_of(maps_dir, stem, cfg["zone"], frame_wh)
         return LoiterRule(poly, cfg["conf"], cfg["corners"], cfg["dwell"], cfg["settle"], cfg["gap"], cfg["stride"],
-                          cfg.get("maxgap", 20.0), cfg.get("crowd", 3), cfg.get("still_in", 1.0))
+                          cfg.get("maxgap", 20.0), cfg.get("crowd", 3), cfg.get("still_in", 1.0), margin=cfg.get("margin", 0.0))
     raise ValueError(item)
 
 
@@ -750,8 +789,10 @@ def process(item, src, out_dir, maps_dir=None, expect=None, gt_dir=None, device=
             print(f"[클립] {session} 시작", flush=True)
             wh = (f.bgr.shape[1], f.bgr.shape[0])
             if item == "falldown":
-                judge = FallJudge(WEIGHTS / cfg["model"], WEIGHTS / "fall_track.pt", cfg["th"], cfg["need"], device,
-                                  cfg.get("pose_imgsz", 640))
+                nets = [WEIGHTS / n for n in cfg.get("net", ["fall_track.pt"])]
+                judge = FallJudge(WEIGHTS / cfg["model"], nets, cfg["th"], cfg["need"], device,
+                                  cfg.get("pose_imgsz", 640), pose_conf=cfg.get("pose_conf", 0.10),
+                                  pre_median=cfg.get("pre_median", 0))
             elif item == "fire":
                 judge = FireJudge(fire_weights(cfg), cfg, device)
             elif item == "loitering":
@@ -914,8 +955,13 @@ def main():
     ap.add_argument("--fire-rule", choices=["combined", "new"], default=None, help="방화 규칙: combined(기본, 결합+타일가정 3/5) / new(fire_rule2 신규칙)")
     ap.add_argument("--fire-weights", default=None, help="방화 .pt (기본 weights/kisa/fire_fog.pt)")
     ap.add_argument("--fire-weights2", default=None, help="방화 두 번째 .pt. 'none' 이면 앙상블을 끄고 한 벌로 돈다")
+    ap.add_argument("--fire-imgsz", type=int, default=None,
+                    help="첫 번째 .pt 의 추론 해상도(기본 640). 학습 해상도와 같게 둔다. "
+                         "960 으로 학습한 모델을 640 으로 채점하면 소형 불꽃 리콜이 무너진다")
     ap.add_argument("--fire-imgsz2", type=int, default=None, help="두 번째 .pt 의 추론 해상도(기본 960)")
     ap.add_argument("--person-weights", default=None, help="사람 .pt 덮어쓰기(침입·배회 공통). 학습 실험 채점용")
+    ap.add_argument("--fall-median", type=int, default=None, help="자세 모델에 넣기 전 최근 N장 화소별 중앙값(눈발 억제). 0/1 = 끔")
+    ap.add_argument("--fall-nets", default=None, help="쓰러짐 분류기 .pt 목록(쉼표). 두 벌 이상이면 로짓 평균. weights/kisa 기준 파일명")
     ap.add_argument("--person-imgsz", type=int, default=None,
                     help="사람 추론 해상도 덮어쓰기(침입 타일·배회 전체프레임 공통). 학습 해상도와 맞춘다")
     ap.add_argument("--fire-legacy", action="store_true", help="방화를 옛 경로(weights/best.onnx + alarm_service)로")
@@ -933,6 +979,8 @@ def main():
             ITEMS["fire"]["model"] = a.fire_weights        # 절대경로면 WEIGHTS / 경로 가 그대로 절대경로가 된다
         if a.fire_weights2:
             ITEMS["fire"]["model2"] = None if a.fire_weights2.lower() == "none" else a.fire_weights2
+        if a.fire_imgsz:
+            ITEMS["fire"]["view_imgsz"] = a.fire_imgsz
         if a.fire_imgsz2:
             ITEMS["fire"]["view_imgsz2"] = a.fire_imgsz2
         if a.fire_legacy:
@@ -944,6 +992,10 @@ def main():
                 fire_tool.run(a.videos, str(ROOT / "weights" / "best.onnx"), a.gt, a.out, 640)
             return
 
+    if a.fall_median is not None:
+        ITEMS["falldown"]["pre_median"] = a.fall_median
+    if a.fall_nets:                                       # 쓰러짐 분류기 여러 벌(로짓 평균) 시험용 덮어쓰기
+        ITEMS["falldown"]["net"] = [x.strip() for x in a.fall_nets.split(",") if x.strip()]
     if a.person_weights:                                  # 침입·배회가 사람 검출 모델을 공유한다(항목 분기 밖이어야 한다)
         ITEMS["intrusion"]["model"] = a.person_weights
         ITEMS["loitering"]["model"] = a.person_weights

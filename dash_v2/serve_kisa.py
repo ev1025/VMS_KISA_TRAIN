@@ -63,6 +63,11 @@ def label_file(kind):
     return data_path("data/학습데이터/손라벨/" + fn, fn)
 
 
+def clip_state_file():
+    """클립별 상태(표시·전파 구간). 손라벨 파일들 옆에 둔다 → push 가 폴더째 보내 준다."""
+    return data_path("data/학습데이터/손라벨/clip_state.json", "clip_state.json")
+
+
 def read_json(path, default):
     try:
         path = Path(path)
@@ -348,8 +353,18 @@ BOX_TOP = 10                      # 검수 탭 모델 목록에 올릴 개수(�
 
 
 def box_models():
-    """학습 가중치가 남아 있는 실험 목록. 고를 때 참고하도록 채점셋 mAP50 을 같이 싣는다."""
+    """학습 가중치가 남아 있는 실험 목록 + 배포 중인 가중치. 고를 때 참고하도록 채점셋 mAP50 을 같이 싣는다."""
     out = []
+    try:                                   # 배포 가중치(model/*.pt)는 results/ 에 없어 따로 넣는다
+        import sys as _s
+        if str(G / "scripts") not in _s.path:
+            _s.path.insert(0, str(G / "scripts"))
+        from model_rank import deployed as _dep
+        for exp_, kind_, _key, _why in _dep():
+            out.append({"exp": exp_, "model": "배포", "item": "방화" if kind_ == "fire" else "사람",
+                        "kind": kind_, "map50": None, "f1": None})
+    except Exception:
+        pass
     rd = G / "results"
     if not rd.is_dir():
         return out
@@ -528,6 +543,35 @@ def read_frame(clip, sec, w=0):
     except Exception:
         pass
     return data
+
+
+def torch_device():
+    """쓸 수 있는 가장 빠른 장치. cuda > mps(애플 실리콘) > cpu.
+
+    맥북에서 라벨하며 전파까지 돌리려는 경우가 있다(2026-09-22). 예전에는 cuda 가 없으면
+    무조건 cpu 라 전파 한 번에 몇 분이 걸렸다. MPS 는 지원 안 되는 연산이 남아 있어
+    PYTORCH_ENABLE_MPS_FALLBACK 으로 그것만 cpu 로 흘린다.
+    """
+    import os
+    import torch
+    if torch.cuda.is_available():
+        return "cuda"
+    if getattr(torch.backends, "mps", None) is not None and torch.backends.mps.is_available():
+        os.environ.setdefault("PYTORCH_ENABLE_MPS_FALLBACK", "1")
+        return "mps"
+    return "cpu"
+
+
+def torch_free(dev):
+    """장치 캐시 비우기. cuda 가 아니면 할 일이 없거나 방법이 다르다."""
+    import torch
+    if dev == "cuda":
+        torch.cuda.empty_cache()
+    elif dev == "mps" and hasattr(torch, "mps"):
+        try:
+            torch.mps.empty_cache()
+        except Exception:
+            pass
 
 
 _SAM2 = None
@@ -746,7 +790,7 @@ def sam2_mask_pts(clip, sec, pts, box=None):
     if _SAM2 is None:
         from transformers.models.sam2.processing_sam2 import Sam2Processor
         from transformers.models.sam2.modeling_sam2 import Sam2Model
-        dev = "cuda" if torch.cuda.is_available() else "cpu"
+        dev = torch_device()
         _SAM2 = (Sam2Processor.from_pretrained(SAM2_ID),
                  Sam2Model.from_pretrained(SAM2_ID).to(dev).eval(), dev)
     proc, model, dev = _SAM2
@@ -835,7 +879,7 @@ def sam2_propagate_objs(clip, seeds, back=5.0, fwd=10.0, step=0.5, progress=None
     if _SAM2V is None:
         from transformers.models.sam2_video.processing_sam2_video import Sam2VideoProcessor
         from transformers.models.sam2_video.modeling_sam2_video import Sam2VideoModel
-        dev = "cuda" if torch.cuda.is_available() else "cpu"
+        dev = torch_device()
         _SAM2V = (Sam2VideoProcessor.from_pretrained(SAM2V_ID),
                   Sam2VideoModel.from_pretrained(SAM2V_ID).to(dev).eval(), dev)
     proc, model, dev = _SAM2V
@@ -923,7 +967,7 @@ def sam2_propagate_objs(clip, seeds, back=5.0, fwd=10.0, step=0.5, progress=None
             for oid, arr in masks_of(r, oids).items():
                 take(gi, oid, arr, profs.get(oid) or [])
         del sess
-        torch.cuda.empty_cache()
+        torch_free(dev)
 
     def prof_of(sds):
         return [(float(sd["t"]), float(sd["box"][2]) * W * float(sd["box"][3]) * H) for sd in sds if sd.get("box")]
@@ -1291,12 +1335,15 @@ def train_progress(name):
 
 
 def push_labels(dry=True):
-    """이 장비의 라벨 저장소를 LABEL_PUSH_TARGET 으로 보내고 중복 아닌 것만 합치게 한다.
+    """이 장비와 서버의 라벨 저장소를 양쪽으로 맞춘다. 겹치는 값은 이 장비가 이긴다.
 
-    보내는 것은 손라벨·자동라벨 뿐이다(수 MB). 영상은 보내지 않는다.
-    합치기는 저쪽의 scripts/merge_labels.py 가 한다. 이쪽은 옮기기만 한다.
+    오가는 것은 손라벨·자동라벨 뿐이다(수 MB). 영상은 보내지 않는다.
+      1) 이 장비 -> 서버 : 저쪽에서 merge_labels.py --take-incoming (들어온 값 = 이 장비 값이 이긴다)
+      2) 서버 -> 이 장비 : 이쪽에서 merge_labels.py (플래그 없음 = 제자리 값 = 이 장비 값을 지킨다)
+    두 번 다 '없는 것만 넣고 있는 것은 지우지 않는' 규칙이라, 끝나면 양쪽이 합집합이 되고
+    겹친 자리는 이 장비 값으로 같아진다. 어느 쪽에서 시작하든 결과가 같다.
     """
-    import subprocess, tempfile
+    import subprocess
     tgt = os.environ.get("LABEL_PUSH_TARGET", "").strip()
     if not tgt:
         return {"ok": False, "err": "LABEL_PUSH_TARGET 이 없습니다(이 장비는 보내는 쪽이 아닙니다)."}
@@ -1312,35 +1359,58 @@ def push_labels(dry=True):
            "-o", "UserKnownHostsFile=/dev/null", "-o", "LogLevel=ERROR"]
     if key:
         ssh += ["-i", key]
+    # _backup 은 합치기가 읽지 않는다. 빼지 않으면 스냅샷이 쌓일수록 전송만 무거워진다.
+    rs = ["rsync", "-a", "-s", "--no-motd", "--exclude", "_backup", "--exclude", "*.tmp*",
+          "-e", " ".join(ssh)]
 
-    stage = f"/tmp/label_push_{int(time.time())}"
+    t0 = int(time.time())
+    stage = f"/tmp/label_push_{t0}"            # 서버에 올려 둘 곳
+    back = Path(f"/tmp/label_pull_{t0}")       # 서버에서 받아 둘 곳(이 장비)
     src = G / "data/학습데이터"
+    subs = [s for s in ("손라벨", "자동라벨") if (src / s).is_dir()]
     try:
+        # ---- 1) 이 장비 -> 서버. 겹치면 이 장비 값으로 덮는다 ----
         subprocess.run(ssh + [user_host, f"mkdir -p {stage}"], check=True, capture_output=True, timeout=60)
-        for sub in ("손라벨", "자동라벨"):
-            if not (src / sub).is_dir():
-                continue
-            r = subprocess.run(["rsync", "-a", "-s", "--no-motd",
-                                "-e", " ".join(ssh),
-                                str(src / sub), f"{user_host}:{stage}/"],
+        for sub in subs:
+            r = subprocess.run(rs + [str(src / sub), f"{user_host}:{stage}/"],
                                capture_output=True, text=True, timeout=1800)
             if r.returncode != 0:
-                return {"ok": False, "err": f"전송 실패({sub}): {(r.stderr or '')[-300:]}"}
-        cmd = (f"cd {root} && .venv/bin/python scripts/merge_labels.py {stage}"
+                return {"ok": False, "err": f"보내기 실패({sub}): {(r.stderr or '')[-300:]}"}
+        cmd = (f"cd {root} && .venv/bin/python scripts/merge_labels.py {stage} --take-incoming"
                + (" --dry" if dry else ""))
-        r = subprocess.run(ssh + [user_host, cmd], capture_output=True, text=True, timeout=1800)
-        out = (r.stdout or "") + (r.stderr or "")
+        r1 = subprocess.run(ssh + [user_host, cmd], capture_output=True, text=True, timeout=1800)
+        out1 = ((r1.stdout or "") + (r1.stderr or "")).strip()
         subprocess.run(ssh + [user_host, f"rm -rf {stage}"], capture_output=True, timeout=60)
-        return {"ok": r.returncode == 0, "dry": dry, "log": out[-4000:]}
+
+        # ---- 2) 서버 -> 이 장비. 서버에만 있는 것을 받되 겹치면 이 장비 값을 지킨다 ----
+        back.mkdir(parents=True, exist_ok=True)
+        for sub in subs:
+            r = subprocess.run(rs + [f"{user_host}:{root}/data/학습데이터/{sub}", f"{back}/"],
+                               capture_output=True, text=True, timeout=1800)
+            if r.returncode != 0:
+                return {"ok": False, "err": f"받기 실패({sub}): {(r.stderr or '')[-300:]}"}
+        r2 = subprocess.run(["python3", str(G / "scripts/merge_labels.py"), str(back)]
+                            + (["--dry"] if dry else []),
+                            capture_output=True, text=True, timeout=1800)
+        out2 = ((r2.stdout or "") + (r2.stderr or "")).strip()
+        shutil.rmtree(back, ignore_errors=True)
+
+        nl = chr(10)                      # f-string 안에 역슬래시를 두지 않으려고 줄바꿈을 값으로 만든다
+        log = nl.join(["[이 장비 → 서버]  겹치면 이 장비 값으로 덮음",
+                       out1 or "(보낼 것 없음)", "",
+                       "[서버 → 이 장비]  겹치면 이 장비 값 유지",
+                       out2 or "(받을 것 없음)"])
+        return {"ok": r1.returncode == 0 and r2.returncode == 0, "dry": dry, "log": log[-4000:]}
     except subprocess.TimeoutExpired:
         return {"ok": False, "err": "시간 초과"}
     except subprocess.CalledProcessError as e:
         # 거의 항상 ssh 키 문제다. 무엇을 해야 하는지 적어 준다.
-        return {"ok": False, "err": (
-            f"서버에 접속하지 못했습니다({user_host}:{port}).\n"
-            f"이 장비의 공개키가 서버에 등록돼 있어야 합니다.\n"
-            f"  쓰는 키: {key or '(기본 키)'}\n"
-            f"자세한 내용: {(e.stderr or b'').decode('utf-8', 'replace')[-200:] if e.stderr else e}")}
+        detail = (e.stderr or b"").decode("utf-8", "replace")[-200:] if e.stderr else str(e)
+        return {"ok": False, "err": chr(10).join([
+            f"서버에 접속하지 못했습니다({user_host}:{port}).",
+            "이 장비의 공개키가 서버에 등록돼 있어야 합니다.",
+            f"  쓰는 키: {key or "(기본 키)"}",
+            f"자세한 내용: {detail}"])}
     except Exception as e:
         return {"ok": False, "err": f"{e!r}"}
 
@@ -1379,7 +1449,7 @@ class H(BaseHTTPRequestHandler):
             start, length = 0, size
             self.send_response(200)
         self.send_header("Accept-Ranges", "bytes")
-        self.send_header("Cache-Control", "no-cache")
+        self.send_header("Cache-Control", "no-store")   # no-cache 는 검증자가 없으면 브라우저가 그냥 재사용한다. 화면 고친 게 안 보이던 원인
         self.send_header("Content-Length", str(length))
         self.send_header("Content-Type", ctype)
         self.end_headers()
@@ -1394,7 +1464,7 @@ class H(BaseHTTPRequestHandler):
 
     def do_POST(self):
         p = urllib.parse.urlparse(self.path).path
-        if p == "/api/push_labels":       # 이 장비의 라벨을 서버로 보내고 중복 아닌 것만 합친다
+        if p == "/api/push_labels":       # 이 장비와 서버의 라벨을 양쪽으로 맞춘다(겹치면 이 장비 값이 이긴다)
             q = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
             dry = (q.get("dry") or ["1"])[0] != "0"
             self._bytes(json.dumps(push_labels(dry), ensure_ascii=False).encode(),
@@ -1477,6 +1547,33 @@ class H(BaseHTTPRequestHandler):
                 b = json.loads(self.rfile.read(n) or b"{}")
                 cnt = sam2_store_drop_obj(b["clip"], int(b["obj"]))
                 self._bytes(json.dumps({"ok": True, "dropped": cnt}).encode(), "application/json; charset=utf-8")
+            except Exception as e:
+                self._bytes(json.dumps({"ok": False, "err": str(e)}).encode(), "application/json; charset=utf-8", 500)
+            return
+        if p == "/api/clipstate":            # {clip, mark?, a?, b?, smoke?} 준 항목만 고친다. mark=base 또는 a/b=null 이면 지운다
+            try:
+                n = int(self.headers.get("Content-Length", 0))
+                b = json.loads(self.rfile.read(n) or b"{}")
+                stem = Path(str(b.get("clip") or "")).stem
+                if not stem:
+                    raise ValueError("clip 이 없다")
+                with _SAVE_LOCK:
+                    fl = clip_state_file()
+                    d = read_json(fl, {})
+                    cur = dict(d.get(stem) or {})
+                    if "mark" in b:
+                        m = str(b.get("mark") or "base")
+                        if m not in ("base", "prop", "hand"):
+                            raise ValueError("mark 는 base/prop/hand 만 된다")
+                        cur.pop("mark", None) if m == "base" else cur.update(mark=m)
+                    for k in ("a", "b"):
+                        if k in b:
+                            cur.pop(k, None) if b[k] is None else cur.update({k: float(b[k])})
+                    if "smoke" in b:                 # 연기 미완 표시. mark 와 직교한다(완료면서 연기만 남은 편이 있다)
+                        cur.update(smoke="todo") if str(b.get("smoke") or "") == "todo" else cur.pop("smoke", None)
+                    d.pop(stem, None) if not cur else d.update({stem: cur})
+                    write_json(fl, d)
+                self._bytes(json.dumps({"ok": True, "state": cur}).encode(), "application/json; charset=utf-8")
             except Exception as e:
                 self._bytes(json.dumps({"ok": False, "err": str(e)}).encode(), "application/json; charset=utf-8", 500)
             return
@@ -1591,6 +1688,10 @@ class H(BaseHTTPRequestHandler):
                 d = {"frames": {}, "points": {}, "events": [], "actions": {}, "err": str(e)}
             self._bytes(json.dumps(d, ensure_ascii=False).encode(), "application/json; charset=utf-8")
             return
+        if p == "/api/clipstates":           # 클립별 상태 전체 {stem: {mark,a,b,smoke}} (목록 표시·구간 복원용)
+            self._bytes(json.dumps(read_json(clip_state_file(), {}), ensure_ascii=False).encode(),
+                        "application/json; charset=utf-8")
+            return
         if p == "/api/sam2frames":           # 모든 클립의 SAM 전파 프레임 시각 목록 {stem: [t,...]} (목록 배지용)
             out = {}
             if SAM2_DIR.exists():
@@ -1703,15 +1804,95 @@ class H(BaseHTTPRequestHandler):
             running = []
             try:
                 import subprocess as _sp
-                ps = _sp.run(["pgrep", "-af", "exp_queue.py _one"], capture_output=True, text=True, timeout=5).stdout
+                ps = _sp.run(["pgrep", "-af", "exp_queue.py _"], capture_output=True, text=True, timeout=5).stdout
                 for line in ps.splitlines():
-                    parts = line.split()
-                    if len(parts) >= 2 and parts[-1] != "_one" and "pgrep" not in line:
-                        running.append(parts[-1])          # 마지막 인자 = 실험 이름
+                    w = line.split()
+                    for i, x in enumerate(w):              # '_one/_score 다음이 큐 파일, 그 다음이 실험 이름' 위치에서 읽는다
+                        if x.endswith("exp_queue.py") and i + 3 < len(w) and w[i + 1] in ("_one", "_score"):
+                            running.append(w[i + 3]); break   # _score = 떼어 돌리는 채점(2026-09-18). 단계는 아래서 파일로 가른다
+            except Exception:
+                pass
+            try:                                       # 부모(_one)가 죽고 학습만 살아남은 고아도 실행중으로 본다.
+                ps = _sp.run(["pgrep", "-af", "model.py train"], capture_output=True, text=True, timeout=5).stdout
+                for line in ps.splitlines():           # _exp/<실험명>/data.yaml 로 이름을 알아본다(exp_queue.running_elsewhere 와 같은 방법)
+                    for x in line.split():
+                        if "/_exp/" in x:
+                            seg = x.split("/_exp/", 1)[1].split("/", 1)[0]
+                            if seg:
+                                running.append(seg)
             except Exception:
                 pass
             q = {"running": sorted(set(running)), "log": []}
             q["jobs"] = [j for j in (train_progress(n) for n in q["running"]) if j]   # 잡별 학습 진행(에폭·속도·mAP·예상 종료)
+            # 학습이 끝난 뒤 단계: mAP 검증 -> KISA 채점 -> score.txt. 화면에서 멈춘 것처럼 보이지 않게 적는다.
+            for j in q["jobs"]:
+                nm = j.get("name")
+                if not nm:
+                    continue
+                rd = G / "results" / nm
+                if (rd / "score.txt").is_file():
+                    j["phase"] = "끝"
+                elif j.get("epoch") and j.get("epochs") and j["epoch"] >= j["epochs"]:
+                    j["phase"] = "KISA 채점 중" if (rd / "eval_map.json").is_file() else "mAP 검증 중"
+                else:
+                    j["phase"] = "학습 중"
+                if j["phase"] != "학습 중":
+                    j["mem"] = None        # 끝난 잡의 GPU 칸은 비운다(로그에서 긁은 유령 값이라 실제와 다르다)
+            # 대기 목록: 큐 yaml 에서 score.txt 가 없고 지금 돌지도 않는 것(러너가 집는 순서 그대로)
+            try:
+                import yaml as _yaml
+                wait = []
+                live = set()                               # 러너가 실제로 읽고 있는 큐 파일만 본다
+                try:
+                    o = _sp.run(["pgrep", "-af", "exp_queue.py"], capture_output=True, text=True, timeout=5).stdout
+                    for ln in o.splitlines():
+                        for tok in ln.split():
+                            if tok.endswith(".yaml"):
+                                live.add(Path(tok).name)
+                except Exception:
+                    pass
+                for qf in sorted((G / "configs").glob("queue*.yaml")):
+                    if live and qf.name not in live:
+                        continue                           # 집어갈 러너가 없으면 대기가 아니다
+                    try:
+                        d = _yaml.safe_load(qf.read_text(encoding="utf-8")) or {}
+                    except Exception:
+                        continue
+                    for e in d.get("experiments") or []:
+                        nm = e.get("name")
+                        if not nm or nm in q["running"]:
+                            continue
+                        if (G / "results" / nm / "score.txt").is_file():
+                            continue                      # 끝났거나 취소 표시된 것
+                        wait.append({"name": nm, "item": e.get("item"), "queue": qf.name,
+                                     "imgsz": (e.get("train") or {}).get("imgsz"),
+                                     "batch": (e.get("train") or {}).get("batch")})
+                q["waiting"] = wait
+            except Exception:
+                q["waiting"] = []
+            # GPU 여유: 자리가 남는데 큐가 비어 있으면 화면에서 바로 보이게
+            try:
+                import subprocess as _sp2
+                o = _sp2.run(["nvidia-smi", "--query-gpu=memory.used,memory.total,utilization.gpu",
+                              "--format=csv,noheader,nounits"], capture_output=True, text=True, timeout=5).stdout
+                u, t, ut = [int(x.strip()) for x in o.strip().splitlines()[0].split(",")]
+                q["gpu"] = {"used_mib": u, "total_mib": t, "free_mib": t - u, "util": ut}
+            except Exception:
+                q["gpu"] = None
+            try:
+                import subprocess as _sp3
+                o = _sp3.run(["pgrep", "-af", "exp_queue.py"], capture_output=True, text=True, timeout=5).stdout
+                n = 0
+                for ln in o.splitlines():
+                    w = ln.split()
+                    if len(w) < 3 or "python" not in w[1]:
+                        continue                       # 첫 토큰이 python 인 것만(러너를 띄운 bash -c 줄을 뺀다)
+                    for i, x in enumerate(w):
+                        if x.endswith("exp_queue.py") and i + 1 < len(w) and w[i + 1] == "run":
+                            n += 1; break
+                q["runners"] = n
+            except Exception:
+                q["runners"] = None
             try:
                 q["log"] = (G / "logs/queue/runner.log").read_text(encoding="utf-8", errors="ignore").splitlines()[-25:]
             except Exception:
@@ -1996,7 +2177,7 @@ def _warmup_models():
         from transformers.models.sam2.modeling_sam2 import Sam2Model
         global _SAM2
         if _SAM2 is None:
-            dev = "cuda" if torch.cuda.is_available() else "cpu"
+            dev = torch_device()
             _SAM2 = (Sam2Processor.from_pretrained(SAM2_ID), Sam2Model.from_pretrained(SAM2_ID).to(dev).eval(), dev)
     except Exception as e:
         print("[warmup] sam2 image:", e, flush=True)
@@ -2005,7 +2186,7 @@ def _warmup_models():
         from transformers.models.sam2_video.modeling_sam2_video import Sam2VideoModel
         global _SAM2V
         if _SAM2V is None:
-            dev = "cuda" if torch.cuda.is_available() else "cpu"
+            dev = torch_device()
             _SAM2V = (Sam2VideoProcessor.from_pretrained(SAM2V_ID), Sam2VideoModel.from_pretrained(SAM2V_ID).to(dev).eval(), dev)
     except Exception as e:
         print("[warmup] sam2 video:", e, flush=True)

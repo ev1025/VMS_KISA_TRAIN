@@ -72,10 +72,15 @@ def main():
     # 이 값이 다르면 트랙이 달라져 같은 판정기를 써도 점수가 어긋난다(2026-09-16 실측 87.72 대 94.74).
     ap.add_argument("--contain", type=float, default=0.75,
                     help="부분검출 억제 기준(0.75=켬). 제출 경로와 맞추려면 2.0(끔)")
+    ap.add_argument("--videos", default=None,
+                    help="영상 폴더. 기본은 채점 견본(deploy_val). 2026-09-20: 연구개발 침입·배회 영상(처음 보는 영상 잣대)에도 쓰기 위해 추가")
     a = ap.parse_args()
     from ultralytics import YOLO
     model = YOLO(a.model)
-    src = next(p for p in (G / "data/원본데이터/kisa_배포_검증영상/deploy_val").iterdir() if p.name.startswith(a.item))
+    if a.videos:
+        src = Path(a.videos)
+    else:
+        src = next(p for p in (G / "data/원본데이터/kisa_배포_검증영상/deploy_val").iterdir() if p.name.startswith(a.item))
     vids = sorted(src.rglob("*.mp4"))
     outd = Path(a.out); outd.mkdir(parents=True, exist_ok=True)
     print(f"{a.item} {len(vids)}편 · 격자 {a.grid}x{a.grid} 겹침 {a.overlap} 입력 {a.imgsz} conf {a.conf}", flush=True)

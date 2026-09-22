@@ -1,0 +1,209 @@
+# 사람 모델: 2026-09-17 손라벨 스냅샷으로 1280 · 960 을 나란히 학습한다.
+#
+# 무엇을 알아보려는 것인가
+#   (1) 손라벨을 늘리면 나아지는가   -> p1280 을 09-15 스냅샷(1,395장)판과 비교한다
+#   (2) 1280 이 960 보다 나은가       -> 아래 두 편을 비교한다. 라벨·베이스는 같고 해상도만 다르다
+#
+# 확정 규칙(CLAUDE.md '실험 규칙 2026-09-17')
+#   평가 해상도 = 학습 해상도. 1280 편은 1280 으로, 960 편은 960 으로 잰다.
+#   학습은 한 번에 하나(--jobs 1).
+#   손라벨은 계속 늘어나므로 스냅샷(handset_person_20260917)을 고정해 둘 다 같은 것을 쓴다.
+#
+# Thor 속도는 확인했다(2026-09-17 bench_res.py): 침입 1280 여유 3.09배 · 배회 1280 여유 16.00배.
+# 속도로는 1280 배포가 막히지 않는다.
+name: queue_person_20260917
+defaults:
+  val_small: 600
+  vram_gate_mib: 90000        # 한 편이 GPU 를 다 쓴다(--jobs 1). 확정 규칙 2026-09-17
+  min_free_gb: 300
+  ram_cache_max: 0
+  stagger_sec: 0
+experiments:
+  - { name: p1280_coco_hand_20260917, model: yolo11s, item: 사람, names: [person],
+      base: trainset_person_20260915, extras: [],
+      oversample: { handset_person_20260917: 8 },
+      val_set: data/학습데이터/evalset_person/val.txt,
+      train: { imgsz: 1280, multi_scale: 0.0, batch: 176, epochs: 60, cache: False, workers: 8 } }
+
+  - { name: p960_coco_hand_20260917, model: yolo11s, item: 사람, names: [person],
+      base: trainset_person_20260915, extras: [],
+      oversample: { handset_person_20260917: 8 },
+      val_set: data/학습데이터/evalset_person/val.txt,
+      train: { imgsz: 960, multi_scale: 0.333, batch: 312, epochs: 60, cache: False, workers: 8 } }
+
+  # ---- 방화 1280 (2026-09-17 추가). 사람 1280 이 끝나면 이 러너가 이어받는다 ----
+  # 무엇이 달라졌나: 손라벨 1,191 -> 1,509 · 전파 244 -> 1,872(7.7배) · 하드네거 401 -> 667
+  #   불 박스 1,399 -> 3,230(2.3배) · 연기 983(거의 그대로) = 사용자가 불만 전파로 채웠다.
+  #   배포 규칙이 smoke=1.1 로 연기 가지를 안 쓰므로 불에 몰린 구성이 규칙과 맞다.
+  # 왜 1280: 지난 1280(f1280_best_s_20260915)은 77.78 로 졌지만 그때는 손라벨이 지금의 1/3 이었다.
+  #   손라벨·전파는 전부 1280x720 원본이라 1280 에 넣을 정보가 실제로 있다.
+  #   외부 대규모(48k·FASDD)는 원본이 960 이하라 확대만 되므로 오버샘플을 8배로 크게 준다.
+  # 이기면 Thor 속도를 먼저 잰다(방화는 6뷰 낱장이라 해상도가 그대로 비용이 된다).
+  - { name: f1280_hand_s_20260917, model: yolo11s, item: 방화, names: [fire, smoke],
+      base: aihub71751_48k,
+      extras: [fasdd_snowfog, fasdd_yolo, wildfire_pos_yolo, wildfire_fog_neg],
+      oversample: { handset_fire_hn_20260917: 8 },
+      train: { imgsz: 1280, multi_scale: 0.0, batch: 96, epochs: 60, cache: False, workers: 8 } }
+
+  # ======== 사람 1280 이 떨어진 이유를 가르는 두 편 (2026-09-17 저녁) ========
+  # 무슨 일이 있었나
+  #   손라벨셋 1,395 -> 6,477장으로 키웠더니 침입이 92.86 -> 80.00 으로 떨어졌다.
+  #   mAP 은 오히려 올랐고(0.7498) 정밀도 0.95 · 재현율 0.78 = 박스는 정확한데 많이 놓친다.
+  # 그런데 한 번에 두 가지가 같이 바뀌었다
+  #   (A) 전파(SAM) 라벨이 손라벨의 2.6배로 늘었다. 가림·교차에서 최대 48% 놓치고 갈아탈 수 있다.
+  #   (B) 오버샘플 8배가 고정이라 손라벨 비중이 9.4% -> 32.6% 로 3.5배가 됐다.
+  # 그래서 비중을 둘 다 11% 근처로 고정하고 전파 유무만 다르게 해 한 변수씩 본다.
+  #   A 가 범인이면  -> 손라벨만(B편) 이 이긴다
+  #   B 가 범인이면  -> 둘 다 92 근처로 올라온다(비중을 되돌렸으므로)
+  #   둘 다 아니면   -> 09-15 대비 다른 무엇이 바뀐 것이니 다시 본다
+
+  # A: 데이터 그대로, 비중만 09-15 수준으로 되돌린다 (6,477 x2 = 비중 10.8%)
+  - { name: p1280_ov2_20260917, model: yolo11s, item: 사람, names: [person],
+      base: trainset_person_20260915, extras: [],
+      oversample: { handset_person_20260917: 2 },
+      val_set: data/학습데이터/evalset_person/val.txt,
+      train: { imgsz: 1280, multi_scale: 0.0, batch: 80, epochs: 60, cache: False, workers: 4 } }
+
+  # B: 전파를 빼고 손라벨만. 비중은 A 와 맞춘다 (2,295 x6 = 비중 11.4%)
+  - { name: p1280_handonly_20260917, model: yolo11s, item: 사람, names: [person],
+      base: trainset_person_20260915, extras: [],
+      oversample: { handset_person_hand_20260917: 6 },
+      val_set: data/학습데이터/evalset_person/val.txt,
+      train: { imgsz: 1280, multi_scale: 0.0, batch: 80, epochs: 60, cache: False, workers: 4 } }
+
+  # ======== 방화: 확인분만 vs 전부 (2026-09-18) ========
+  # 순서: f960 앞. 2026-09-18 16:06 부터 이미 돌고 있는 편이라 끝나는 대로 먼저 채점되게 앞에 둔다.
+  # 왜: 방화 전파 1,872장 중 1,601장(85%)이 아직 눈으로 확인 안 한 것이다.
+  #     사람은 확인 안 한 전파가 1.7%뿐이라 문제가 될 수 없었지만 방화는 정반대다.
+  #     확인 안 한 전파가 점수를 깎는지 여기서 갈린다.
+  # 비중을 12.8% / 12.9% 로 맞췄다. 다른 것은 담긴 데이터뿐이다.
+  #   comp = 클립 표시 완료(사람이 확인한 것)만 · mask = 확인분 + 미확인 전파 전부
+  - { name: f1280_comp_hn_x21_20260918, model: yolo11s, item: 방화, names: [fire, smoke],
+      base: aihub71751_48k,
+      extras: [fasdd_snowfog, fasdd_yolo, wildfire_pos_yolo, wildfire_fog_neg],
+      oversample: { fire_comp_hn_20260918: 21 },
+      train: { imgsz: 1280, multi_scale: 0.0, batch: 170, epochs: 60, cache: False, workers: 8 } }
+
+  # ---- 방화 960 (2026-09-17 추가). 같은 학습셋으로 해상도만 다르게 ----
+  # 1280 과 나란히 비교하려고 학습셋(handset_fire_hn_20260917)·오버샘플을 똑같이 맞췄다.
+  # 다른 것은 해상도와 그에 딸린 batch·multi_scale 뿐이다.
+  # 지금 배포(fire_fog+fire_small 앙상블)는 960 계열이라 960 쪽이 기존과 직접 비교된다.
+  - { name: f960_hand_s_20260917, model: yolo11s, item: 방화, names: [fire, smoke],
+      base: aihub71751_48k,
+      extras: [fasdd_snowfog, fasdd_yolo, wildfire_pos_yolo, wildfire_fog_neg],
+      oversample: { handset_fire_hn_20260917: 8 },
+      train: { imgsz: 960, multi_scale: 0.333, batch: 300, epochs: 60, cache: False, workers: 8 } }   # GPU 독점 기준(2026-09-18 실측 0.54GB/표본 @960)
+
+  # ---- 사람 960 (2026-09-17 오후 추가). 라벨이 더 늘어 새 스냅샷으로 다시 건다 ----
+  # 앞의 p960_coco_hand_20260917 은 취소했다. 그때는 이 실험을 내리려던 것이고,
+  # 그 뒤 사용자가 사람 라벨을 더 넣어 학습셋이 6,481 -> 7,859장이 됐다.
+  # 새 스냅샷 handset_person_20260917b 를 쓰므로 이름에 b 를 붙여 구분한다.
+  #   손라벨 1,725 -> 1,973 · 전파 4,536 -> 6,177 · 하드네거 538 -> 610
+  # 주의: 지금 도는 p1280 은 옛 스냅샷(20260917, 6,481장)을 쓴다. 이 둘은 데이터가 달라
+  #   1280 대 960 비교로 읽으면 안 된다. 해상도 비교가 필요하면 같은 스냅샷으로 다시 짠다.
+  - { name: p960_coco_hand_20260917b, model: yolo11s, item: 사람, names: [person],
+      base: trainset_person_20260915, extras: [],
+      oversample: { handset_person_20260917b: 8 },
+      val_set: data/학습데이터/evalset_person/val.txt,
+      train: { imgsz: 960, multi_scale: 0.333, batch: 312, epochs: 60, cache: False, workers: 8 } }
+
+  # ======== 사람: 새 라벨 스냅샷으로 해상도 3종 (2026-09-18 저녁) ========
+  # 왜: 사용자가 사람 라벨을 더 넣었다(완료 표시 118 -> 138편). 스냅샷 person_mask_hn_20260918
+  #   = 완료+전파(사람 전파는 전부 눈으로 확인한 것) 10,432장(손 2,524 · 전파 8,126 · 하드네거 742 · val 960 은 별도).
+  # 비중: 베이스 107,103장 대비 x1 = 8.9%. 09-15 의 9.4%(92.86)에 가장 가깝다. x2 는 16.3% 로 확인된 좋은 구간(9~11%) 밖이라 안 쓴다.
+  # 해상도 3종은 같은 스냅샷·같은 배율이라 서로 비교된다. 평가 해상도 = 학습 해상도(러너가 배포 해상도도 같이 잰다).
+  # batch 는 GPU 전체 기준 실측에서: 1280 = 170(158GB, f1280_comp 실측) · 960/ms0.333 = 300(0.54GB/표본) ·
+  #   640/ms0.5 는 긴변 960 이라 표본당 0.3GB 로 잡아 480. OOM(rc=-9)이면 러너가 20% 줄여 이어간다.
+  - { name: p1280_mask_hn_x1_20260918, model: yolo11s, item: 사람, names: [person],
+      base: trainset_person_20260915, extras: [],
+      oversample: { person_mask_hn_20260918: 1 },
+      val_set: data/학습데이터/evalset_person/val.txt,
+      train: { imgsz: 1280, multi_scale: 0.0, batch: 170, epochs: 60, cache: False, workers: 8 } }
+  - { name: p960_mask_hn_x1_20260918, model: yolo11s, item: 사람, names: [person],
+      base: trainset_person_20260915, extras: [],
+      oversample: { person_mask_hn_20260918: 1 },
+      val_set: data/학습데이터/evalset_person/val.txt,
+      train: { imgsz: 960, multi_scale: 0.333, batch: 300, epochs: 60, cache: False, workers: 8 } }
+  - { name: p640_mask_hn_x1_20260918, model: yolo11s, item: 사람, names: [person],
+      base: trainset_person_20260915, extras: [],
+      oversample: { person_mask_hn_20260918: 1 },
+      val_set: data/학습데이터/evalset_person/val.txt,
+      train: { imgsz: 640, multi_scale: 0.5, batch: 480, epochs: 60, cache: False, workers: 8 } }
+
+  # ======== 방화 960: 눈·안개 FASDD 가중치 8배 (2026-09-19) ========
+  # 왜: 손라벨 방화 모델의 미검 3편이 전부 눈 2편·안개 1편(216 주간눈 · 272 야간눈 · 195 주간안개).
+  #   학습 원본(연구개발 75편)에는 눈·안개 편이 0편이고, 눈·안개 불이 들어 있는 곳은 FASDD 설경·안개 부분집합(fasdd_snowfog)뿐인데
+  #   지금은 extras 로 1배만 들어간다. 그 가중치를 8배로 올려 눈 미검 2편이 살아나는지 본다.
+  # 내용물(fasdd_snowfog 3,579장): 설경 2,380(불·연기 박스 있는 것 626) · 안개 1,199(박스 있는 것 18).
+  #   → 눈 양성은 626장 x8 = 5,008장으로 쓸 만하지만, 안개 양성은 18장이라 195편(안개)은 이 실험으로 못 채운다. 안개는 합성이 필요하다.
+  #   나머지 2,935장은 눈·안개 배경 음성(하드네거) → x8 이면 23k. 하드네거 30% 근처가 좋았던 실측과 맞는 범위.
+  # 나머지는 f960_hand_s_20260917 과 같다(베이스·손라벨 x8·960·배치 300). 이름 뒤 snowfog8 = fasdd_snowfog 8배.
+  - { name: f960_mask_hn_x8_snowfog8_20260919, model: yolo11s, item: 방화, names: [fire, smoke],
+      base: aihub71751_48k,
+      extras: [fasdd_yolo, wildfire_pos_yolo, wildfire_fog_neg],
+      oversample: { handset_fire_hn_20260917: 8, fasdd_snowfog: 8 },
+      train: { imgsz: 960, multi_scale: 0.333, batch: 300, epochs: 60, cache: False, workers: 8 } }
+
+  # ======== 합성 데이터 2편 (2026-09-19) ========
+  # 방화 안개: 손라벨 방화 프레임 3,792장에 대기 산란 안개(옅음·중간·짙음)를 씌운 fire_mask_hn_fog_20260919 (라벨 불변).
+  #   파라미터는 FASDD 실제 안개+불 18장의 투과율·대기광 분포(fog_stats.py)에서 뽑았고, 채점 편은 비교만 했다.
+  #   검증(fog_probe_eval.py, 손라벨 1280 모델): 맑음 0.84 → 옅음 0.76 → 중간 0.26 → 짙음 0.00. 실제 195·216·272 편은 0.00.
+  #   = 합성이 실제 실패와 같은 방향으로 무너뜨린다(CLAUDE.md §5 증강 열화 확인). 나머지는 f960_hand_s 와 같다. fog3 = 안개셋 3배.
+  - { name: f960_mask_hn_x8_fog3_20260919, model: yolo11s, item: 방화, names: [fire, smoke],
+      base: aihub71751_48k,
+      extras: [fasdd_snowfog, fasdd_yolo, wildfire_pos_yolo, wildfire_fog_neg],
+      oversample: { handset_fire_hn_20260917: 8, fire_mask_hn_fog_20260919: 3 },
+      train: { imgsz: 960, multi_scale: 0.333, batch: 300, epochs: 60, cache: False, workers: 8 } }
+
+  # 사람 소형 잘라붙이기: SAM 전파 폴리곤 사람 조각(채점셋 편 제외)을 28~60px 로 줄여 연구개발 CCTV 프레임 위쪽에 붙인
+  #   person_mask_hn_paste_20260919 (5,000장). 침입·배회 실패 편의 절반이 34~50px 사람인데 손라벨에 그 크기가 거의 없다.
+  #   09-16 눈·비 오버레이 합성은 실패 열화(소형·가림)와 달라 폐기됐고, 이번은 그 열화 자체를 만든다. 나머지는 p1280_mask_hn_x1 과 같다.
+  - { name: p1280_mask_hn_x1_paste_20260919, model: yolo11s, item: 사람, names: [person],
+      base: trainset_person_20260915, extras: [],
+      oversample: { person_mask_hn_20260918: 1, person_mask_hn_paste_20260919: 1 },
+      val_set: data/학습데이터/evalset_person/val.txt,
+      train: { imgsz: 1280, multi_scale: 0.0, batch: 170, epochs: 60, cache: False, workers: 8 } }
+
+  # ======== 방화 960: 손라벨 비중을 되돌린 기준 (2026-09-19 저녁) ========
+  # 왜: f960_hand_s(손라벨 09-17 스냅샷 3,792장 x8 = 비중 12.7%)가 62.50, 채점셋 mAP50 0.211 로 떨어졌다.
+  #   09-15 스냅샷(1,049장 x8 = 비중 3.9%)의 f960_best_s 는 84.21, mAP50 0.381 이었다.
+  #   학습 곡선은 정상(train loss 1.32→0.89, 학습표본 검증 mAP 0.92)인데 채점셋 mAP 만 무너짐 = 75편짜리 손라벨 장면을 8번씩
+  #   반복 학습해 그 장면에 과적합. 사람에서 본 것과 같은 "비중 과다"(9~11% 좋음, 32.6% 나쁨) 패턴이다.
+  # 설계: f960_hand_s 와 배율만 다르다(x8 → x2, 비중 약 3.3%). 나머지(배치 300·extras·해상도) 그대로 = 한 변수.
+  #   이게 80 이상으로 돌아오면 비중이 원인. 안개 합성·눈 8배는 이 기준 위에 다시 얹는다.
+  - { name: f960_mask_hn_x2_20260919, model: yolo11s, item: 방화, names: [fire, smoke],
+      base: aihub71751_48k,
+      extras: [fasdd_snowfog, fasdd_yolo, wildfire_pos_yolo, wildfire_fog_neg],
+      oversample: { handset_fire_hn_20260917: 2 },
+      train: { imgsz: 960, multi_scale: 0.333, batch: 300, epochs: 60, cache: False, workers: 8 } }
+
+  # ======== 방화 960: x2 기준 + 안개 합성 3배 (2026-09-20 새벽) ========
+  # 왜: 안개 합성은 x8 기준 위에서 짝 비교로 효과가 확인됐다(f960_hand_s 62.50 → f960_mask_hn_x8_fog3 73.68, 채점셋 mAP 0.21 → 0.30).
+  #   편별: 비 오는 146·155 편이 살아났고(0.40 이상 표본 0 → 17, 20 → 37), 안개 195 편은 안 보이던 불이 보이기 시작(1 → 7표본)했으나
+  #   정답 4초 뒤부터라 아직 늦다. 눈 216 은 그대로(최대 0.32) = 안개 합성은 안개·비에 듣고 눈에는 안 듣는다.
+  #   x8 기준 자체가 과적합으로 무너진 상태라(mAP 0.21), 되돌린 x2 기준 위에 다시 얹어 절대 점수를 본다. x2 기준과는 안개셋만 다르다.
+  - { name: f960_mask_hn_x2_fog3_20260920, model: yolo11s, item: 방화, names: [fire, smoke],
+      base: aihub71751_48k,
+      extras: [fasdd_snowfog, fasdd_yolo, wildfire_pos_yolo, wildfire_fog_neg],
+      oversample: { handset_fire_hn_20260917: 2, fire_mask_hn_fog_20260919: 3 },
+      train: { imgsz: 960, multi_scale: 0.333, batch: 300, epochs: 60, cache: False, workers: 8 } }
+
+  # ======== 방화 640: 배포 레시피 + 안개 합성 3배 (2026-09-21) ========
+  # 기준 = fresh_48k_wildall_20260909 (배포 fire_fog.pt 의 원본 레시피: base aihub71751_48k · extras 4종 · human_fire x5 · 640 · 80 epoch · batch 128 · multi_scale 0.5 · cache ram)
+  # 더한 것 = fire_mask_hn_fog_20260919(10,124장) x3. 이것만 다르다.
+  - { name: f640_deployfog3_20260921, model: yolo11s, item: 방화, names: [fire, smoke],
+      base: aihub71751_48k,
+      extras: [fasdd_snowfog, fasdd_yolo, wildfire_pos_yolo, wildfire_fog_neg],
+      oversample: { human_fire: 5, fire_mask_hn_fog_20260919: 3 },
+      train: { imgsz: 640, multi_scale: 0.5, batch: 128, epochs: 80, cache: False, workers: 8 } }
+
+  # ======== 방화 960: 눈·안개 실물 6배 (2026-09-21) ========
+  # 왜: 눈 증강은 지금까지 한 번도 학습된 적이 없다(f960_mask_hn_x8_snowfog8 은 폴더조차 없었다).
+  #   남은 실패 두 편이 전부 눈이다. 216 주간눈은 신호가 0.40 까지 나오고, 272 야간눈은 정답 때 0.26 이다.
+  # 기준 = f960_mask_hn_x2_fog3_20260920 (지금 가장 좋은 단일 모델, 신규칙 94.74 · 교차검증 84.21)
+  # 바꾼 것 = fasdd_snowfog 을 extras(1배)에서 oversample 6배로 올린 것 하나뿐이다.
+  - { name: f960_snow6_20260921, model: yolo11s, item: 방화, names: [fire, smoke],
+      base: aihub71751_48k,
+      extras: [fasdd_yolo, wildfire_pos_yolo, wildfire_fog_neg],
+      oversample: { handset_fire_hn_20260917: 2, fire_mask_hn_fog_20260919: 3, fasdd_snowfog: 6 },
+      train: { imgsz: 960, multi_scale: 0.333, batch: 300, epochs: 60, cache: False, workers: 8 } }

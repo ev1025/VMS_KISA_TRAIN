@@ -25,6 +25,12 @@ ap.add_argument("--val", type=float, default=0.1)
 ap.add_argument("--max-gt", type=int, default=0, help="카테고리당 원본 정답 이미지 상한(0=전부)")
 ap.add_argument("--neg", type=int, default=5, help="손라벨 클립당 앞/뒤 각 하드 네거티브 장수(0=끔). 상한=그 클립 양성 프레임 수")
 ap.add_argument("--no-gt", action="store_true", help="원본 정답 이미지는 넣지 않는다(우리 라벨만: 손·전파·하드네거·이미지 손라벨). 오버샘플용 handset")
+ap.add_argument("--no-sam", action="store_true", help="전파(SAM) 라벨을 뺀다(손라벨만). 전파가 점수를 깎는지 가릴 때 쓴다")
+ap.add_argument("--marks", default=None,
+                help="클립 표시로 거른다. hand=완료 · prop=전파 · base=표시없음. 쉼표로 여러 개(예: hand,base). 안 주면 전부")
+ap.add_argument("--smoke-todo", choices=["keep", "drop-fireonly"], default="keep",
+                help="연기 미완(clip_state smoke=todo) 편의 프레임 처리. keep=그대로(기본) · "
+                     "drop-fireonly=연기 박스가 없는 프레임을 뺀다(모델에 '여기 연기 없음' 을 가르치지 않게)")
 ap.add_argument("--dry", action="store_true")
 a = ap.parse_args()
 
@@ -101,6 +107,35 @@ def clip_full(stem):
 
 # 영상 프레임(손라벨 + SAM): 카테고리 use/mode 확인
 vid_cache = {}
+if a.no_sam:
+    sam_frames = collections.defaultdict(list)   # --no-sam: 전파를 통째로 뺄다
+if a.marks:
+    want = {x.strip() for x in a.marks.split(",") if x.strip()}
+    _cs = {}
+    _p = V / "data/학습데이터/손라벨/clip_state.json"
+    if _p.is_file():
+        _cs = json.loads(_p.read_text(encoding="utf-8"))
+    def _mark_of(stem):
+        return (_cs.get(stem) or {}).get("mark") or "base"
+    for _d in (hand_frames, sam_frames):
+        for _k in [k for k in _d if _mark_of(k[0] if isinstance(k, tuple) else k) not in want]:
+            del _d[_k]
+    stats["표시로 거름(남긴 것 %s)" % ",".join(sorted(want))] = len(hand_frames) + len(sam_frames)
+
+# 연기 미완 편은 불만 쳐 둔 프레임이 많다. 그대로 넣으면 그 프레임은 '연기 없음' 정답이 되고,
+# 배수를 올려 쓸수록 연기 리콜을 깎는다. 연기 박스가 있는 프레임만 남기는 길을 둔다.
+if a.smoke_todo == "drop-fireonly":
+    _sp = V / "data/학습데이터/손라벨/clip_state.json"
+    _sc = json.loads(_sp.read_text(encoding="utf-8")) if _sp.is_file() else {}
+    _todo = {s for s, v in _sc.items() if isinstance(v, dict) and v.get("smoke") == "todo"}
+    _n = 0
+    for _d in (hand_frames, sam_frames):
+        for _k in [k for k, bs in _d.items()
+                   if (k[0] if isinstance(k, tuple) else k) in _todo
+                   and not any(int(c) == 1 for c, _ in bs)]:
+            del _d[_k]; _n += 1
+    stats["제외:연기미완 편의 불만있는 프레임"] = _n
+
 for src_name, frames in (("hand", hand_frames), ("sam", sam_frames)):
     for (stem, t), boxes in frames.items():
         mp4 = vid_cache.get(stem)
