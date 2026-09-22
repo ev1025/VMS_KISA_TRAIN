@@ -10,6 +10,8 @@ results/*
 # 모델 계보는 예외. 운영 가중치가 무슨 데이터로 학습됐는지의 유일한 기록이라
 # 서버 디스크에만 두면 안 된다(runs/ logs/ 는 용량 때문에 제외한 채로 둔다).
 !results/MODELS.json
+!results/BASELINE.json
+!results/SUMMARY.md
 weights/
 logs/
 

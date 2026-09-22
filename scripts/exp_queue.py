@@ -361,6 +361,20 @@ def score(exp, pt, defaults=None):
     return out
 
 
+def refresh_summary():
+    """results/SUMMARY.md 를 다시 만든다. 실험이 끝날 때마다 부른다.
+
+    results/ 는 깃에 없어서(용량) 다른 장비에서 클론하면 점수를 볼 방법이 없다.
+    요약만 깃에 올리는데, 사람이 손으로 돌리면 잊어버려 낡는다. 여기서 자동으로 돌린다.
+    실패해도 실험 흐름을 막지 않는다.
+    """
+    try:
+        subprocess.run([str(PY), str(V / "scripts/build_summary.py")],
+                       capture_output=True, timeout=180, cwd=V)
+    except Exception as e:
+        log(f"요약 갱신 실패(무시): {e!r}")
+
+
 def _read_source(name):
     f = EXP_DIR / name / "source.json"
     try:
@@ -502,6 +516,7 @@ def run_one(exp, defaults, queue=None):
         score(exp, pt, defaults)
         write_meta(exp, defaults, n_train, pt, started, "done")
         shutil.rmtree(EXP_DIR / name, ignore_errors=True)
+        refresh_summary()
         log(f"{name} 완료 → results/{name}/score.txt")
     except Exception as e:
         log(f"{name} 예외: {e!r}")
@@ -529,6 +544,7 @@ def cmd_score(a):
         score(exp, pt, defaults)
         write_meta(exp, defaults, old.get("n_train"), pt, started, "done")
         shutil.rmtree(EXP_DIR / name, ignore_errors=True)
+        refresh_summary()
         log(f"{name} 완료 → results/{name}/score.txt")
     except Exception as e:
         log(f"{name} 채점 예외: {e!r}")
