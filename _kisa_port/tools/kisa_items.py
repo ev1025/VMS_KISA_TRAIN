@@ -79,7 +79,7 @@ ITEMS = {
     "fire": dict(desc="FireDetection", model="fire_fog.pt", model2="fire_small.pt",
                  stride=0.5, delay=10.0,
                  rule="combined", fire=0.40, smoke=1.1, win=20, hits=3, new_fire=0.5, new_win=12, new_hits=5, new_sdelta=0.2,
-                 view_imgsz=640, view_imgsz2=960),
+                 view_imgsz=960, view_imgsz2=960),   # 두 벌 다 960 학습(2026-09-23 교체)
 }
 FIRE_NAMES = {0: "fire", 1: "smoke"}
 # 타일 검출: 3x3 격자, 겹침 0.2, 입력 960, conf 0.15.

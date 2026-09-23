@@ -14,7 +14,7 @@
 #   네 세트 모두 불 없는 그림에서 헛울림 0 이라, 합성이 배경을 불로 오인하게 만들지는 않는다.
 #
 # 고정(잘 나온 조건 그대로)
-#   base aihub71751_48k · extras 4종 · fire_mask_hn_fog_20260919 x3(안개 합성 + 하드네거티브)
+#   base aihub71751_48k · extras 4종 · fire_mask_hn_fog_20260923 x3(안개 합성 + 하드네거티브)
 #   960 / multi_scale 0.333 / batch 300 / workers 8 / 60에폭
 #   val_set 을 붙이지 않는다. evalset_fire 는 채점 10편의 프레임이라 그것으로 고르면 선택 편향이 생긴다.
 #
@@ -39,7 +39,7 @@ experiments:
       base: aihub71751_48k,
       extras: [fasdd_snowfog, fasdd_yolo, wildfire_pos_yolo, wildfire_fog_neg],
       oversample: { handset_fire_hand_20260923: 4, handset_fire_prop_20260923: 2,
-                    fire_mask_hn_fog_20260919: 3 } }
+                    fire_mask_hn_fog_20260923: 3 } }
 
   # ---- 2. 흑백불(야간 적외선) 합성을 더한다. 인식률 0.1% 인 그림이다 ----
   - { name: f960_tier42_ir_20260923, model: yolo11s, item: 방화, names: [fire, smoke],
@@ -47,7 +47,7 @@ experiments:
       extras: [fasdd_snowfog, fasdd_yolo, wildfire_pos_yolo, wildfire_fog_neg,
                fire_snowbg_흑백불_20260923],
       oversample: { handset_fire_hand_20260923: 4, handset_fire_prop_20260923: 2,
-                    fire_mask_hn_fog_20260919: 3 } }
+                    fire_mask_hn_fog_20260923: 3 } }
 
   # ---- 3. 흑백불 + 작은불(주간 눈에 작은 주황 불). 216 대상 ----
   - { name: f960_tier42_irsmall_20260923, model: yolo11s, item: 방화, names: [fire, smoke],
@@ -55,4 +55,4 @@ experiments:
       extras: [fasdd_snowfog, fasdd_yolo, wildfire_pos_yolo, wildfire_fog_neg,
                fire_snowbg_흑백불_20260923, fire_snowbg_작은불_20260923],
       oversample: { handset_fire_hand_20260923: 4, handset_fire_prop_20260923: 2,
-                    fire_mask_hn_fog_20260919: 3 } }
+                    fire_mask_hn_fog_20260923: 3 } }
