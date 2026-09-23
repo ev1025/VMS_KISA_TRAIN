@@ -74,7 +74,9 @@ MAX_FILL = 0.85         # 마스크가 경계상자를 이보다 꽉 채우면 �
 #   야간  빛덩어리로 번지므로 조금 크게 잡아도 실제와 비슷하다
 OUT_W_BY_BG = {
     "C00_230_0001": (10, 26), "C00_235_0001": (10, 26), "C00_244_0001": (10, 26),   # 주간 눈
-    "C00_221_0001": (12, 34), "C00_230_0002": (12, 34),                             # 야간 눈
+    # 야간은 불꽃이 아니라 빛무리가 보인다. 272 실측 폭 256~503px(바탕+40 기준).
+    # 배경 클립이 더 어두워 그대로 쓰면 과하므로 40~110px 로 잡는다(빛무리를 더하면 그보다 커진다).
+    "C00_221_0001": (40, 110), "C00_230_0002": (40, 110),                           # 야간 눈
     "C00_188_0001": (12, 30), "C00_294_0002": (12, 30),                             # 안개
     "C00_146_0001": (12, 34), "C00_146_0002": (12, 34),                             # 야간 비
 }
@@ -172,9 +174,21 @@ def 배경프레임(step_s=3.0, head_skip=10.0):
         for i in range(int(fps * head_skip), max(1, n - int(fps * head_skip)), step):
             cap.set(cv2.CAP_PROP_POS_FRAMES, i)
             ok, fr = cap.read()
-            if ok:
-                out.append((c, round(i / fps, 1), fr))
-                got += 1
+            if not ok:
+                continue
+            # 눈발 찾기: 두 프레임 뒤와 견줘 '이 프레임에서만 밝아진 화소' 가 날리는 눈이다.
+            # 배경(쌓인 눈·건물)은 그대로 있으니 차이가 안 난다.
+            ok2, nx = cap.read()
+            ok2, nx = cap.read() if ok2 else (False, None)
+            눈발 = None
+            if ok2 and nx is not None and nx.shape == fr.shape:
+                a = cv2.cvtColor(fr, cv2.COLOR_BGR2GRAY).astype(np.int16)
+                b = cv2.cvtColor(nx, cv2.COLOR_BGR2GRAY).astype(np.int16)
+                m = ((a - b) > 25).astype(np.uint8) * 255
+                if m.mean() > 1.0:                 # 화면의 0.4% 이상이면 눈이 날리는 편으로 본다
+                    눈발 = cv2.GaussianBlur(m, (0, 0), 0.8)
+            out.append((c, round(i / fps, 1), fr, 눈발))
+            got += 1
         cap.release()
         print("  배경 %s %d장" % (c, got), flush=True)
     return out
@@ -244,7 +258,8 @@ def 얹기(bg, rgba, cx, cy):
     if 핵.sum() >= 4:
         현재 = float(p[핵].max())
         if 현재 > 8:
-            목표 = random.uniform(245, 255) if 어두움 else random.uniform(215, 250)
+            # 272 실측에서 코어가 240 을 안 넘는다(포화 아님). 야간을 255 로 태우면 실제와 다르다.
+            목표 = random.uniform(200, 235) if 어두움 else random.uniform(215, 250)
             p = np.clip(p * (목표 / 현재), 0, 255)
 
     aa = a[..., None]
@@ -253,9 +268,16 @@ def 얹기(bg, rgba, cx, cy):
     # 마스크 밖 배경까지 칠해져 네모난 밝은 테두리가 남는다(2026-09-23 미리보기의 흠).
     # 야간은 실제로 불꽃 모양이 사라지고 빛덩어리만 남으므로 크게·세게 번지게 한다.
     빛 = p * aa
-    반지름 = max(1.2, min(hh, ww) / (1.6 if 어두움 else 4.0))
+    # 반지름은 '불꽃 자체' 크기로 잡는다. 여백을 두른 조각 크기로 잡으면(2026-09-23 버그)
+    # 30px 불꽃이 78px 로 보여 반지름 48 로 번지고, 빛이 흩어져 아무것도 안 남는다.
+    ys0, xs0 = np.where(a > 0.3)
+    불폭 = max(4, int(xs0.max() - xs0.min() + 1)) if len(xs0) else hh
+    불높 = max(4, int(ys0.max() - ys0.min() + 1)) if len(ys0) else ww
+    # 야간은 빛무리가 불보다 훨씬 크다(272 에서 바닥과 눈까지 밝힌다). 불폭의 0.8~1.4배로 번진다.
+    반지름 = (max(2.0, min(불높, 불폭) * random.uniform(0.8, 1.4)) if 어두움
+              else max(1.2, min(불높, 불폭) / 4.0))
     번짐 = cv2.GaussianBlur(빛, (0, 0), 반지름)
-    out = 255.0 - (255.0 - out) * (255.0 - 번짐 * (0.85 if 어두움 else 0.30)) / 255.0
+    out = 255.0 - (255.0 - out) * (255.0 - 번짐 * (0.95 if 어두움 else 0.30)) / 255.0
     bg[y0:y1, x0:x1] = np.clip(out, 0, 255).astype(np.uint8)
 
     # 야간은 빛덩어리 전체가 불로 보이므로 번짐이 남는 범위까지 박스에 넣는다.
@@ -312,7 +334,7 @@ def main():
     while 만든수 + 음성수 < a.n_out and 헛돔 < a.n_out * 20:
         음성 = random.random() < a.neg_frac
         후보 = bgs if 음성 else [b for b in bgs if b[0] in BG_POS]
-        clip, t, fr = random.choice(후보)
+        clip, t, fr, 눈발 = random.choice(후보)
         im = fr.copy()
         H, W = im.shape[:2]
         boxes = []
@@ -341,6 +363,30 @@ def main():
             if not boxes:
                 헛돔 += 1
                 continue
+        # 눈이 날리는 프레임이면 불을 흐리게 만든다 (2026-09-23 사용자 지적 + 두 번의 실패).
+        #
+        # 처음에는 '눈이 불 앞을 지나며 가린다' 로 만들려 했다. 두 가지를 해 봤는데 둘 다 틀렸다.
+        #   밝은 쪽을 고르기  -> 불이 눈보다 밝아 아무 일도 안 일어난다
+        #   눈발 자리를 원본으로 덮기 -> 불 한가운데에 검은 구멍이 뚫린다.
+        #                              눈발 마스크가 야간 잡음까지 잡아 어두운 배경을 덮기 때문이다
+        # 물리적으로도, 하얗게 타버린 야간 불 앞의 눈송이는 둘 다 포화돼 거의 안 보인다.
+        # 눈이 실제로 하는 일은 가리는 것이 아니라 카메라와 불 사이에서 빛을 흩뿌리는 것이다.
+        # 그래서 눈이 날리는 프레임에서는 불을 조금 흐리고 어둡게 만든다.
+        if boxes and 눈발 is not None:
+            세기 = float((눈발 > 128).mean())          # 화면에서 눈발이 차지하는 비율
+            흐림 = min(1.0, 세기 / 0.06)                # 6% 면 최대. 230_0002 실측이 5.93%
+            여백 = 20
+            for x0, y0, x1, y1 in boxes:
+                a0, b0 = max(0, x0 - 여백), max(0, y0 - 여백)
+                a1, b1 = min(W, x1 + 여백), min(H, y1 + 여백)
+                조각 = im[b0:b1, a0:a1].astype(np.float32)
+                if min(조각.shape[:2]) < 4:
+                    continue
+                흩어짐 = cv2.GaussianBlur(조각, (0, 0), 1.0 + 1.5 * 흐림)
+                섞기 = 0.45 * 흐림                       # 최대 45% 만 섞는다. 불이 사라지면 안 된다
+                조각 = 조각 * (1 - 섞기) + 흩어짐 * 섞기
+                im[b0:b1, a0:a1] = np.clip(조각, 0, 255).astype(np.uint8)
+
         stem = "%s_%05.1f_%05d" % (clip, t, 만든수 + 음성수)
         cv2.imwrite(str(out / "images/train" / (stem + ".jpg")), im, [cv2.IMWRITE_JPEG_QUALITY, 92])
         with open(out / "labels/train" / (stem + ".txt"), "w") as fh:
