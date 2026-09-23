@@ -1,0 +1,58 @@
+# 방화 재학습 큐 (2026-09-23)
+#
+# 왜 새로 짜나
+#   손라벨을 전면 개편했다. 서버·토르 방화 손라벨(3,601행)과 전파 저장소(75편)를 토르 기준으로
+#   맞췄고, 불끼리 겹친 박스 40쌍·화면 밖 박스 500개·한 순간 두 파일 이름 41곳을 정리했다.
+#   옛 라벨로 만든 09-22 큐는 전부 폐기했다.
+#
+# 순서를 왜 이렇게 잡았나
+#   합성 4종을 지금 기준선 모델로 검증해 보니 인식률이 이렇다(불 임계 0.14 · 타일 6장 · 960).
+#       기본 9.5% · 흐린색 6.1% · 작은불 3.6% · 흑백불 0.1%
+#   흑백불이 0.1% 다. 1,705장 중 2장만 잡는다. 야간 적외선 불을 사실상 못 본다는 뜻이고,
+#   못 잡는 채점 편 272(야간 눈)가 바로 그 모습이다. 학습 데이터가 컬러 1,756박스 대
+#   흑백 130박스로 13:1 이라 당연한 결과다. 그래서 흑백불을 제일 먼저 넣어 본다.
+#   네 세트 모두 불 없는 그림에서 헛울림 0 이라, 합성이 배경을 불로 오인하게 만들지는 않는다.
+#
+# 고정(잘 나온 조건 그대로)
+#   base aihub71751_48k · extras 4종 · fire_mask_hn_fog_20260919 x3(안개 합성 + 하드네거티브)
+#   960 / multi_scale 0.333 / batch 300 / workers 8 / 60에폭
+#   val_set 을 붙이지 않는다. evalset_fire 는 채점 10편의 프레임이라 그것으로 고르면 선택 편향이 생긴다.
+#
+# 판정
+#   10편 F1 만 보지 않는다. best.pt 와 last.pt 를 둘 다 채점하고 3편(195·216·272) 개별 성패를 같이 본다.
+#   배포 규칙(불0.40 20중3)과 후보 규칙(불0.14 6중3)을 같이 본다. 규칙은 45편 오검 시험으로 따로 고른다.
+#
+# 1~3 이 끝나면 최고 조합 위에서 손라벨 x2/x6 · 전파 x4 · 1280 을 이어서 건다(러너가 새 이름을 집어 간다).
+name: queue_fire_20260923
+defaults:
+  val_small: 600
+  vram_gate_mib: 90000        # 한 편이 GPU 를 다 쓴다(--jobs 1)
+  min_free_gb: 300
+  ram_cache_max: 0
+  stagger_sec: 0
+  # batch 380·workers 16 은 2026-09-22 에 둘 다 OOM 을 냈다. 300/8 은 검증된 값이다.
+  train: { epochs: 60, batch: 300, imgsz: 960, multi_scale: 0.333, cache: False, workers: 8 }
+
+experiments:
+  # ---- 1. 기준점. 새 라벨로 손라벨 x4 / 전파 x2, 눈 합성 없음 ----
+  - { name: f960_tier42_base_20260923, model: yolo11s, item: 방화, names: [fire, smoke],
+      base: aihub71751_48k,
+      extras: [fasdd_snowfog, fasdd_yolo, wildfire_pos_yolo, wildfire_fog_neg],
+      oversample: { handset_fire_hand_20260923: 4, handset_fire_prop_20260923: 2,
+                    fire_mask_hn_fog_20260919: 3 } }
+
+  # ---- 2. 흑백불(야간 적외선) 합성을 더한다. 인식률 0.1% 인 그림이다 ----
+  - { name: f960_tier42_ir_20260923, model: yolo11s, item: 방화, names: [fire, smoke],
+      base: aihub71751_48k,
+      extras: [fasdd_snowfog, fasdd_yolo, wildfire_pos_yolo, wildfire_fog_neg,
+               fire_snowbg_흑백불_20260923],
+      oversample: { handset_fire_hand_20260923: 4, handset_fire_prop_20260923: 2,
+                    fire_mask_hn_fog_20260919: 3 } }
+
+  # ---- 3. 흑백불 + 작은불(주간 눈에 작은 주황 불). 216 대상 ----
+  - { name: f960_tier42_irsmall_20260923, model: yolo11s, item: 방화, names: [fire, smoke],
+      base: aihub71751_48k,
+      extras: [fasdd_snowfog, fasdd_yolo, wildfire_pos_yolo, wildfire_fog_neg,
+               fire_snowbg_흑백불_20260923, fire_snowbg_작은불_20260923],
+      oversample: { handset_fire_hand_20260923: 4, handset_fire_prop_20260923: 2,
+                    fire_mask_hn_fog_20260919: 3 } }

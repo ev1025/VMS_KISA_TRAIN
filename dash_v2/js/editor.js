@@ -772,8 +772,12 @@ function renderEditor(f) {
       rowObj.style.pointerEvents = ""; rowObj.style.opacity = ""; bGo.disabled = false;
       const dr = seen.drops || {}, skipped = (dr.lost || 0) + (dr.empty || 0) + (dr.size || 0);   // 프레임이 빠진 사유: 놓침(가림·이탈) · 크기 제한(참조 대비 3배/1/3 밖)
       const why = skipped ? ` · 빠짐 ${skipped}` + (dr.lost + dr.empty ? ` (놓침 ${(dr.lost || 0) + (dr.empty || 0)}` : " (") + (dr.size ? `${dr.lost + dr.empty ? " · " : ""}크기제한 ${dr.size}` : "") + ")" : "";
-      pstat.innerHTML = seen.err === "cancelled" ? '<span style="color:var(--mut)">취소됨</span>' : seen.err ? `<b style="color:#f85149">실패</b> <span style="color:var(--mut)">${seen.err}</span>` : `<span style="color:var(--mut)">전파 ${seen.nframes || 0}프레임${why}</span>`;
-      setTimeout(() => { if (mine()) pstat.innerHTML = ""; }, seen.err ? 4000 : 12000);
+      // 알림(warn)은 실패가 아니다. 결과는 저장돼 있고, 사람이 드나들어 많이 놓쳤다는 뜻이다(2026-09-23).
+      pstat.innerHTML = seen.err === "cancelled" ? '<span style="color:var(--mut)">취소됨</span>'
+        : seen.err ? `<b style="color:#f85149">실패</b> <span style="color:var(--mut)">${seen.err}</span>`
+        : seen.warn ? `<b style="color:#d29922">${seen.nframes || 0}프레임 저장</b> <span style="color:var(--mut)">${seen.warn}</span>`
+        : `<span style="color:var(--mut)">전파 ${seen.nframes || 0}프레임${why}</span>`;
+      setTimeout(() => { if (mine()) pstat.innerHTML = ""; }, seen.err ? 4000 : seen.warn ? 20000 : 12000);
     }
     if (!seen.err) { if (mine()) loadSam(); }   // 참조샷은 그대로 둔다: 지우고 다시, 또는 이어서 전파할 수 있게. 참조 프레임은 손라벨이라 저장소에도 남는다
     await refreshSam();

@@ -13,12 +13,23 @@
       같은 (clip, t, obj) · 좌표 다름 -> 충돌. 기본은 서버 값을 지키고 목록에 남긴다
       서버에 없음                  -> 추가
 
+프레임 단위 교체 (2026-09-23)
+    위 규칙만 쓰면 같은 프레임을 다른 장비에서 다시 그렸을 때 옛 박스가 안 지워지고 쌓인다.
+    한 프레임에 같은 클래스 박스가 여럿이면 어느 것이 어느 것인지 짝지을 수 없어
+    충돌로도 안 잡히고 그냥 추가되기 때문이다. 방화 손라벨 41곳이 그렇게 겹쳐 있었다.
+
+    편집기가 저장할 때는 (clip, t) 의 기존 행을 통째로 지우고 새로 쓴다(serve_kisa.py).
+    합칠 때도 같아야 한다. 그래서 행마다 저장 시각(ts)을 남기고,
+    들어온 프레임이 서버 프레임보다 새것이면 그 프레임의 행을 통째로 바꾼다.
+    시각이 없는 옛 행끼리는 판단할 수 없으므로 예전 규칙(행 단위)으로 간다.
+
     충돌을 자동으로 덮어쓰지 않는 이유: 어느 쪽이 최신인지 파일만 봐서는 알 수 없다.
     양쪽에서 같은 클립을 만졌다면 사람이 봐야 한다. --take-incoming 을 주면 들어온 값으로 덮는다.
 
 안전장치
     - 합치기 전에 서버 저장소를 _backup/ 에 스냅샷으로 남긴다(편집기와 같은 규칙).
-    - 서버에만 있는 행은 절대 지우지 않는다. 추가만 한다.
+    - 서버에만 있는 프레임은 건드리지 않는다. 들어온 쪽에 있는 프레임만 본다.
+    - 한 프레임을 통째로 바꾸는 것은 들어온 쪽이 더 새것일 때뿐이다(저장 시각 비교).
     - eval 표시가 붙은 행(채점 전용)은 들어와도 넣지 않는다. 학습 누수 방지.
     - --dry 로 무엇이 들어올지 먼저 볼 수 있다.
 
@@ -47,6 +58,17 @@ def ident(row):
     return (row.get("clip"), row.get("t"), row.get("cls"), row.get("obj"),
             round(float(row.get("x", 0)), R), round(float(row.get("y", 0)), R),
             round(float(row.get("w", 0)), R), round(float(row.get("h", 0)), R))
+
+
+def 프레임(row):
+    """어느 클립의 몇 초인가. 편집기가 저장할 때 쓰는 단위와 같다(abs 차 0.01 미만)."""
+    return (row.get("clip"), round(float(row.get("t", 0)), 2))
+
+
+def 시각(rows):
+    """그 프레임을 마지막으로 저장한 때. 옛 행에는 없다(None)."""
+    ts = [int(r["ts"]) for r in rows if r.get("ts") is not None]
+    return max(ts) if ts else None
 
 
 def slot(row):
@@ -99,14 +121,11 @@ def merge_clip_state(incoming, dry, take_incoming):
     return {"추가": added, "덮음": changed, "이쪽유지": kept}
 
 
-def merge_hand(name, incoming, dry, take_incoming):
-    dst = HAND / f"{name}_labels.json"
-    src = incoming / "손라벨" / f"{name}_labels.json"
-    if not src.is_file():
-        return None
-    cur = json.loads(dst.read_text(encoding="utf-8")) if dst.is_file() else []
-    inc = json.loads(src.read_text(encoding="utf-8"))
+def 합치기(cur, inc, take_incoming=False):
+    """서버 행(cur)에 들어온 행(inc)을 합친다. 파일을 안 읽으므로 자체 점검이 된다.
 
+    돌려주는 것: (합친 행, 추가한 행, 중복수, 충돌행, eval제외수, 통째로 바꾼 프레임수)"""
+    cur = list(cur)
     have = {ident(r) for r in cur}
     slots = {}
     for r in cur:
@@ -121,9 +140,49 @@ def merge_hand(name, incoming, dry, take_incoming):
     pairable = lambda k: len(slots.get(k, ())) == 1 and inc_slots.get(k, 0) == 1
 
     added, dup, conflict, skipped_eval = [], 0, [], 0
+
+    # --- 프레임 단위 교체 먼저 (2026-09-23) ---
+    # 들어온 프레임이 서버 프레임보다 새것이면 그 프레임 행을 통째로 바꾼다.
+    # 그래야 다른 장비에서 다시 그린 프레임이 '쌓이지' 않고 '바뀐다'.
+    서버프레임 = {}
+    for r in cur:
+        서버프레임.setdefault(프레임(r), []).append(r)
+    들어온프레임 = {}
+    for r in inc:
+        if not r.get("eval"):
+            들어온프레임.setdefault(프레임(r), []).append(r)
+
+    교체됨 = set()
+    바뀐프레임 = 0
+    for k, rs in 들어온프레임.items():
+        새시각 = 시각(rs)
+        옛행 = 서버프레임.get(k, [])
+        옛시각 = 시각(옛행)
+        if 새시각 is None:
+            continue                       # 들어온 쪽에 시각이 없다. 예전 규칙으로
+        if 옛행 and 옛시각 is not None and 옛시각 >= 새시각:
+            continue                       # 서버 쪽이 같거나 더 새것이다. 그대로 둔다
+        if not 옛행:
+            continue                       # 서버에 없는 프레임은 그냥 추가되면 된다(아래 규칙)
+        for old_r in 옛행:
+            cur.remove(old_r)
+            have.discard(ident(old_r))
+            s = slots.get(slot(old_r))
+            if s and old_r in s:
+                s.remove(old_r)
+        for r in rs:
+            cur.append(r)
+            have.add(ident(r))
+            slots.setdefault(slot(r), []).append(r)
+            added.append(r)
+        교체됨.add(k)
+        바뀐프레임 += 1
+
     for r in inc:
         if r.get("eval"):                       # 채점 전용 행은 학습 저장소에 넣지 않는다
             skipped_eval += 1
+            continue
+        if 프레임(r) in 교체됨:                  # 위에서 프레임째 바꿨다
             continue
         if ident(r) in have:
             dup += 1
@@ -137,8 +196,63 @@ def merge_hand(name, incoming, dry, take_incoming):
             continue
         cur.append(r); have.add(ident(r)); slots.setdefault(slot(r), []).append(r); added.append(r)
 
+    return cur, added, dup, conflict, skipped_eval, 바뀐프레임
+
+
+
+def selfcheck():
+    """다른 장비에서 다시 그린 프레임이 쌓이지 않고 바뀌는지.
+
+    이 규칙이 없던 탓에 방화 손라벨 41곳에 같은 순간이 두 번 남았고,
+    사용자가 C058205_002 206초에 박스가 다섯 개 보인다고 지적했다(2026-09-23)."""
+    def 박스(t_, x, ts=None, cls=0, clip="C"):
+        r = {"clip": clip, "t": t_, "cls": cls, "x": x, "y": .5, "w": .1, "h": .1}
+        if ts is not None:
+            r["ts"] = ts
+        return r
+
+    # 1) 들어온 쪽이 새것이면 그 프레임을 통째로 바꾼다(옛 박스 세 개가 사라진다)
+    서버 = [박스(206, .1, 100), 박스(206, .3, 100), 박스(206, .5, 100)]
+    들어옴 = [박스(206, .2, 200)]
+    out, added, dup, conf, ev, 바뀜 = 합치기(서버, 들어옴)
+    assert 바뀜 == 1 and len(out) == 1 and out[0]["x"] == .2, "새것이 프레임째 이긴다"
+
+    # 2) 서버 쪽이 더 새것이면 그대로 둔다
+    out, *_ , 바뀜 = 합치기([박스(206, .1, 300)], [박스(206, .2, 200)])
+    assert 바뀜 == 0 and any(r["x"] == .1 for r in out), "서버가 새것이면 안 바꾼다"
+
+    # 3) 들어온 쪽에 시각이 없으면 예전 규칙(행 단위)으로 간다.
+    #    같은 자리에 좌표가 다르면 충돌이고, 기본은 서버 값을 지킨다.
+    out, _, _, conf, _, 바뀜 = 합치기([박스(206, .1, 100)], [박스(206, .2)])
+    assert 바뀜 == 0 and len(out) == 1 and out[0]["x"] == .1 and len(conf) == 1,         "시각이 없으면 프레임째 안 바꾸고 예전 규칙(충돌 보류)으로 간다"
+
+    # 4) 서버에만 있는 프레임은 건드리지 않는다
+    out, *_ = 합치기([박스(100, .1, 100), 박스(206, .1, 100)], [박스(206, .9, 200)])
+    assert any(r["t"] == 100 for r in out), "들어온 쪽에 없는 프레임은 그대로"
+
+    # 5) 채점 전용 행은 들어와도 안 넣는다
+    e = 박스(206, .9, 200); e["eval"] = True
+    out, _, _, _, ev, _ = 합치기([], [e])
+    assert out == [] and ev == 1, "eval 행은 학습 저장소에 안 넣는다"
+
+    # 6) 같은 프레임을 다시 그려도 두 배로 쌓이지 않는다(같은 값이면 중복으로 건너뛴다)
+    같음 = [박스(206, .1, 100)]
+    out, _, dup, _, _, _ = 합치기(같음, [박스(206, .1, 100)])
+    assert len(out) == 1 and dup == 1, "똑같은 박스는 중복"
+    print("자체 점검 통과 (6건)")
+
+
+def merge_hand(name, incoming, dry, take_incoming):
+    dst = HAND / f"{name}_labels.json"
+    src = incoming / "손라벨" / f"{name}_labels.json"
+    if not src.is_file():
+        return None
+    cur = json.loads(dst.read_text(encoding="utf-8")) if dst.is_file() else []
+    inc = json.loads(src.read_text(encoding="utf-8"))
+
+    cur, added, dup, conflict, skipped_eval, 바뀐프레임 = 합치기(cur, inc, take_incoming)
     res = {"이름": name, "들어온행": len(inc), "추가": len(added), "중복": dup,
-           "충돌": len(conflict), "제외:eval": skipped_eval, "결과행": len(cur)}
+           "프레임교체": 바뀐프레임, "충돌": len(conflict), "제외:eval": skipped_eval, "결과행": len(cur)}
     if not dry and added:
         b = backup(dst)
         tmp = dst.with_suffix(".json.tmpmerge")
@@ -263,4 +377,8 @@ def main():
 
 
 if __name__ == "__main__":
+    import sys
+    if "--selfcheck" in sys.argv:
+        selfcheck()
+        raise SystemExit(0)
     sys.exit(main())

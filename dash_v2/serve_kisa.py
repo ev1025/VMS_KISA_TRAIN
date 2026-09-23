@@ -998,10 +998,31 @@ def sam2_propagate_objs(clip, seeds, back=5.0, fwd=10.0, step=0.5, progress=None
                     run_segment({oid: sd}, i0, max(i0, i1), i0, profs, False)
     # 모델이 한 번 어긋나면 이후 전파가 조용히 전부 "대상 없음"이 된다(2026-09-16 Thor 실측: 128프레임 중 126 lost).
     # 코드·입력이 같아도 같은 프로세스에서 계속 재현되고, 새로 올리면 정상으로 돌아온다 → 비워서 다음 작업이 다시 올리게 한다.
+    #
+    # 2026-09-23: 판정이 너무 넓었다. 원래 기준(놓침 >= 9 x 건진것)이 '사람이 화면 밖으로 나가서
+    # 정상적으로 놓친 것' 까지 모델 고장으로 몰았다. 마케팅(PeopleCounting) 편 C00_283_0001 은
+    # 2,653번 중 2,383 놓침(90%)이었지만 74프레임을 제대로 건졌고, C00_290_0001 은 74% 놓침에
+    # 190프레임을 건졌다. 그런데 오류로 판정되는 바람에 그 결과가 통째로 버려졌다(_prop_worker
+    # 가 err 이 있으면 저장을 안 한다). 사용자가 네 번 다시 돌려 9분씩 날렸다.
+    #
+    # 진짜 고장은 '건진 것이 사실상 없는' 모습이다(126/128 일 때 건진 것 2개).
+    # 사람이 드나들어 놓치는 것은 건진 것이 꾸준히 남는다. 그래서 절대 개수로 가른다.
     n_lost, n_keep = drops["lost"], len(out)
-    if n_lost >= 20 and n_lost >= 9 * max(1, n_keep):
+    if n_keep <= 3 and n_lost >= 20:
         _SAM2V = None
-        return out, polys, round(time.time() - tic, 1), "전파가 거의 전부 실패했습니다. 모델을 다시 올렸으니 한 번 더 눌러 주세요"
+        return out, polys, round(time.time() - tic, 1), "전파가 전부 실패했습니다. 모델을 다시 올렸으니 한 번 더 눌러 주세요"
+    if n_lost >= 3 * max(1, n_keep):
+        # 오류가 아니라 알림이다. 결과는 저장된다.
+        # 모델은 그래도 비운다. 어긋난 모델이 이 구간에 걸쳐 조용히 나빠진 것일 수 있고,
+        # 다시 올리는 값이 2초라 의심스러울 때 그냥 올리는 편이 싸다. 안 올리면
+        # 다음 전파까지 나쁜 상태가 이어진다("아까는 잘 됐는데" 의 정체).
+        _SAM2V = None
+        if isinstance(progress, dict):
+            progress["warn"] = ("구간 대부분에서 대상을 놓쳤습니다(%d/%d). 대상이 화면 밖으로 나가거나 "
+                                "가려지거나, 너무 작아지면 이렇게 됩니다. 건진 %d프레임은 저장했습니다. "
+                                "모델을 다시 올렸으니 같은 구간을 한 번 더 돌려 보고, "
+                                "그래도 같으면 구간을 참조샷 근처로 짧게 잘라 보세요."
+                                % (n_lost, n_lost + n_keep, n_keep))
     return out, polys, round(time.time() - tic, 1), None
 
 
@@ -1187,7 +1208,7 @@ def prop_jobs_view(stem=None):
             continue
         out.append({"id": jid, "clip": st.get("clip"), "state": st.get("state", "done" if not st.get("running") else "running"),
                     "pos": (q.index(jid) + 1) if jid in q else 0, "done": st.get("done", 0), "total": st.get("total", 0),
-                    "err": st.get("err"), "saved": st.get("saved", False), "sec": st.get("sec", 0), "nframes": st.get("nframes", 0), "mode": st.get("mode"),
+                    "err": st.get("err"), "warn": st.get("warn"), "saved": st.get("saved", False), "sec": st.get("sec", 0), "nframes": st.get("nframes", 0), "mode": st.get("mode"),
                     "drops": st.get("drops") or {}, "a": st.get("a"), "b": st.get("b"), "step": st.get("step"),
                     "seed_ts": sorted({round(float(q.get("t", 0)), 1) for q in (st.get("seeds") or [])})})   # 어느 구간·어느 참조샷으로 돌았는지(사후 확인용)
     return out
@@ -1614,6 +1635,9 @@ class H(BaseHTTPRequestHandler):
                         if not (r.get("clip") == clip and abs(float(r.get("t", -999)) - t) < 0.01)]
                 W = int(body.get("W", 1280)); Hh = int(body.get("H", 720))
                 file = body.get("file", f"{clip}_{t}.png")
+                # 저장 시각. 다른 장비에서 같은 프레임을 다시 그렸을 때 어느 쪽이 새것인지
+                # 파일만 보고 알 수 있어야 한다. merge_labels.py 가 이 값으로 프레임 단위로 고른다.
+                ts = int(time.time())
                 src = str(body.get("src") or "").replace("\\", "/") or None
                 ev = {"eval": True} if body.get("eval") else {}        # 채점 전용 카테고리(검증·채점·배포)의 라벨: 학습셋 빌더가 뺀다
                 for b in body.get("boxes", []):
@@ -1622,11 +1646,12 @@ class H(BaseHTTPRequestHandler):
                     rows.append({"file": file, "clip": clip, "src": src, "t": t, "cls": int(cls),
                                  "x": round(float(x), 5), "y": round(float(y), 5),
                                  "w": round(float(w), 5), "h": round(float(h), 5),
-                                 "W": W, "H": Hh, "crop": [0, 0, W, Hh], **ev, **({"obj": obj} if obj is not None else {})})
+                                 "W": W, "H": Hh, "crop": [0, 0, W, Hh], "ts": ts,
+                                 **ev, **({"obj": obj} if obj is not None else {})})
                 if not body.get("boxes") and not body.get("clear"):
                     # 박스 0개로 저장(사람이 다 지움) = '검토했고 객체 없음' 마커(사람·화재 공통). 이래야 다시 DINO 프리필 안 된다. clear=true 면 기록만 지운다(되돌리기)
                     rows.append({"file": file, "clip": clip, "src": src, "t": t, "cls": -1,
-                                 "x": 0, "y": 0, "w": 0, "h": 0, "W": W, "H": Hh, "crop": [0, 0, W, Hh]})
+                                 "x": 0, "y": 0, "w": 0, "h": 0, "W": W, "H": Hh, "crop": [0, 0, W, Hh], "ts": ts})
                 write_json(fl, rows)
                 try:
                     _sam2_store_drop_raw(clip, t)                 # 손라벨이 SAM 을 대신: 이 프레임의 전파 결과는 저장소에서 뺀다
