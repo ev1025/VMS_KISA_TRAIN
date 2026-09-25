@@ -17,10 +17,12 @@ python _kisa_port/tools/kisa_items.py --item <fire|intrusion|loitering|falldown>
 
 | 항목 | 가중치 | 입력 | 판정 |
 | :-- | :-- | :-- | :-- |
-| 방화 | `fire_fog.pt` @640 + `fire_small.pt` @960 (앙상블) | 6분할 타일, **낱장 추론** | 불 ≥0.40 이 20스텝(10초) 창에 3회 · 지연 10초 |
-| 쓰러짐 | `yolo11x-pose.pt` @1280 | 0.1초 간격 | SeqNet 문턱 0.755 · 연속 4창 |
-| 배회 | `person_v2.pt` | BoT-SORT 전체프레임 @640 | 구역 체류 6초 · 끊김 6 · 확정대기 5초 · **늦은 일행(20초/3명/방금도착)** · 지연 10초 |
+| 방화 | `fire_fog.pt` @960 (`f960_mask_hn_x2_fog3_20260920`) + `fire_small.pt` @960 (`f960_best_s_20260915`), 표본마다 최고 신뢰도로 합침 | 6분할 타일, **낱장 추론** | 불 ≥0.40 이 20스텝(10초) 창에 3회 · 연기 조건 꺼짐(smoke 1.1) · 지연 10초 |
+| 쓰러짐 | `yolo11x-pose.pt` @1280 | 0.1초 간격 | SeqNet 문턱 0.80 · 연속 5창 · 경보 지연 1초 (2026-09-20 변경, 이전 0.755 · 4창 · 지연 0) |
+| 배회 | `person_v2.pt` | BoT-SORT 전체프레임 @640 | 구역 체류 6초 · 끊김 10 · 발끝 여유 10px · 확정대기 5초 · **늦은 일행(20초/3명/방금도착)** · 지연 10초 (2026-09-20 변경, 이전 끊김 6 · 여유 0) |
 | 침입 | `person_v3.pt` | 3x3 타일 @960, **부분검출 억제 끔** | 연속 2표본 · 확정대기 · 끊김 허용 2 |
+
+가중치 실물 대조(2026-09-25, sha256 앞 16자리): fire_fog `0297b10560520c13` = `runs/f960_mask_hn_x2_fog3_20260920` best · fire_small `f7695d97137180cf` = `runs/f960_best_s_20260915` best · person_v2 `1b25d92bfc56453b` · person_v3 `4006bb79730cc250`. 시험 레포 `weights/kisa` 와 `results/MODELS.json` 이 같다.
 
 **점수는 여기 적지 않는다.** `results/BASELINE.json` 하나만 본다.
 무엇이 취약한지는 [kisa/평가.md](kisa/평가.md) 6장, 미검 편의 원인은 [미검원인.md](미검원인.md).
@@ -186,6 +188,8 @@ python _kisa_port/tools/kisa_items.py --item <fire|intrusion|loitering|falldown>
 `s2_m960`(모델 키울 이유 없음) · `p1280_hand`(해상도) · `p960_coco` · `p960_hand`(순서 바꾸려고 내림).
 
 ### `f960` 결과 — `fire_small` 대체 실패 (2026-09-16 20:20)
+
+> **2026-09-25 정정:** 이 표의 `fire_fog` 는 당시 가중치 `fresh_48k_wildall_20260909` 다. `human_fire` 오버샘플로 채점 10편 프레임 2,520장을 학습한 누수 모델이라 `fire_fog + fire_small = 100.00` 은 무효다. 현행 배포(`f960_mask_hn_x2_fog3_20260920` + `f960_best_s_20260915`, 둘 다 @960)는 90.00 (`results/BASELINE.json`).
 
 `fire_small.pt` 는 원본이 `runs/` 에 없고 아카이브 사본뿐이다(6장). 그 의존을 없애려고 돌린 학습이다.
 

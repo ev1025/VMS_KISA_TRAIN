@@ -27,20 +27,20 @@
     "best_score_10clips": null
   },
   "fire_fog.pt": {
-    "sha256_16": "689ba18d53651931",
-    "size_mb": 19.2,
-    "experiment": "fresh_48k_wildall_20260909",
+    "sha256_16": "0297b10560520c13",
+    "size_mb": 18.3,
+    "experiment": "f960_mask_hn_x2_fog3_20260920",
     "found_at": [
-      "runs/fresh_48k_wildall_20260909/yolo11s/weights/best.pt"
+      "runs/f960_mask_hn_x2_fog3_20260920/yolo11s/weights/best.pt"
     ],
-    "best_score_10clips": 94.74
+    "best_score_10clips": 73.68
   },
   "fire_small.pt": {
-    "sha256_16": "dbec41d2a2e97091",
-    "size_mb": 19.2,
-    "experiment": "s2_s960_20260913",
+    "sha256_16": "f7695d97137180cf",
+    "size_mb": 18.3,
+    "experiment": "f960_best_s_20260915",
     "found_at": [
-      "logs/_archive/2026-09-15/r960오염실험/runs/s2_s960_20260913/yolo11s/weights/best.pt"
+      "runs/f960_best_s_20260915/yolo11s/weights/best.pt"
     ],
     "best_score_10clips": null
   },
