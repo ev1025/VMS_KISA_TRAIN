@@ -78,9 +78,11 @@ def clean(rows):
             r["file"] = 새
 
         # --- 3) 화면 밖으로 나간 박스를 화면 안으로 자른다 ---
+        # 손라벨 파일의 x·y 는 박스 좌상단이다(편집기 저장 형식, build_trainset.yolo_line 이 중심으로 바꾼다).
+        # 2026-09-23 판은 이 자리를 중심으로 읽어 가장자리 박스 사람 456·방화 471개를 반으로 줄였다(09-26 복원). 좌상단으로 읽는다.
         if int(r.get("cls", -1)) >= 0:
-            x0, y0 = r["x"] - r["w"] / 2, r["y"] - r["h"] / 2
-            x1, y1 = r["x"] + r["w"] / 2, r["y"] + r["h"] / 2
+            x0, y0 = r["x"], r["y"]
+            x1, y1 = r["x"] + r["w"], r["y"] + r["h"]
             c0, d0 = max(0.0, x0), max(0.0, y0)
             c1, d1 = min(1.0, x1), min(1.0, y1)
             # 좌표를 5자리로 반올림하므로 1.0 을 1e-6 쯤 넘는 것이 남는다.
@@ -89,8 +91,8 @@ def clean(rows):
             바뀜 = max(abs(c0 - x0), abs(d0 - y0), abs(c1 - x1), abs(d1 - y1))
             if 바뀜 > EPS and c1 > c0 and d1 > d0:
                 셈["화면 밖으로 나간 박스를 잘라 넣음"] += 1
-                r["x"] = round((c0 + c1) / 2, 5)
-                r["y"] = round((d0 + d1) / 2, 5)
+                r["x"] = round(c0, 5)
+                r["y"] = round(d0, 5)
                 r["w"] = round(c1 - c0, 5)
                 r["h"] = round(d1 - d0, 5)
         out.append(r)
