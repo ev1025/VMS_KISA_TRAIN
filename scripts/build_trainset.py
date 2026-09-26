@@ -31,6 +31,9 @@ ap.add_argument("--marks", default=None,
 ap.add_argument("--smoke-todo", choices=["keep", "drop-fireonly"], default="keep",
                 help="연기 미완(clip_state smoke=todo) 편의 프레임 처리. keep=그대로(기본) · "
                      "drop-fireonly=연기 박스가 없는 프레임을 뺀다(모델에 '여기 연기 없음' 을 가르치지 않게)")
+ap.add_argument("--sam-anchor", type=float, default=0.0,
+                help="SAM 전파 표류 거름. 객체의 저장 프레임을 3초 간격으로 구간을 묶고, 그 객체의 씨앗(사람이 찍은 박스)에서 "
+                     "이 초보다 멀리 떨어진 구간은 뺀다(0=끔). 씨앗 없이 먼 곳에 생긴 박스는 사람이 아닌 곳으로 흘러간 것이 많았다(2026-09-26 감사: 221편 중 56편)")
 ap.add_argument("--dry", action="store_true")
 a = ap.parse_args()
 
@@ -52,6 +55,18 @@ def yolo_line(c, b):
 
 items = []      # (split, image_path_or_(mp4,t), [ (cls, [x,y,w,h]) ], 출처)
 stats = collections.Counter()
+
+# 채점 전용 클립(use: eval). 이름을 바꾼 사본(fall_C00_235_0002 처럼 접두어를 붙인 것)도 같은 편이다.
+# 2026-09-26 감사: KISA_악천후_사람 에 쓰러짐 채점 10편이 fall_ 접두어로 들어 있어 이름 검사(정확히 같은 stem)를 통과했다.
+import re as _re
+_EVAL_STEMS = {p.stem for c, cfg in D.all().items() if cfg.get("use") == "eval" for p in (RAW / c).rglob("*.mp4")}
+_EVAL_IDS = {m.group(0) for st in _EVAL_STEMS for m in [_re.search(r"C00_\d+_\d+", st)] if m}
+
+
+def eval_copy(stem):
+    """이 클립이 채점편(또는 그 사본)이면 그 편 번호. 아니면 None."""
+    m = _re.search(r"C00_\d+_\d+", stem)
+    return m.group(0) if m and m.group(0) in _EVAL_IDS else None
 
 # ---------- 1) 손라벨(사용자) ----------
 hand_kind = "person" if a.mode == "person" else "fire"
@@ -88,13 +103,35 @@ for f in glob.glob(str(V / "data/학습데이터/자동라벨/sam2/*.json")):
     except Exception:
         continue
     stem = d.get("clip") or Path(f).stem
+    drift = set()                                    # (객체, 초): 씨앗에서 멀리 떨어진 구간
+    if a.sam_anchor > 0:
+        seeds = collections.defaultdict(list)
+        for sd in d.get("seeds") or []:
+            seeds[str(sd.get("obj"))].append(float(sd.get("t", -1)))
+        per = collections.defaultdict(list)
+        for k, objs in (d.get("frames") or {}).items():
+            for o in objs or {}:
+                per[str(o)].append(float(k))
+        for o, ts in per.items():
+            ts.sort(); segs = [[ts[0]]]
+            for t in ts[1:]:
+                (segs[-1].append(t) if t - segs[-1][-1] <= 3.0 else segs.append([t]))
+            for g in segs:
+                near = min([0.0 if g[0] <= sd <= g[-1] else min(abs(sd - g[0]), abs(sd - g[-1])) for sd in seeds.get(o, [])] or [1e9])
+                if near > a.sam_anchor:
+                    drift.update((o, t) for t in g)
     for k, objs in (d.get("frames") or {}).items():
         key = (stem, round(float(k) * 2) / 2)
         if key in hand_frames or not objs:
             continue
         for o, b in objs.items():
+            if (str(o), float(k)) in drift:
+                stats["제외:SAM 표류 박스"] += 1
+                continue
             c = (0 if int(o) == 1 else 1) if a.mode == "fire" else 0
             sam_frames[key].append((c, b))
+        if key in sam_frames and not sam_frames[key]:
+            del sam_frames[key]                      # 표류 박스뿐이던 프레임은 통째로 뺀다
 
 
 _MP4 = None
@@ -149,6 +186,8 @@ for src_name, frames in (("hand", hand_frames), ("sam", sam_frames)):
             stats[f"제외:모드다름({cat})"] += 1; continue
         if cfg.get("use") != "train":
             stats[f"제외:use={cfg.get('use')}({cat})"] += 1; continue
+        if eval_copy(stem):
+            stats[f"제외:채점편 사본({cat})"] += 1; continue
         items.append(("val" if is_val(stem) else "train", (mp4, t), boxes, src_name))
         stats[f"영상프레임:{src_name}"] += 1
 
@@ -172,6 +211,8 @@ if a.neg > 0:
             continue
         cfg = D.get(mp4.relative_to(RAW).parts[0])
         if cfg.get("mode") != a.mode or cfg.get("use") != "train":   # 채점(eval)·라이선스(none) 클립은 네거티브로도 안 쓴다(누수)
+            continue
+        if eval_copy(stem):
             continue
         cap = cv2.VideoCapture(str(mp4)); fps = cap.get(cv2.CAP_PROP_FPS) or 30.0
         dur = (cap.get(cv2.CAP_PROP_FRAME_COUNT) or 0) / (fps or 30.0); cap.release()
@@ -215,10 +256,10 @@ for cat, cfg in sorted(D.all().items()):
         items.append(("val" if is_val(rel) else "train", p, boxes, src_name))
         stats[f"이미지:{cat}:{src_name}"] += 1
 
-_EVAL_STEMS = {p.stem for c, cfg in D.all().items() if cfg.get("use") == "eval" for p in (RAW / c).rglob("*.mp4")}   # 채점 전용 클립: 학습·배경 어느 쪽으로도 절대 안 들어간다
-_leak = [src[0].stem for sp, src, bx, sn in items if isinstance(src, tuple) and src[0].stem in _EVAL_STEMS]
+# 채점 전용 클립(사본 포함): 학습·배경 어느 쪽으로도 절대 안 들어간다
+_leak = [src[0].stem for sp, src, bx, sn in items if isinstance(src, tuple) and (src[0].stem in _EVAL_STEMS or eval_copy(src[0].stem))]
 assert not _leak, f"채점 전용 클립이 학습셋에 들어갔다: {sorted(set(_leak))[:5]}"
-stats["채점클립 검사"] = f"누수 0 (채점 클립 {len(_EVAL_STEMS)}편 제외 확인)"
+stats["채점클립 검사"] = f"누수 0 (채점 클립 {len(_EVAL_STEMS)}편 · 사본 포함 제외 확인)"
 print(f"[{NAME}] 항목 {len(items):,}개"); [print(f"  {k}: {v}") for k, v in sorted(stats.items())]
 if a.dry:
     sys.exit(0)
@@ -227,6 +268,7 @@ for sp in ("train", "val"):
     (OUT / "images" / sp).mkdir(parents=True, exist_ok=True); (OUT / "labels" / sp).mkdir(parents=True, exist_ok=True)
 lists = {"train": [], "val": []}
 caps = {}
+_쓴이름 = set()                                  # 같은 프레임을 두 번 쓰지 않는다
 for sp, src, boxes, src_name in items:
     if isinstance(src, tuple):                               # 영상 프레임 → jpg 추출
         mp4, t = src
@@ -247,6 +289,10 @@ for sp, src, boxes, src_name in items:
         jp = OUT / "images" / sp / f"{name}{src.suffix.lower()}"
         if not jp.exists():
             os.symlink(src, jp)
+    if jp.stem in _쓴이름:                              # 검토완료 배경 프레임을 하드네거티브가 다시 뽑는 경우
+        stats["제외:같은 프레임 두 번"] += 1
+        continue
+    _쓴이름.add(jp.stem)
     (OUT / "labels" / sp / f"{jp.stem}.txt").write_text("".join(yolo_line(c, b) + "\n" for c, b in boxes))
     lists[sp].append(str(jp))
 for c in caps.values():
@@ -255,6 +301,6 @@ for sp in ("train", "val"):
     (OUT / f"{sp}.txt").write_text("\n".join(lists[sp]) + "\n")
 (OUT / "data.yaml").write_text(f"path: {OUT}\ntrain: {OUT}/train.txt\nval: {OUT}/val.txt\nnc: {len(NAMES)}\nnames: {NAMES}\n")
 meta = {"name": NAME, "mode": a.mode, "built": time.strftime("%F %T"), "train": len(lists["train"]), "val": len(lists["val"]),
-        "priority": "hand > sam > gt", "excluded": "use!=train, eval rows", "stats": dict(stats), "contract": "configs/datasets.yaml"}
+        "priority": "hand > sam > gt", "excluded": "use!=train, eval rows, eval copies", "sam_anchor": a.sam_anchor, "stats": dict(stats), "contract": "configs/datasets.yaml"}
 (OUT / "meta.json").write_text(json.dumps(meta, ensure_ascii=False, indent=1), encoding="utf-8")
 print(f"완료 → {OUT}  train {len(lists['train']):,} · val {len(lists['val']):,}")
