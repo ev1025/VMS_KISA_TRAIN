@@ -58,13 +58,19 @@ stats = collections.Counter()
 
 # 채점 전용 클립(use: eval). 이름을 바꾼 사본(fall_C00_235_0002 처럼 접두어를 붙인 것)도 같은 편이다.
 # 2026-09-26 감사: KISA_악천후_사람 에 쓰러짐 채점 10편이 fall_ 접두어로 들어 있어 이름 검사(정확히 같은 stem)를 통과했다.
+# 규칙(2026-09-26 결정, B안): 학습하는 항목이 채점되는 편만 거른다. 사람 모델 = 침입·배회 채점편, 방화 모델 = 방화 채점편.
+# 쓰러짐 채점편 사본은 사람 학습에 허용한다(침입·배회 카메라와 안 겹치고, 우리가 가진 유일한 야간 눈 사람 영상이라서).
+# 다만 방화 눈 배경 합성에 카메라 146(방화 채점편 146_0003 과 같은 카메라)은 쓰지 않는다(그쪽 스크립트에서).
 import re as _re
 _EVAL_STEMS = {p.stem for c, cfg in D.all().items() if cfg.get("use") == "eval" for p in (RAW / c).rglob("*.mp4")}
-_EVAL_IDS = {m.group(0) for st in _EVAL_STEMS for m in [_re.search(r"C00_\d+_\d+", st)] if m}
+_SCORED_DIRS = ("침입", "배회") if a.mode == "person" else ("방화",)
+_EVAL_IDS = {m.group(0) for c, cfg in D.all().items() if cfg.get("use") == "eval"
+             for p in (RAW / c).rglob("*.mp4") if any(k in str(p.relative_to(RAW / c)) for k in _SCORED_DIRS)
+             for m in [_re.search(r"C00_\d+_\d+", p.stem)] if m}
 
 
 def eval_copy(stem):
-    """이 클립이 채점편(또는 그 사본)이면 그 편 번호. 아니면 None."""
+    """이 클립이 '이 항목이 채점되는' 채점편(또는 그 사본)이면 그 편 번호. 아니면 None."""
     m = _re.search(r"C00_\d+_\d+", stem)
     return m.group(0) if m and m.group(0) in _EVAL_IDS else None
 
@@ -259,7 +265,7 @@ for cat, cfg in sorted(D.all().items()):
 # 채점 전용 클립(사본 포함): 학습·배경 어느 쪽으로도 절대 안 들어간다
 _leak = [src[0].stem for sp, src, bx, sn in items if isinstance(src, tuple) and (src[0].stem in _EVAL_STEMS or eval_copy(src[0].stem))]
 assert not _leak, f"채점 전용 클립이 학습셋에 들어갔다: {sorted(set(_leak))[:5]}"
-stats["채점클립 검사"] = f"누수 0 (채점 클립 {len(_EVAL_STEMS)}편 · 사본 포함 제외 확인)"
+stats["채점클립 검사"] = f"누수 0 (채점 클립 원본 {len(_EVAL_STEMS)}편 제외 · 이 항목이 채점되는 {len(_EVAL_IDS)}편은 사본까지 제외)"
 print(f"[{NAME}] 항목 {len(items):,}개"); [print(f"  {k}: {v}") for k, v in sorted(stats.items())]
 if a.dry:
     sys.exit(0)
