@@ -68,6 +68,16 @@ def _current(m):
     return all("hnfix" in n for n in names)
 
 
+def local_path(p):
+    """meta 에 적힌 절대 경로(학습 서버 기준)를 이 저장소 기준으로 바꾼다. 서버 B 처럼 옮긴 사본에서도 같은 판을 찾게(2026-09-29)."""
+    p = Path(p or "")
+    if p.is_file():
+        return p
+    s = str(p).replace(chr(92), "/")
+    i = s.find("/runs/")
+    return KP.V / s[i + 1:] if i >= 0 else p
+
+
 def eligible():
     """[(실험, meta)] 끝난 순서 최신 먼저. 조건은 이 파일 머리말."""
     out = []
@@ -76,7 +86,7 @@ def eligible():
             m = json.loads(mj.read_text(encoding="utf-8")) or {}
         except Exception:
             continue
-        pt = Path(m.get("best_pt") or "")
+        pt = local_path(m.get("best_pt"))
         if m.get("status") != "trained" or not m.get("ended") or not pt.is_file():
             continue
         if not str(m.get("model") or "").startswith("yolo"):          # 이어 학습 판은 옛 판 가중치에서 시작한다
@@ -94,7 +104,7 @@ def items_of(m):
 
 
 def weights(m, ckpt):
-    best = Path(m["best_pt"])
+    best = local_path(m["best_pt"])
     return best if ckpt == "best" else best.with_name("last.pt")
 
 

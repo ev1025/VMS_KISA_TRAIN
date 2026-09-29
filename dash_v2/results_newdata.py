@@ -52,9 +52,22 @@ def _item(c):
     return "방화" if c.get("item") == "방화" else "사람"
 
 
+def _info(exp):
+    """results/<실험>/run_info.json: 학습 서버에서 한 번 적어 두는 학습 인자 · 검증셋 · 돈 에폭 요약.
+    runs/ · _exp/ · logs/ 가 없는 사본(서버 B)은 이것을 읽는다(2026-09-29)."""
+    f = G / "results" / exp / "run_info.json"
+    try:
+        return json.loads(f.read_text(encoding="utf-8")) if f.is_file() else None
+    except Exception:
+        return None
+
+
 def _args(exp, e):
     """(학습 인자, 큐에 적힌 값뿐인가). model 은 시작 가중치 이름만(yolo11s = COCO 사전학습)."""
     fs = sorted((G / "runs" / exp).glob("*/args.yaml"))
+    info = _info(exp)
+    if not fs and info:
+        return dict(info["args"]), False
     if fs:
         d = yaml.safe_load(fs[0].read_text(encoding="utf-8")) or {}
         planned = False
@@ -85,6 +98,8 @@ def _val(exp, e):
         v = Path((yaml.safe_load((G / "_exp" / exp / "data.yaml").read_text(encoding="utf-8")) or {}).get("val") or "")
     except Exception:
         pass
+    if (v is None or not v.is_file()) and (_info(exp) or {}).get("val"):
+        return _info(exp)["val"]
     if (v is None or not v.is_file()) and e.get("val_set"):
         v = G / e["val_set"]
     if v is None or not v.is_file():
@@ -126,7 +141,7 @@ def run(exp, E):
                 sc.setdefault(it, {})[ck] = {"tp": o["정검"], "fn": o["미검"], "fp": o["오검"], "f1": o["점수"],
                                              "res": o["res"], "bad": o["bad"]}
     csv = sorted((G / "runs" / exp).glob("*/results.csv"))
-    ep = max(0, len(csv[0].read_text().splitlines()) - 1) if csv else None
+    ep = max(0, len(csv[0].read_text().splitlines()) - 1) if csv else (_info(exp) or {}).get("epochs_run")
     n = meta.get("n_train")
     if not n and (G / "_exp" / exp / "train.txt").is_file():
         with (G / "_exp" / exp / "train.txt").open() as fh:
@@ -141,8 +156,12 @@ def run(exp, E):
         st = "skip"                                                    # 러너가 건너뜀 · 취소 표시로 둔 것
     else:
         st = "queue"
+    val = _val(exp, e)
+    if meta.get("status") == "trained" and not planned and csv and val["key"] and not (G / "results" / exp / "run_info.json").is_file():
+        ri = {"args": args, "val": val, "epochs_run": ep}                  # 학습 서버에서 한 번 적어 둔다(사본은 이것을 읽는다)
+        (G / "results" / exp / "run_info.json").write_text(json.dumps(ri, ensure_ascii=False), encoding="utf-8")
     return {"exp": exp, "item": item, "items": ITEMS[item], "status": st, "new": bool(c) and RC._current(dict(c, item=item)),
-            "data": _data(c), "n_train": n, "args": args, "planned": planned, "epochs_run": ep, "val": _val(exp, e),
+            "data": _data(c), "n_train": n, "args": args, "planned": planned, "epochs_run": ep, "val": val,
             "ended": meta.get("ended"), "scores": sc, "lo": {it: lo_ck(sc, it) for it in ITEMS[item]}}
 
 
@@ -193,8 +212,8 @@ def block(b, R):
 
 
 def build():
-    if not (G / "runs").is_dir():                                    # 라벨 대시보드만 있는 서버(서버 B 등)
-        return {"error": "이 서버에는 학습 결과(runs)가 없습니다. 결과 탭은 학습 서버(서버 A)에서 보세요"}
+    if not (G / "results").is_dir():                                 # 결과 사본이 없는 서버
+        return {"error": "이 서버에는 학습 결과(results)가 없습니다. 결과 탭은 학습 서버(서버 A)에서 보세요"}
     cfg = yaml.safe_load(BLOCKS.read_text(encoding="utf-8")) or {}
     E = _entries()
     names = []
