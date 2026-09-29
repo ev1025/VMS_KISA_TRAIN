@@ -1,0 +1,40 @@
+# 그리드 1단계 나머지(2026-09-30). 계획 방화 판정 뒤 보류 판 + 최대 배치 판. 방화 = 배경 약 28% 레시피(f960_bgtest_bg28 과 같음), 사람 = 배경 10% 셋.
+# 최대 = 절반 판 실측(한 판 약 82 ~ 84GB) x2. best 기준은 그리드 조건 유지를 위해 기본(map5095). 방화 순위는 last · 에폭별 영상 평가로
+# 절반 판 하나: 빈 절반에 바로
+name: grid1c_20260930
+defaults:
+  val_small: 600
+  vram_gate_mib: 10000
+  min_free_gb: 150
+  ram_cache_max: 0
+  stagger_sec: 120
+  util_gate_pct: 30
+  util_window_min: 10
+experiments:
+- name: f640_grid_b360_20260930
+  model: yolo11s
+  item: 방화
+  names:
+  - fire
+  - smoke
+  base: aihub71751_48k
+  extras:
+  - fasdd_snowfog
+  - fasdd_yolo
+  - wildfire_pos_yolo
+  - wildfire_fog_neg
+  - fire_snowbg_흑백불_20260926
+  oversample:
+    handset_fire_hand_20260928: 4
+    fire_mask_hn_fog_20260926: 3
+  extra:
+    patience: 0
+    seed: 0
+  train:
+    multi_scale: 0.0
+    epochs: 60
+    cache: false
+    workers: 8
+    imgsz: 640
+    batch: 360
+  need_mib: 90000

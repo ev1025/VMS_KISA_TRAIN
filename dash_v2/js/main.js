@@ -84,6 +84,20 @@ function nrScore(r) {                            // best / last, 굵게 = 비교
     return `<div><span class="nr-it">${NR_KO[it]}</span>${f("best")} / ${f("last")}</div>`;
   }).join("");
 }
+function nrRule3(r) {                            // 3규칙 F1(초당 2장 · 시작 0, 채점편은 측정만). 규칙은 채점편 밖(연구개발 안 본 편 · 헛불 38편)에서 고른 것
+  const R = r.rule3;
+  if (!R) return nrMut("-");
+  const f1 = s => !s ? "-" : (s[0] ? (200 * s[0] / (2 * s[0] + s[1] + s[2])).toFixed(1) : "0.0");
+  const FAM = { intrusion: ["G", "B", "T", "B+S"], loitering: ["G", "B", "T"], fire: ["B", "T"] };
+  return r.items.map(it => ["best", "last"].map(ck => {
+    const x = (R[ck] || {})[it];
+    if (!x) return "";
+    return `<div><span class="nr-it">${NR_KO[it]} ${ck}</span>` + FAM[it].map(f => {
+      const s = x[f], tip = s ? `정검 ${s[0]} / 미검 ${s[1]} / 오검 ${s[2]}` : (it === "fire" && f === "B" ? "헛불 38편 헛경보 0 인 규칙 없음" : "없음");
+      return `<span title="${tip}">${f} <b>${f1(s)}</b></span>`;
+    }).join(" · ") + "</div>";
+  }).join("")).join("");
+}
 function nrKeys(r, clips) {                      // 방화 변별 편: 비교에 쓴 체크포인트의 편 판정
   if (r.status !== "done") return nrMut("-");
   const bad = ((r.scores.fire || {})[r.lo.fire] || {}).bad || {};
@@ -139,7 +153,7 @@ function nrCond(b, D) {                          // 블록 머리 표
 }
 function nrBlock(b, D, q) {
   const kc = (D.key_clips || {})[b.item];
-  const head = `<tr><th>실험</th><th>조건</th><th>상태</th><th>학습 종료</th><th>F1 best / last<br>${nrMut("굵게 = 비교값")}</th>` +
+  const head = `<tr><th>실험</th><th>조건</th><th>상태</th><th>학습 종료</th><th>F1 best / last<br>${nrMut("굵게 = 비교값")}</th><th>3규칙 F1<br>${nrMut("초당 2장 · 시작 0")}</th>` +
     (kc ? "<th>변별 편</th>" : "") + "<th>대조군과 차이<br>(정검 편수)</th><th>판정</th></tr>";
   const rows = [b.control, ...b.members].map((x, i) => {
     const r = D.runs[x], v = b.verdicts[x];
@@ -148,7 +162,7 @@ function nrBlock(b, D, q) {
       : `<span class="nr-chip wait">${r.status === "train" ? "학습 중" : r.status === "queue" ? "대기" : "채점 대기"}</span>`;
     return `<tr class="${i ? "" : "ctl"}"><td class="nr-exp">${nrEsc(x).replace(/_/g, "_<wbr>")}${i ? "" : '<span class="nr-role">대조군</span>'}${r.new ? "" : '<div class="nr-warn">새 데이터 실험 아님</div>'}</td>` +
       `<td class="nr-chg">${nrChanged(b, r)}</td><td class="nr-st">${nrStatus(r, q)}</td><td class="nr-num">${nrEnded(r, q)}</td>` +
-      `<td class="nr-num">${nrScore(r)}</td>${kc ? `<td>${nrKeys(r, kc)}</td>` : ""}<td class="nr-num">${delta}</td><td>${chip}</td></tr>`;
+      `<td class="nr-num">${nrScore(r)}</td><td class="nr-r3">${nrRule3(r)}</td>${kc ? `<td>${nrKeys(r, kc)}</td>` : ""}<td class="nr-num">${delta}</td><td>${chip}</td></tr>`;
   }).join("");
   const concl = nrArr(b.conclusion);
   const chips = b.members.map(x => { const v = b.verdicts[x], r = D.runs[x];     // 접었을 때도 판정이 보이게
@@ -162,10 +176,10 @@ function nrBlock(b, D, q) {
 function nrOthers(D, q) {                        // 블록에 아직 안 넣은 새 데이터 실험(끝난 것 · 학습 중인 것)
   const rows = D.others.map(x => { const r = D.runs[x];
     return `<tr><td class="nr-exp">${nrEsc(x).replace(/_/g, "_<wbr>")}</td><td>${r.item}</td><td class="nr-num">${nrEsc(r.args.imgsz)} / ${nrEsc(r.args.batch)}</td>` +
-      `<td class="nr-chg"><div class="nr-sub">${r.data.map(nrEsc).join("<br>")}</div></td><td class="nr-st">${nrStatus(r, q)}</td><td class="nr-num">${nrEnded(r, q)}</td><td class="nr-num">${nrScore(r)}</td></tr>`; }).join("");
+      `<td class="nr-chg"><div class="nr-sub">${r.data.map(nrEsc).join("<br>")}</div></td><td class="nr-st">${nrStatus(r, q)}</td><td class="nr-num">${nrEnded(r, q)}</td><td class="nr-num">${nrScore(r)}</td><td class="nr-r3">${nrRule3(r)}</td></tr>`; }).join("");
   return `<details class="nr-block" data-id="_others"${nrOpen.has("_others") ? " open" : ""}><summary class="nr-bt">블록에 없는 새 데이터 실험 ${nrMut(D.others.length + "개")}</summary><div class="nr-body">` +
     `<p class="nr-q">configs/result_blocks.yaml 에 블록 추가 시 위로 이동</p>` +
-    `<div class="nr-tbl"><table><tr><th>실험</th><th>항목</th><th>해상도 / 배치</th><th>학습 데이터</th><th>상태</th><th>학습 종료</th><th>F1 best / last</th></tr>${rows}</table></div></div></details>`;
+    `<div class="nr-tbl"><table><tr><th>실험</th><th>항목</th><th>해상도 / 배치</th><th>학습 데이터</th><th>상태</th><th>학습 종료</th><th>F1 best / last</th><th>3규칙 F1<br>${nrMut("초당 2장 · 시작 0")}</th></tr>${rows}</table></div></div></details>`;
 }
 function nrTerms(T) {                            // 맨 위 '용어 정리'(접힘). 정의는 result_blocks.yaml terms
   if (!T.length) return "";
@@ -173,7 +187,7 @@ function nrTerms(T) {                            // 맨 위 '용어 정리'(접�
   const rows = T.map(t => { const g = t.g === g0 ? "" : (g0 = t.g); return `<tr><td class="nr-mut">${nrEsc(g)}</td><th>${nrEsc(t.t)}</th><td>${nrEsc(t.d)}</td></tr>`; }).join("");
   return `<details class="nr-terms"${nrTerms.open ? " open" : ""}><summary>용어 정리 ${nrMut(T.length + "개")}</summary><div class="nr-tscroll"><table>${rows}</table></div></details>`;
 }
-function nrScore(S) {                            // 항목별 실제로 낼 수 있는 최고 점수(공식 채점) · 그 모델
+function nrScoreCard(S) {                        // 항목별 실제로 낼 수 있는 최고 점수(공식 채점) · 그 모델
   if (!S.length) return "";
   return `<div class="nr-score">` + S.map(s => {
     const has = s.f1 != null, cls = !has ? "" : (s.f1 >= 90 ? " ok" : " bad");
@@ -223,7 +237,7 @@ async function buildResults() {
   try { q = await (await fetch("/api/queue")).json(); } catch (e) {}
   if (CUR.mode !== "results") return;
   if (D.error) { c.innerHTML = `<div class="empty">${nrEsc(D.error)}</div>`; return; }
-  c.innerHTML = `<div class="nr"><div class="nr-top">${nrScore(D.score || [])}<div class="nr-queue" id="nrQ">${nrQueueHtml(q)}</div>` +   // 위에 고정: 항목별 최고 점수 · 큐(항상 펼침) · 용어 정리
+  c.innerHTML = `<div class="nr"><div class="nr-top">${nrScoreCard(D.score || [])}<div class="nr-queue" id="nrQ">${nrQueueHtml(q)}</div>` +   // 위에 고정: 항목별 최고 점수 · 큐(항상 펼침) · 용어 정리
     nrTerms(D.terms || []) + `</div>` +
     D.blocks.map(b => nrBlock(b, D, q)).join("") + (D.others.length ? nrOthers(D, q) : "") + "</div>";
   c.scrollTop = y;

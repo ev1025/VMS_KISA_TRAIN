@@ -25,6 +25,7 @@ if str(G / "scripts") not in sys.path:
 import review_cache as RC  # noqa: E402
 
 BLOCKS = G / "configs/result_blocks.yaml"
+RULE3 = G / "dumps/ruleeval/rule3.json"    # 3규칙(G · B · T) 채점편 결과. 서버 B 초당 표본 수 x 규칙 벌 평가의 rule3_export.py 산출(KISA 파생이라 git 밖)
 ITEMS = {"사람": ["intrusion", "loitering"], "방화": ["fire"]}
 SKIP = {"name", "project", "data", "save_dir", "exist_ok", "resume", "workers", "cache", "device",
         "plots", "verbose", "save", "save_period", "time"}           # 실험 이름 · 경로 · 저장 · 로더(결과와 무관)
@@ -245,8 +246,14 @@ def build():
         if e and str(e.get("model") or "").startswith("yolo") and RC._current(dict(e, item=_item(e))):
             others.append(x)
     R = {x: run(x, E) for x in names + others}
+    try:
+        R3 = json.loads(RULE3.read_text(encoding="utf-8"))
+    except Exception:
+        R3 = {}
+    for x, r in R.items():
+        r["rule3"] = (R3.get("runs") or {}).get(x)
     return {**{k: v for k, v in cfg.items() if k not in ("blocks", "fall_ref")},          # dv · key_clips · terms(용어 풀이) 등은 그대로 넘긴다
-            "blocks": [block(b, R) for b in cfg.get("blocks") or []], "others": others, "runs": R, "score": scorecard(R, cfg)}
+            "blocks": [block(b, R) for b in cfg.get("blocks") or []], "others": others, "runs": R, "score": scorecard(R, cfg), "rule3": {k: R3.get(k) for k in ("made", "rate", "picks")}}
 
 
 if __name__ == "__main__":
