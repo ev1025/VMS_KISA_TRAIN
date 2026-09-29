@@ -287,30 +287,44 @@ def build(K, exp, m, ckpt, item_ko, limit=None, device=None, vids=None, maps=Non
 
 
 # ---------------------------------------------------------------- 작업 PC 채점과 대조(화면 서버도 이것을 import 한다)
-RE_SEC = re.compile(r"^--- (best|last) ---")
+RE_SEC = re.compile(r"^--- (best|last|epoch\d+) ---")
 RE_ITEM = re.compile(r"^(intrusion|loitering|fire) (\d+) \(작업 PC\): 정검 (\d+) 미검 (\d+) 오검 (\d+) → 점수 ([\d.]+)")
+RE_FIRE = re.compile(r"^(fire) (\d+) .*\(작업 PC\): \[fire\] 정검 (\d+) 미검 (\d+) 오검 (\d+) → 점수 ([\d.]+)")   # 방화 score_pc.txt 꼴
 RE_BAD = re.compile(r"(C00_\d+_\d+) \? (미검|오검)\(gt=([\d.]+|None) sa=([\d.]+|None)\)")
+RE_CLIP = re.compile(r"^클립 (C00_\d+_\d+): (미검|오검)")                  # 방화 score_pc.txt 는 편마다 한 줄
 
 
 def official(exp):
-    """results/<실험>/score.txt 의 작업 PC 채점. {ckpt: {item: {"점수", "정검", "미검", "오검", "bad": {클립: 판정}}}}"""
-    f = KP.V / "results" / exp / "score.txt"
-    out, ck, it = {}, None, None
-    if not f.is_file():
-        return out
-    for ln in f.read_text(encoding="utf-8", errors="replace").splitlines():
-        m = RE_SEC.match(ln.strip())
-        if m:
-            ck = m.group(1); out.setdefault(ck, {}); continue
-        m = RE_ITEM.match(ln.strip())
-        if m and ck:
-            it = m.group(1)
-            out[ck][it] = {"res": int(m.group(2)), "정검": int(m.group(3)), "미검": int(m.group(4)),
-                           "오검": int(m.group(5)), "점수": float(m.group(6)), "bad": {}}
+    """작업 PC 채점. {ckpt: {item: {"res", "점수", "정검", "미검", "오검", "bad": {클립: 판정}}}}
+    사람 = results/<실험>/score.txt, 방화 = score_pc.txt(감시가 서버 채점과 안 겹치게 따로 쓴다. 09-29 부터 읽음).
+    방화 파일의 epochN 절(에폭별 곡선)은 뺀다."""
+    out = {}
+    for name in ("score.txt", "score_pc.txt"):
+        f = KP.V / "results" / exp / name
+        if not f.is_file():
             continue
-        if ck and it and "틀린 편" in ln:
-            for c, v, _g, _s in RE_BAD.findall(ln):
-                out[ck][it]["bad"][c] = v
+        ck = it = None
+        for ln in f.read_text(encoding="utf-8", errors="replace").splitlines():
+            s = ln.strip()
+            m = RE_SEC.match(s)
+            if m:
+                ck, it = (m.group(1) if m.group(1) in CKPTS else None), None
+                if ck:
+                    out.setdefault(ck, {})
+                continue
+            m = RE_ITEM.match(s) or RE_FIRE.match(s)
+            if m and ck:
+                it = m.group(1)
+                out[ck][it] = {"res": int(m.group(2)), "정검": int(m.group(3)), "미검": int(m.group(4)),
+                               "오검": int(m.group(5)), "점수": float(m.group(6)), "bad": {}}
+                continue
+            if ck and it:
+                if "틀린 편" in ln:
+                    for c, v, _g, _s in RE_BAD.findall(ln):
+                        out[ck][it]["bad"][c] = v
+                m = RE_CLIP.match(s)
+                if m:
+                    out[ck][it]["bad"][m.group(1)] = m.group(2)
     return out
 
 
