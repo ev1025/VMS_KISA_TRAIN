@@ -113,6 +113,48 @@ video{width:100%;aspect-ratio:16/9;object-fit:fill;display:block;background:#000
 :hover::-webkit-scrollbar-thumb{background:#8b949e55;background-clip:content-box}
 ::-webkit-scrollbar-thumb:hover{background:#8b949eaa;background-clip:content-box}
 ::-webkit-scrollbar-corner{background:transparent}
+/* 결과 탭(2026-09-29 재설계, main.js buildResults): 비교 블록 = 조건표(독립 · 종속 · 통제변수) + 실험 표 */
+.nr{padding:18px 22px 40px;max-width:1240px;margin:0 auto;width:100%;display:flex;flex-direction:column;gap:14px}
+.nr-head{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.nr-btn{margin-left:auto;background:var(--panel);color:var(--tx);border:1px solid var(--line);border-radius:var(--r);padding:0 12px;height:var(--ctl-h);font-size:var(--fs-xs);font-weight:700;cursor:pointer}
+.nr-mut{color:var(--mut)}.nr-ok{color:var(--ok)}.nr-warn{color:var(--miss);font-size:var(--fs-2xs);font-family:-apple-system,"Segoe UI",sans-serif}
+.nr-terms{background:var(--panel);border:1px solid var(--line);border-radius:var(--r-lg);padding:8px 12px;font-size:var(--fs-xs)}
+.nr-terms summary{cursor:pointer;font-weight:700}
+.nr-terms table{border-collapse:collapse;width:100%;margin-top:8px}
+.nr-terms th,.nr-terms td{padding:4px 12px 4px 0;text-align:left;vertical-align:top;border-top:1px solid var(--line);line-height:1.6}
+.nr-terms th{font-family:ui-monospace,Menlo,monospace;white-space:nowrap;font-weight:700;color:var(--tx)}
+.nr-terms td:first-child{white-space:nowrap;width:1%}
+.nr-block{background:var(--panel);border:1px solid var(--line);border-radius:var(--r-lg);padding:14px;display:flex;flex-direction:column;gap:8px;min-width:0}
+.nr-bt{margin:0;font-size:var(--fs-lg)}
+.nr-ul{margin:0;padding-left:16px}.nr-ul li{margin:1px 0}.nr-ul li::marker{color:var(--mut)}
+.nr-q{margin:0;color:var(--mut);font-size:var(--fs-sm)}.nr-q b{color:var(--tx)}
+.nr-cond{border-collapse:collapse;width:100%;font-size:var(--fs-xs);background:var(--bg);border:1px solid var(--line);border-radius:var(--r)}
+.nr-cond th{width:132px;text-align:left;vertical-align:top;color:var(--mut);font-weight:700;padding:6px 10px;white-space:nowrap}
+.nr-cond td{padding:6px 10px 6px 0;line-height:1.6}
+.nr-cond tr+tr th,.nr-cond tr+tr td{border-top:1px solid var(--line)}
+.nr-cond tr.warn th,.nr-cond tr.warn td{color:var(--miss)}
+.nr-code{font-family:ui-monospace,Menlo,monospace;font-size:var(--fs-2xs);overflow-wrap:anywhere}
+.nr-tbl{overflow-x:auto;border:1px solid var(--line);border-radius:var(--r)}
+.nr-tbl table{border-collapse:collapse;width:100%;font-size:var(--fs-sm)}
+.nr-tbl th{background:var(--panel2);color:var(--mut);font-weight:600;font-size:var(--fs-xs);text-align:left;padding:6px 10px}
+.nr-tbl td{padding:7px 10px;border-top:1px solid var(--line);vertical-align:top}
+.nr-tbl tr.ctl td{background:#58a6ff0d}
+.nr-exp{font-family:ui-monospace,Menlo,monospace;font-size:var(--fs-xs);min-width:150px}
+.nr-role{display:block;color:var(--blue);font-size:var(--fs-2xs);font-family:-apple-system,"Segoe UI",sans-serif}
+.nr-chg{min-width:210px}.nr-sub{color:var(--mut);font-size:var(--fs-2xs);font-family:ui-monospace,Menlo,monospace;overflow-wrap:anywhere;margin-top:2px}
+.nr-st{min-width:110px}
+.nr-num{font-variant-numeric:tabular-nums;white-space:nowrap}
+.nr-it{color:var(--mut);font-size:var(--fs-2xs);margin-right:4px}
+.nr-lo{font-weight:800;color:var(--tx)}.nr-hi{color:var(--mut)}
+.nr-pbar{display:inline-flex;align-items:center;gap:6px;white-space:nowrap}
+.nr-pbar i{display:block;width:70px;height:6px;background:var(--panel2);border-radius:3px;overflow:hidden}.nr-pbar b{display:block;height:100%;background:var(--blue)}
+.nr-chip{display:inline-block;border-radius:999px;padding:1px 9px;font-size:var(--fs-xs);font-weight:700;border:1px solid var(--line);white-space:nowrap}
+.nr-chip.win{color:var(--ok);border-color:#3fb95066;background:#3fb95022}.nr-chip.lose{color:var(--bad);border-color:#f8514966;background:#f8514922}
+.nr-chip.tie{color:var(--mut)}.nr-chip.wait{color:var(--blue);border-color:#58a6ff55;background:#58a6ff18}
+.nr-keys{display:inline-grid;grid-template-columns:repeat(2,auto);gap:3px}.nr-keys span{font-size:var(--fs-2xs);font-weight:700;padding:1px 5px;border-radius:var(--r-sm);white-space:nowrap}
+.nr-keys .ok{color:var(--ok);background:#3fb95018}.nr-keys .miss{color:var(--miss);background:#d2992222}.nr-keys .bad{color:var(--bad);background:#f8514922}
+.nr-note{font-size:var(--fs-xs);color:var(--mut);border-left:2px solid var(--line);padding-left:8px}.nr-note b{color:var(--tx)}.nr-note .nr-ul{margin-top:2px}
+.nr-log{font-size:var(--fs-xs);color:var(--mut)}.nr-log summary{cursor:pointer}.nr-log div{font-family:ui-monospace,Menlo,monospace;white-space:pre-wrap}
 </style></head><body>
 <div class="top">
  <div class="brand" title="처음 화면으로" style="cursor:pointer" onclick="try{localStorage.removeItem('kisa_last_view')}catch(e){};location.href='/'">KISA 검수</div>

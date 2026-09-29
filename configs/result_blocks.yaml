@@ -1,0 +1,153 @@
+# 결과 탭 비교 블록(2026-09-29). 화면 = 대시보드 결과 탭, 계산 = dash_v2/results_newdata.py(/api/result_blocks)
+# 블록 = 대조군 하나 + 독립변수 하나만 다른 실험들. 여기엔 사람이 정하는 것만 적는다.
+#   question 목적 · iv 독립변수(목록) · rule_extra 판정 기준 추가(목록) · vary 실험마다 달라도 되는 설정 · control 대조군 · runs 실험별 조건 · same_data 통제 데이터 · conclusion 결론(목록) · note 참고(목록)
+# 점수 · 학습 인자 · 검증셋 · 장수 · 진행은 화면 서버가 파일에서 읽는다(여기 옮겨 적지 않는다). vary 밖 설정이 다르면 화면에 '교란 변수' 로 뜬다.
+# vary 에 쓰는 이름: data(학습 데이터 구성) · val(검증셋) · args.yaml 인자 이름(imgsz · batch · epochs · seed · patience · multi_scale · scale 등)
+# 실험을 새로 걸면 여기에 블록을 더한다. 블록에 없는 새 데이터 실험은 화면 맨 아래 표에 저절로 나온다.
+# 화면 문구 규칙(09-29 사용자 교정안): 명사형 종결 · 긴 괄호 부연 금지 · 가운데 점 나열 대신 줄마다 불릿(목록으로 적는다)
+dv:
+  사람: ["침입 30편, 배회 30편", 정검 수 및 F1 Score (작업 PC 학습 해상도 기준)]
+  방화: [방화 10편, 정검 수 및 F1 Score (작업 PC 학습 해상도 기준), "변별 편 4개 판정 (089, 195, 216, 272)"]
+rule:
+  사람: ["채택 지표: best와 last 중 낮은 F1 Score", "동률 조건: 대조군과 정검 수(침입+배회) 차이 2편 미만"]
+  방화: ["채택 지표: best와 last 중 낮은 F1 Score", "동률 조건: 대조군과 정검 수 차이 2편 미만"]
+key_clips:
+  방화: [C00_089_0001, C00_195_0001, C00_216_0003, C00_272_0003]
+terms:                                   # 화면 맨 위 '용어 정리'(접힘). g = 묶음
+- {g: 실험 이름, t: "p, f", d: "실험 이름 첫 글자. p = 사람 탐지 모델, f = 방화 탐지 모델"}
+- {g: 실험 이름, t: "1280, 960, 640", d: "학습 해상도 (긴 변 픽셀), 채점 해상도 동일"}
+- {g: 실험 이름, t: "b85, b160, b170, b360", d: "배치 크기 (한 번에 학습하는 사진 수)"}
+- {g: 실험 이름, t: grid, d: "09-28 재실험 그리드 (한 번에 한 가지씩 변경)"}
+- {g: 실험 이름, t: hnfix, d: "09-27 사람 라벨 정정본. 하드네거티브 교체, '객체 없음' 정리, 채점편 사본 · SAM 표류 · 부분 박스 제외"}
+- {g: 실험 이름, t: full, d: "hnfix 전체 (눈 영상 7편 포함)"}
+- {g: 실험 이름, t: night, d: "hnfix 에서 눈 영상 7편 제외. 옛 레시피 이름 유지, 야간 의미 아님"}
+- {g: 실험 이름, t: x2, d: "KISA 영상 프레임 2배 반복"}
+- {g: 실험 이름, t: "bg10, bg28", d: "배경(빈 사진) 비율 10%, 약 28%"}
+- {g: 실험 이름, t: bgtest, d: "배경 비율 실험"}
+- {g: 실험 이름, t: rep, d: "동일 설정 반복 실험 (시드만 변경)"}
+- {g: 실험 이름, t: nokisa, d: "KISA 영상 유래 데이터 제외"}
+- {g: 실험 이름, t: 끝 8자리 날짜, d: "실험 · 데이터셋 생성일 (20260928 = 09-28)"}
+- {g: 데이터, t: trainset_person_…, d: "사람 학습셋. full, bg10, nokisa 는 위와 같은 의미"}
+- {g: 데이터, t: person_hnfix_kisa, d: "hnfix 중 KISA 영상 양성 프레임만 (비중 증가용)"}
+- {g: 데이터, t: "mask, hn", d: "mask = 확인 라벨 + 미확인 SAM 전파 라벨, hn = 하드네거티브(오경보 유발 장면) 포함"}
+- {g: 데이터, t: handset_fire_hand, d: "KISA 방화 영상 손라벨 스냅샷"}
+- {g: 데이터, t: fire_mask_hn_fog, d: "방화 mask_hn 셋에 안개 합성"}
+- {g: 데이터, t: fire_snowbg_흑백불, d: "눈 배경에 흑백 불 합성"}
+- {g: 데이터, t: aihub71751_48k, d: "AI허브 71751 화재 영상, 클립당 12프레임, 48k장. _pos = 빈 사진 제외"}
+- {g: 데이터, t: "fasdd, wildfire", d: "공개 화재 데이터셋 (FASDD, 산불). snowfog = 눈 · 안개 장면, fog_neg = 안개 배경 (헛불 억제용)"}
+- {g: 채점 · 학습, t: "best, last", d: "best = 검증 점수 최고 에폭 가중치, last = 마지막 에폭 가중치"}
+- {g: 채점 · 학습, t: "정검, 미검, 오검", d: "정검 = 정답 구간 내 경보, 미검 = 경보 없음, 오검 = 구간 밖 경보"}
+- {g: 채점 · 학습, t: 변별 편, d: "방화 10편 중 실험마다 결과가 갈리는 4편 (089 야간 헛불, 195 안개, 216 주간 눈, 272 야간 눈)"}
+- {g: 채점 · 학습, t: 자체 CCTV 검증셋, d: "미학습 자체 CCTV 프레임 검증셋, best 선택 전용 (val_domain)"}
+- {g: 채점 · 학습, t: 학습 목록 600장, d: "학습 목록 무작위 600장 검증셋, 학습과 겹침. 자체 영상 부족 시 러너가 대체 (val_small)"}
+- {g: 채점 · 학습, t: Patience, d: "검증 점수 정체 시 조기 종료까지 대기 에폭. 0 = 끝까지 학습"}
+- {g: 채점 · 학습, t: MuSGD, d: "optimizer=auto 일 때 ultralytics 가 선택한 최적화기"}
+blocks:
+- id: grid1_res_batch
+  date: 09-29
+  title: 사람 탐지 모델 해상도 및 배치 크기 실험
+  question: 해상도 하향 및 배치 크기 증가에 따른 성능 개선 여부 확인
+  iv: ["학습 해상도 (1280, 960, 640)", 배치 크기]
+  vary: [imgsz, batch]
+  control: p1280_grid_b85_bg10_20260928
+  runs:
+    p1280_grid_b85_bg10_20260928: 해상도 1280, 배치 85
+    p960_grid_b160_bg10_20260929: 해상도 960, 배치 160
+    p640_grid_b360_bg10_20260929: 해상도 640, 배치 360
+    p1280_grid_b170_bg10_20260929: 해상도 1280, 배치 170
+  same_data: 사람 배경 10% 셋
+- id: nokisa_person
+  date: 09-29
+  title: 사람 탐지 모델 KISA 영상 제외 실험
+  question: KISA 영상 제외 시 성능 하락 폭 확인
+  iv: [KISA 영상 프레임 포함 여부]
+  rule_extra: ["해석: 하락 2편 이내면 KISA 기여 작음"]
+  vary: [data]
+  control: p1280_grid_b85_bg10_20260928
+  runs:
+    p1280_grid_b85_bg10_20260928: 포함
+    p1280_grid_b85_bg10_nokisa_20260929: 제외
+  same_data: 사람 배경 10% 셋
+- id: nokisa_fire
+  date: 09-29
+  title: 방화 탐지 모델 KISA 영상 제외 실험
+  question: KISA 유래 데이터 제외 시 성능 하락 폭 확인
+  iv: [KISA 유래 데이터 포함 여부, "대상: 손라벨 ×4, 안개 합성 ×3, 눈 배경 합성"]
+  vary: [data]
+  control: f960_bgtest_bg28_b160_20260928
+  runs:
+    f960_bgtest_bg28_b160_20260928: 포함
+    f960_bgtest_bg28_nokisa_b160_20260929: 제외
+  same_data: 공개 데이터 (AI허브 48k, FASDD, 산불)
+  note: ["검증셋 변경: 제외 실험은 학습 목록 600장으로 대체", "공정 비교: last 기준 권장"]
+- id: bg_person
+  date: 09-28
+  title: 사람 탐지 모델 배경 비율 실험 (눈 영상 포함 셋)
+  question: 배경(빈 사진) 10% 축소에 따른 성능 개선 여부 확인
+  iv: ["배경(빈 사진) 비율 (41%, 10%)"]
+  vary: [data]
+  control: p1280_grid_b85_20260928
+  runs:
+    p1280_grid_b85_20260928: 배경 41%
+    p1280_grid_b85_bg10_20260928: 배경 10%
+  same_data: 09-27 사람 손라벨 전체 셋 (눈 영상 7편 포함)
+  conclusion: ["동률 → 배경 10% 셋을 사람 기본 셋으로 채택"]
+  note: ["KISA 영상 비중 동반 상승: 10.8% → 16.5%", "배경 효과와 비중 효과 혼재"]
+- id: bg_fire
+  date: 09-28
+  title: 방화 탐지 모델 배경 비율 실험
+  question: 배경(빈 사진) 11% 축소에 따른 성능 개선 여부 확인
+  iv: ["배경(빈 사진) 비율 (약 28%, 약 11%)"]
+  vary: [data]
+  control: f960_bgtest_bg28_b160_20260928
+  runs:
+    f960_bgtest_bg28_b160_20260928: 배경 약 28%
+    f960_bgtest_bg10_b160_20260928: 배경 약 11%
+  same_data: 헛불 억제 셋, KISA 손라벨 및 합성 셋
+  conclusion: ["개선 없음 → 배경 28% 유지", "두 실험 모두 합격선(90) 미달 → 원인 조사 우선"]
+- id: hnfix_snow
+  date: 09-27
+  title: 사람 탐지 모델 눈 영상 포함 실험
+  question: 눈 오는 KISA 영상 7편 추가에 따른 성능 개선 여부 확인
+  iv: [눈 영상 7편 포함 여부]
+  vary: [data]
+  control: p1280_hnfix_full_20260927
+  runs:
+    p1280_hnfix_full_20260927: 포함
+    p1280_hnfix_night_20260927: 제외
+  same_data: 09-27 사람 손라벨 고정본 (hnfix)
+- id: hnfix_kisa_x2
+  date: 09-27
+  title: 사람 탐지 모델 KISA 영상 비중 실험
+  question: KISA 영상 프레임 2배 반복에 따른 성능 개선 여부 확인
+  iv: ["KISA 영상 프레임 반복 횟수 (1배, 2배)", "Epoch: 총 학습 장수 맞춤 (1배 60, 2배 54)"]
+  vary: [data, epochs]
+  control: p1280_hnfix_night_20260927
+  runs:
+    p1280_hnfix_night_20260927: 1배, 60에폭
+    p1280_hnfix_x2_20260927: 2배, 54에폭
+  same_data: 09-27 사람 손라벨 셋 (눈 영상 7편 제외)
+- id: hnfix_bg10
+  date: 09-27
+  title: 사람 탐지 모델 배경 비율 실험 (눈 영상 제외 셋)
+  question: 배경(빈 사진) 10% 축소에 따른 성능 개선 여부 확인
+  iv: ["배경(빈 사진) 비율 (41%, 10%)"]
+  vary: [data]
+  control: p1280_hnfix_night_20260927
+  runs:
+    p1280_hnfix_night_20260927: 배경 41%
+    p1280_hnfix_bg10_20260927: 배경 10%
+  same_data: 09-27 사람 손라벨 셋 (눈 영상 7편 제외)
+  note: ["자체 영상 비중 동반 상승: 9.7% → 15.9%", "배경 효과와 비중 효과 혼재"]
+- id: hnfix_seed
+  date: 09-27
+  title: 사람 탐지 모델 반복 실험 (시드만 변경)
+  question: 동일 설정 반복 시 결과 편차(잡음) 크기 확인
+  iv: ["시드 (0, 1)"]
+  vary: [seed]
+  control: p1280_hnfix_bg10_20260927
+  runs:
+    p1280_hnfix_bg10_20260927: 시드 0
+    p1280_hnfix_bg10rep_20260927: 시드 1
+  same_data: 09-27 배경 10% 셋
+  conclusion: ["best 기준 침입 94.92 vs 86.21, 3편 차이", "실험 간 2~3편 차이는 잡음 가능성"]

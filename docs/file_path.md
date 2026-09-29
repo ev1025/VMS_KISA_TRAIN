@@ -42,7 +42,7 @@ KP.DEFAULT_IMGSZ    # 기본 입력 크기 (640)
 | `scripts/` | 파이프라인 스크립트 | 새 스크립트는 이곳에 생성 (루트 생성 금지) |
 | `scripts/_archive/<날짜>/` | 일회성·탐색 스크립트 보관 | 삭제 대신 이곳으로 이동 |
 | `scripts/data_prep/` | 데이터 준비 단계 스크립트 |  |
-| `configs/` | 큐 yaml, 데이터 계약(`datasets.yaml`) |  |
+| `configs/` | 큐 yaml, 데이터 계약(`datasets.yaml`), 결과 탭 비교 블록(`result_blocks.yaml`) |  |
 | `dash_v2/` | 대시보드 서버 및 프론트엔드 | 로그/데이터 파일 보관 금지 |
 | `docs/` | 프로젝트 문서 |  |
 | `data/원본데이터/` | 원본 (읽기 전용) | 삭제 및 덮어쓰기 절대 금지 |

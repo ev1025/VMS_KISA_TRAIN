@@ -2083,6 +2083,13 @@ class H(BaseHTTPRequestHandler):
             except Exception:
                 pass
             self._bytes(json.dumps(q, ensure_ascii=False).encode(), "application/json; charset=utf-8"); return
+        if p == "/api/result_blocks":             # 결과 탭(2026-09-29 재설계): 새 데이터 판 비교 블록. 계산은 dash_v2/results_newdata.py
+            try:
+                import results_newdata as _RN
+                body = _RN.build()
+            except Exception as ex:
+                body = {"error": f"{type(ex).__name__}: {ex}"}
+            self._bytes(json.dumps(body, ensure_ascii=False).encode(), "application/json; charset=utf-8"); return
         if p == "/api/results":
             out = []
             # 항목 → 그 항목이 쓰는 가중치의 계보(results/MODELS.json). 라이브 SA 채점 로그에는

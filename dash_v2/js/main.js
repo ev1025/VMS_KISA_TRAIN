@@ -40,271 +40,149 @@ function applyMode() {
 }
 // ---------- 부트 ----------
 
-function dedupResults(data) {
-  const SUMMARY = /^(KISA_SCORES|NIGHT_SUMMARY|FOG_SUMMARY)$/;   // 실험이 아니라 요약 파일
-  data = data.filter(d => !SUMMARY.test(d.name));
-  const rank = d => { const m = d.meta || {}; return (m.model ? 4 : 0) + (m.kind === "live_sa" ? 2 : m.kind === "archive" ? 0 : 3) + (d.clips && Object.keys(d.clips).length ? 1 : 0); };   // 대표 우선순위(러너 메타 > 라이브 > 보관, 클립 있으면 가점)
-  const g = {};
-  data.forEach(d => { const k = d.item + "|" + d.name; (g[k] || (g[k] = [])).push(d); });   // 같은 실험의 중복 기록만 합친다(점수가 같다고 합치면 구성 비교가 깨진다)
-  return Object.values(g).map(list => {
-    list.sort((a, b) => rank(b) - rank(a) || b.mtime - a.mtime);
-    const rep = list[0];
-    rep._members = [...new Set(list.map(d => d.name))];   // 같은 실험의 중복 기록(러너 메타·라이브 로그·보관본)
-    if (!(rep.clips && Object.keys(rep.clips).length)) { const c = list.find(d => d.clips && Object.keys(d.clips).length); if (c) rep.clips = c.clips; }
-    if (!(rep.rules && rep.rules.length > 1)) { const r = list.find(d => d.rules && d.rules.length > 1); if (r) rep.rules = r.rules; }
-    return rep;
+// ---------- 결과 탭(2026-09-29 재설계): 새 데이터 실험만, 비교 블록으로 ----------
+// 블록 = 대조군 하나 + 독립변수 하나만 다른 실험들. 정의는 configs/result_blocks.yaml, 계산은 dash_v2/results_newdata.py(/api/result_blocks).
+// 블록 머리 표 = 독립변수 · 종속변수 · 판정 기준 · 통제변수(데이터 / 학습 설정, 실제 args.yaml 로 대조) · 교란 변수 · 참고. 진행 · 예상 종료는 /api/queue 를 합친다.
+// 문구 규칙(09-29 사용자 교정안): 명사형 종결, 긴 괄호 부연 금지, 가운데 점 나열 대신 줄마다 불릿.
+const NR_KO = { intrusion: "침입", loitering: "배회", fire: "방화" };
+const nrEsc = s => String(s == null ? "" : s).replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+const nrFmt = v => Array.isArray(v) ? (v.length ? v.join(", ") : "없음") : String(v);
+const nrMut = s => `<span class="nr-mut">${s}</span>`;
+const nrList = a => (a || []).length ? `<ul class="nr-ul">${a.map(x => `<li>${x}</li>`).join("")}</ul>` : nrMut("-");
+const nrArr = v => v == null ? [] : Array.isArray(v) ? v : [v];
+function nrJob(q, exp) { return (q.jobs || []).find(j => j.name === exp); }
+function nrStatus(r, q) {                        // 상태만(날짜는 '학습 종료' 칸)
+  if (r.status === "done") return '<span class="nr-ok">채점 완료</span>';
+  if (r.status === "scoring") return "채점 대기";
+  if (r.status === "train") {
+    const j = nrJob(q, r.exp), ep = j && j.epoch != null ? j.epoch : r.epochs_run, n = (j && j.epochs) || r.args.epochs || 60;
+    return `<span class="nr-pbar"><i><b style="width:${Math.round(ep / n * 100)}%"></b></i>${ep}/${n} 에폭</span>` +
+      ((q.running || []).includes(r.exp) ? "" : nrMut(" 러너에 없음"));
+  }
+  if (r.status === "queue") return nrMut("대기");
+  if (r.status === "skip") return nrMut("건너뜀");
+  return nrMut(nrEsc(r.status));
+}
+function nrEnded(r, q) {                         // 학습 종료 시각(KST). 학습 중이면 러너의 예상 시각
+  if (r.ended) return nrEsc(r.ended.slice(5, 16));
+  const j = nrJob(q, r.exp);
+  return j && j.finish_kst ? nrMut("예상 " + nrEsc(j.finish_kst)) : nrMut("-");
+}
+function nrScore(r) {                            // best / last, 굵게 = 비교에 쓴 값(낮은 쪽)
+  if (r.status !== "done") return nrMut("-");
+  return r.items.map(it => {
+    const s = r.scores[it] || {}, f = ck => s[ck] ? `<span class="${ck === r.lo[it] ? "nr-lo" : "nr-hi"}" title="정검 ${s[ck].tp} / 미검 ${s[ck].fn} / 오검 ${s[ck].fp}">${s[ck].f1.toFixed(2)}</span>` : "-";
+    return `<div><span class="nr-it">${NR_KO[it]}</span>${f("best")} / ${f("last")}</div>`;
+  }).join("");
+}
+function nrKeys(r, clips) {                      // 방화 변별 편: 비교에 쓴 체크포인트의 편 판정
+  if (r.status !== "done") return nrMut("-");
+  const bad = ((r.scores.fire || {})[r.lo.fire] || {}).bad || {};
+  return '<span class="nr-keys">' + clips.map(c => {
+    const v = bad[c], k = v === "미검" ? "miss" : v === "오검" ? "bad" : "ok";
+    return `<span class="${k}" title="${c} ${v || "정검"}">${c.slice(4, 7)} ${v ? v[0] : "정"}</span>`;
+  }).join("") + "</span>";
+}
+function nrChanged(b, r) {                       // 조건 = 블록에 적은 값 + 파일에서 읽은 실제 데이터(이름 한 줄씩, 총 장수)
+  const lab = b.labels[r.exp] || "";
+  const sub = [];
+  b.diffs.filter(d => d.declared).forEach(d => {
+    const v = d.values[r.exp];
+    if (d.key === "data") { (v.length ? v : ["추가 데이터 없음"]).forEach(x => sub.push(nrEsc(x))); if (r.n_train) sub.push(`총 ${r.n_train.toLocaleString()}장`); }
+    else if (!lab.includes(nrFmt(v))) sub.push(`${d.label} ${nrEsc(nrFmt(v))}`);   // 조건 문구에 이미 있는 값은 다시 안 쓴다
   });
+  return `<b>${nrEsc(lab)}</b>` + (sub.length ? `<div class="nr-sub">${sub.join("<br>")}</div>` : "");
+}
+function nrTrain(T, rest) {                      // 통제변수 · 학습 설정 불릿
+  const out = [];
+  if ("model" in T) out.push(`모델: ${nrEsc(String(T.model).replace(/^yolo/i, "YOLO"))} (COCO 사전학습)`);
+  const P = [["imgsz", "해상도"], ["batch", "배치"], ["epochs", "Epoch"], ["patience", "Patience"], ["seed", "Seed"], ["multi_scale", "Multi_scale"]]
+    .filter(([k]) => k in T).map(([k, l]) => `${l} ${nrEsc(nrFmt(T[k]))}`);
+  if (P.length) out.push("파라미터: " + P.join(" / "));
+  if ("optimizer" in T) out.push("Optimizer: " + nrEsc(T.optimizer));
+  if (rest) out.push(`기타 학습 인자: ${rest}개 동일`);
+  return out;
+}
+function nrCond(b, D) {                          // 블록 머리 표
+  const s = b.same, name = x => nrEsc(b.labels[x] || x), code = a => `<span class="nr-code">${a.map(nrEsc).join("<br>")}</span>`;
+  const data = [];
+  if (s.data_all) data.push(s.data.length === 1 ? `학습셋: ${nrEsc(b.same_data || "")} (${nrEsc(s.data[0])})` : `학습셋: ${nrEsc(b.same_data || "")}<br>${code(s.data)}`);
+  else {
+    if (b.same_data) data.push(`학습셋: ${nrEsc(b.same_data)}`);
+    if (s.data.length) data.push(`공통 데이터:<br>${code(s.data)}`);
+  }
+  if (s.val) data.push(`검증셋: ${nrEsc(s.val.text)} (best 선택용, ${nrEsc(s.val.note)})`);
+  const rows = [
+    ["독립변수", nrList(nrArr(b.iv).map(nrEsc))],
+    ["종속변수", nrList(nrArr((D.dv || {})[b.item]).map(nrEsc))],
+    ["판정 기준", nrList([...nrArr((D.rule || {})[b.item]), ...nrArr(b.rule_extra)].map(nrEsc))],
+    ["통제변수 · 데이터", nrList(data)],
+    ["통제변수 · 학습 설정", nrList(nrTrain(Object.fromEntries(s.train), s.rest))],
+  ];
+  b.diffs.filter(d => !d.declared).forEach(d => {
+    const vals = Object.entries(d.values).map(([x, v]) => `${name(x)}: ${nrEsc(nrFmt(v))}`);
+    rows.push([(d.harmless ? "차이 · " : "교란 변수 · ") + d.label, nrList(d.harmless ? [...vals, "영향 없음: " + nrEsc(d.harmless)] : vals), d.harmless ? "" : "warn"]);
+  });
+  const ref = nrArr(b.note).map(nrEsc);
+  if (b.planned) ref.push("대기 중 실험: 큐(Queue) 설정값 기준", "학습 시작 시: 실제 인자 기준으로 재비교");
+  if (ref.length) rows.push(["참고", nrList(ref)]);
+  return '<table class="nr-cond">' + rows.map(([k, v, c]) => `<tr class="${c || ""}"><th>${k}</th><td>${v}</td></tr>`).join("") + "</table>";
+}
+function nrBlock(b, D, q) {
+  const kc = (D.key_clips || {})[b.item];
+  const head = `<tr><th>실험</th><th>조건</th><th>상태</th><th>학습 종료</th><th>F1 best / last<br>${nrMut("굵게 = 비교값")}</th>` +
+    (kc ? "<th>변별 편</th>" : "") + "<th>대조군과 차이<br>(정검 편수)</th><th>판정</th></tr>";
+  const rows = [b.control, ...b.members].map((x, i) => {
+    const r = D.runs[x], v = b.verdicts[x];
+    const delta = !i ? nrMut("-") : v ? Object.entries(v.delta).map(([it, d]) => `<div><span class="nr-it">${NR_KO[it]}</span>${d > 0 ? "+" : ""}${d}</div>`).join("") : nrMut("-");
+    const chip = !i ? "" : v ? `<span class="nr-chip ${v.call === "동률" ? "tie" : v.call === "개선" ? "win" : "lose"}">${v.call}</span>`
+      : `<span class="nr-chip wait">${r.status === "train" ? "학습 중" : r.status === "queue" ? "대기" : "채점 대기"}</span>`;
+    return `<tr class="${i ? "" : "ctl"}"><td class="nr-exp">${nrEsc(x).replace(/_/g, "_<wbr>")}${i ? "" : '<span class="nr-role">대조군</span>'}${r.new ? "" : '<div class="nr-warn">새 데이터 실험 아님</div>'}</td>` +
+      `<td class="nr-chg">${nrChanged(b, r)}</td><td class="nr-st">${nrStatus(r, q)}</td><td class="nr-num">${nrEnded(r, q)}</td>` +
+      `<td class="nr-num">${nrScore(r)}</td>${kc ? `<td>${nrKeys(r, kc)}</td>` : ""}<td class="nr-num">${delta}</td><td>${chip}</td></tr>`;
+  }).join("");
+  const concl = nrArr(b.conclusion);
+  return `<section class="nr-block"><h3 class="nr-bt">${nrEsc(b.date ? `[${b.date}] ` : "")}${nrEsc(b.title)}</h3>` +
+    (b.question ? `<p class="nr-q"><b>목적:</b> ${nrEsc(b.question)}</p>` : "") + nrCond(b, D) +
+    `<div class="nr-tbl"><table>${head}${rows}</table></div>` +
+    (concl.length ? `<div class="nr-note"><b>결론</b>${nrList(concl.map(nrEsc))}</div>` : "") + "</section>";
+}
+function nrOthers(D, q) {                        // 블록에 아직 안 넣은 새 데이터 실험(끝난 것 · 학습 중인 것)
+  const rows = D.others.map(x => { const r = D.runs[x];
+    return `<tr><td class="nr-exp">${nrEsc(x).replace(/_/g, "_<wbr>")}</td><td>${r.item}</td><td class="nr-num">${nrEsc(r.args.imgsz)} / ${nrEsc(r.args.batch)}</td>` +
+      `<td class="nr-chg"><div class="nr-sub">${r.data.map(nrEsc).join("<br>")}</div></td><td class="nr-st">${nrStatus(r, q)}</td><td class="nr-num">${nrEnded(r, q)}</td><td class="nr-num">${nrScore(r)}</td></tr>`; }).join("");
+  return `<section class="nr-block"><h3 class="nr-bt">블록에 없는 새 데이터 실험 ${nrMut(D.others.length + "개")}</h3>` +
+    `<p class="nr-q">configs/result_blocks.yaml 에 블록 추가 시 위로 이동</p>` +
+    `<div class="nr-tbl"><table><tr><th>실험</th><th>항목</th><th>해상도 / 배치</th><th>학습 데이터</th><th>상태</th><th>학습 종료</th><th>F1 best / last</th></tr>${rows}</table></div></section>`;
+}
+function nrTerms(T) {                            // 맨 위 '용어 정리'(접힘). 정의는 result_blocks.yaml terms
+  if (!T.length) return "";
+  let g0 = null;
+  const rows = T.map(t => { const g = t.g === g0 ? "" : (g0 = t.g); return `<tr><td class="nr-mut">${nrEsc(g)}</td><th>${nrEsc(t.t)}</th><td>${nrEsc(t.d)}</td></tr>`; }).join("");
+  return `<details class="nr-terms"${nrTerms.open ? " open" : ""}><summary>용어 정리 ${nrMut(T.length + "개")}</summary><table>${rows}</table></details>`;
 }
 async function buildResults() {
-  const c = $("#center");
-  c.innerHTML = '<div class="empty">불러오는 중…</div>';
-  let data, q = { running: [], log: [] };
-  try { data = await (await fetch("/api/results")).json(); } catch (e) { c.innerHTML = '<div class="empty">결과를 못 읽었습니다</div>'; return; }
+  const c = $("#center"), y = c.scrollTop;
+  if (!c.querySelector(".nr")) c.innerHTML = '<div class="empty">불러오는 중…</div>';
+  let D, q = { running: [], jobs: [], log: [] };
+  try { D = await (await fetch("/api/result_blocks")).json(); } catch (e) { c.innerHTML = '<div class="empty">결과를 못 읽었습니다</div>'; return; }
   try { q = await (await fetch("/api/queue")).json(); } catch (e) {}
-  const ITEMS = ["방화", "침입", "배회", "쓰러짐"];
-  data = dedupResults(data);   // 같은 결과 여러 출처/재시도 → 한 줄로 접고, 요약 파일 제외
-  const wrap = el("div"); wrap.style.cssText = "padding:18px 22px;max-width:1180px;margin:0 auto;width:100%";
-  const head = el("div"); head.style.cssText = "display:flex;align-items:center;gap:10px;margin-bottom:2px";
-  head.appendChild(el("div", "rtitle", `실험 채점 비교 <span class="tag">${data.length}건</span> <span style="color:var(--mut);font-weight:400;font-size:var(--fs-xs)">· KISA 검증영상 F1 (항목별)</span>`));
-  const rf = el("button", null, "↻ 새로고침"); rf.style.cssText = "margin-left:auto;background:var(--panel);color:var(--tx);border:1px solid var(--line);border-radius:var(--r);padding:5px 12px;font-size:var(--fs-xs);font-weight:700;cursor:pointer"; rf.onclick = buildResults;
-  head.appendChild(rf); wrap.appendChild(head);
-
-  // ---- 큐 상태 (exp_queue.py): 실행 중 실험 + 러너 로그 끝 ----
-  const qb = el("div"); qb.style.cssText = "margin-top:10px;padding:10px 12px;border:1px solid var(--line);border-radius:var(--r-lg);background:var(--panel);font-size:var(--fs-xs);line-height:1.7";
-  const renderQueue = q => {                        // 큐 상자만 다시 그린다(30초 갱신 때 화면 전체를 다시 만들지 않게: 펼친 행·스크롤 유지)
-  const Y = new Date().getFullYear();
-  const kst = l => l.replace(/^\[(\d\d)-(\d\d) (\d\d):(\d\d)\]/, (_, mo, da, h, mi) => {   // 옛 러너 줄(UTC, KST 표기 없음) → +9시간. 새 줄은 러너가 KST 로 쓴다
-    const d = new Date(Date.UTC(Y, +mo - 1, +da, +h, +mi) + 9 * 3600e3), z = n => String(n).padStart(2, "0");
-    return `[${z(d.getUTCMonth() + 1)}-${z(d.getUTCDate())} ${z(d.getUTCHours())}:${z(d.getUTCMinutes())} KST]`;
-  });
-    const open = !!(qb.querySelector("details") && qb.querySelector("details").open);   // 러너 로그 펼침 상태 유지
-  const lastLog = (q.log || []).slice(-6).map(l => `<div style="color:var(--mut);font-family:ui-monospace,Menlo,monospace;white-space:pre-wrap">${kst(l).replace(/</g, "&lt;")}</div>`).join("");
-  qb.innerHTML = `<div style="font-weight:800">큐 <span style="color:${q.running.length ? "#3fb950" : "var(--mut)"}">${q.running.length ? "실행 중 " + q.running.length + "잡" : "대기/없음"}</span>` +
-    (q.running.length ? ` <span style="color:var(--tx);font-weight:600">${q.running.join(" · ")}</span>` : "") + `</div>` +
-    ((q.jobs || []).length ? `<table style="border-collapse:collapse;margin:8px 0 4px;font-size:var(--fs-xs)"><thead><tr style="color:var(--mut);text-align:left"><th style="padding:2px 10px 2px 0">실험</th><th style="padding:2px 10px">에폭</th><th style="padding:2px 10px">이 에폭</th><th style="padding:2px 10px">속도</th><th style="padding:2px 10px">에폭당</th><th style="padding:2px 10px">남음 → 예상 종료(KST)</th><th style="padding:2px 10px" title="직전 에폭 검증(학습 목록에서 뽑은 600장)">최근 mAP50 / 50-95</th><th style="padding:2px 10px">GPU</th></tr></thead><tbody>` +
-      q.jobs.map(j => j.epoch == null ? `<tr><td style="padding:3px 10px 3px 0;font-weight:700">${j.name}</td><td colspan="7" style="color:var(--mut)">${j.state || ""}</td></tr>` :
-        `<tr><td style="padding:3px 10px 3px 0;font-weight:700;white-space:nowrap">${j.name}</td>` +
-        `<td style="padding:3px 10px;font-variant-numeric:tabular-nums"><b>${j.epoch}</b>/${j.epochs} <span style="display:inline-block;width:70px;height:6px;background:var(--panel2);border-radius:var(--r-sm);vertical-align:middle;margin-left:4px"><span style="display:block;width:${Math.round(j.epoch / j.epochs * 100)}%;height:100%;background:#3fb950;border-radius:var(--r-sm)"></span></span></td>` +
-        `<td style="padding:3px 10px;font-variant-numeric:tabular-nums">${j.pct}% <span style="color:var(--mut)">(${j.it}/${j.its} · ${j.elapsed} 경과 · ${j.eta} 남음)</span></td>` +
-        `<td style="padding:3px 10px;font-variant-numeric:tabular-nums">${j.it_s} it/s</td><td style="padding:3px 10px">${j.epoch_min != null ? j.epoch_min + "분" : "–"}</td>` +
-        `<td style="padding:3px 10px;font-variant-numeric:tabular-nums">${j.remain_h}시간 → <b>${j.finish_kst || "–"}</b></td>` +
-        `<td style="padding:3px 10px;font-variant-numeric:tabular-nums">${j.val ? `${j.val.map50.toFixed(3)} / ${j.val.map5095.toFixed(3)} <span style="color:var(--mut)">(P ${j.val.P.toFixed(2)} R ${j.val.R.toFixed(2)})</span>` : '<span style="color:var(--mut)">첫 검증 전</span>'}</td>` +
-        `<td style="padding:3px 10px">${j.mem}</td></tr>`).join("") + `</tbody></table>` : "") +
-    `<details><summary style="cursor:pointer;color:var(--mut)">러너 로그</summary>${lastLog || '<div style="color:var(--mut)">로그 없음</div>'}</details>`;
-    if (open) qb.querySelector("details").open = true;
-  };
-  renderQueue(q);
-  wrap.appendChild(qb);
-  const tick = async () => {                       // 학습 중이면 30초마다 큐 상자만 갱신
-    if (CUR.mode !== "results" || !document.body.contains(qb)) return;
-    try { const q2 = await (await fetch("/api/queue")).json(); renderQueue(q2); if ((q2.jobs || []).length) window._resT = setTimeout(tick, 30000); } catch (e) {}
-  };
-  clearTimeout(window._resT); if ((q.jobs || []).length) window._resT = setTimeout(tick, 30000);
-
-  const col = s => s >= 90 ? "#3fb950" : s >= 70 ? "#d29922" : "#f85149";
-  const fmtT = m => { const d = new Date(m * 1000); return `${d.getMonth() + 1}/${d.getDate()} ${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`; };
-  // 학습셋 id → 읽는 이름(장수). 큐 yaml 의 base/extras/oversample 표기용. 새 셋을 쓰면 여기 한 줄 추가
-  const DS_NAME = {
-    aihub71751_48k: "AI허브 71751 48k(클립당 12프레임)", aihub71751_24k: "AI허브 71751 24k", fasdd_yolo: "FASDD 9.5만", fasdd_snowfog: "FASDD 눈·안개 3,579",
-    fasdd_snow2: "FASDD 눈 2차 351", wildfire_pos_yolo: "산불 양성 5.9만", wildfire_fog_neg: "산불 안개 배경 1.2만", dfire_yolo: "D-Fire 2.2만",
-    azimjaan_yolo: "Azimjaan 1.1만", human_fire: "손라벨 사람+불 1,140",
-  };
-  const dsName = id => DS_NAME[id] || id;
-  const sep = '<span style="color:var(--mut)"> · </span>';
-  const confOf = d => {                              // 한 줄 구성: 모델 · 베이스 · +추가셋 · 오버샘플 · 추가 옵션
-    const m = d.meta || {};
-    if (m.kind === "live_sa") return '<b>라이브 SA 생성기</b>';
-    if (m.kind === "archive") return '<span style="color:var(--mut)">보관 결과</span>';
-    const parts = [];
-    if (m.model) parts.push(`<b>${m.model}</b>`);
-    if (m.base) parts.push(`베이스 ${dsName(m.base)}`);
-    (m.extras || []).forEach(x => parts.push(`+ ${dsName(x)}`));
-    if (m.oversample) Object.entries(m.oversample).forEach(([k, v]) => parts.push(`${dsName(k)} ×${v}`));
-    if (m.extra && Object.keys(m.extra).length) parts.push(`<span style="color:#d29922">${Object.entries(m.extra).map(([k, v]) => k + "=" + v).join(" ")}</span>`);
-    return parts.join(sep) || "–";
-  };
-  const resOf = d => {                               // 해상도: 학습 / 채점 측정. 다르면 둘 다 보인다
-    const m = d.meta || {}, t = m.train || {};
-    if (!m.model) return '<span style="color:var(--mut)">–</span>';
-    const tr = t.imgsz || null, ev = (m.eval_map || {}).imgsz || null;
-    if (!tr && !ev) return '<span style="color:var(--mut)">–</span>';
-    if (tr && ev && tr !== ev) return `<b>${tr}</b><br><span style="color:#d29922;font-size:var(--fs-2xs)">측정 ${ev}</span>`;
-    return `<b>${tr || ev}</b>`;
-  };
-  const dataOf = d => {                              // 입력 데이터: 베이스 + 추가 데이터셋
-    const m = d.meta || {};
-    if (!m.model) return "";
-    const parts = [];
-    if (m.base) parts.push(dsName(m.base));
-    (m.extras || []).forEach(x => parts.push("+ " + dsName(x)));
-    if (!parts.length) return '<span style="color:var(--mut)">–</span>';
-    // 총 학습 장수는 데이터의 성질이라 여기 붙인다(오버샘플 반영 후 실제 목록 수)
-    if (m.n_train) parts.push(`<span style="color:var(--mut)">(총 ${Number(m.n_train).toLocaleString()}장)</span>`);
-    return parts.join("<br>");
-  };
-  const wayOf = d => {                               // 기법: 오버샘플·다중스케일·베이스 비율 등 데이터 외 조작
-    const m = d.meta || {}, t = m.train || {};
-    if (!m.model) return "";
-    const parts = [];
-    if (m.oversample) Object.entries(m.oversample).forEach(([k, v]) => parts.push(`${dsName(k)} ×${v}`));
-    if (t.multi_scale) parts.push(`다중스케일 ${t.multi_scale}`);
-    if (m.base_frac && m.base_frac < 1) parts.push(`베이스 ${Math.round(m.base_frac * 100)}%`);
-    if (m.extra && Object.keys(m.extra).length)
-      parts.push(`<span style="color:#d29922">${Object.entries(m.extra).map(([k, v]) => k + "=" + v).join(" ")}</span>`);
-    return parts.join("<br>") || '<span style="color:var(--mut)">–</span>';
-  };
-  const trainOf = d => {                             // 학습 요약: 에폭·배치·크기 / 장수 / 상태
-    const m = d.meta || {}, t = m.train || {};
-    if (!m.model) return "";
-    const a = [t.epochs ? `${t.epochs}에폭` : "", t.batch ? `배치 ${t.batch}` : "", t.imgsz ? `${t.imgsz}px` : ""].filter(Boolean).join(" · ");
-    return a + (m.status && m.status !== "ok" ? `<br><span style="color:${/fail|kill|error/i.test(m.status) ? "#f85149" : "var(--mut)"}">${m.status}</span>` : "");
-  };
-  const HEAD = '<thead><tr style="color:var(--mut);text-align:left;font-size:var(--fs-xs)"><th style="padding:8px 6px;width:64px" title="학습 입력 크기. 다르면 채점 측정 크기도 같이 표시">해상도</th><th>입력데이터</th><th title="오버샘플·다중스케일 등 데이터 외 조작">기법</th><th style="width:60px" title="이 레시피가 낸 최고 F1">최고 F1</th><th style="width:74px" title="최고 F1 을 낸 실험의 한 표본 처리시간(GPU) · 괄호는 표본 주기 대비 여유">속도</th><th style="width:96px">시각</th><th style="width:20px"></th></tr></thead>';
-  const VC = { "정검": "#3fb950", "미검": "#f85149", "오검": "#d29922", "무GT": "#484f58" };
-
-  ITEMS.forEach(item => {
-    const raw = data.filter(d => d.item === item).sort((a, b) => b.score - a.score);
-    // 해상도·입력데이터·기법이 같으면 한 레시피. 구성 기록이 없는 옛 결과는 이름으로 각각 둔다.
-    const rgroup = {};
-    raw.forEach(d => {
-      const m = d.meta || {}, t = m.train || {};
-      const key = m.model
-        ? [t.imgsz || "", m.base || "", (m.extras || []).join(","),
-           Object.entries(m.oversample || {}).sort().map(([k, v]) => k + ":" + v).join(","),
-           t.multi_scale || "", m.base_frac || ""].join("|")
-        : "solo|" + d.name;
-      (rgroup[key] || (rgroup[key] = [])).push(d);
-    });
-    const rows = Object.values(rgroup).map(list => {
-      list.sort((a, b) => b.score - a.score);
-      const rep0 = list[0]; rep0._family = list; return rep0;
-    }).sort((a, b) => b.score - a.score);
-    const sec = el("div"); sec.style.cssText = "margin-top:18px";
-    const st = el("div", "rtitle", `${item} <span class="tag">${rows.length}건</span>`); st.style.cssText = "font-size:var(--fs-lg);margin-bottom:6px";
-    sec.appendChild(st);
-    if (!rows.length) { sec.appendChild(el("div", "", '<div style="color:var(--mut);font-size:var(--fs-xs);padding:4px 2px">채점 결과 없음 (실험 대기)</div>')); wrap.appendChild(sec); return; }
-    const best = Math.max.apply(null, rows.map(d => d.score));
-    const tbl = el("table"); tbl.style.cssText = "width:100%;border-collapse:collapse;font-size:var(--fs-sm)"; tbl.innerHTML = HEAD;
-    const tb = el("tbody");
-    rows.forEach(d => {
-      const top = d.score === best, m = d.meta || {};
-      const tr = el("tr"); tr.style.cssText = "border-top:1px solid var(--line);cursor:pointer" + (top ? ";background:#3fb95012" : "");
-      tr.innerHTML =
-        `<td style="padding:9px 6px;font-variant-numeric:tabular-nums;white-space:nowrap;font-weight:${top ? 800 : 600}">${top ? "★ " : ""}${resOf(d)}</td>` +
-        `<td style="font-size:var(--fs-xs);line-height:1.5">${(d.meta || {}).model ? dataOf(d) : ((d.meta || {}).kind ? confOf(d) : `<span style="color:var(--mut)" title="구성 기록이 없는 옛 실험(09-08 이전)">${d.name.replace(/_\d{8}$/, "")}</span>`)}</td>` +
-        `<td style="font-size:var(--fs-xs);line-height:1.5">${wayOf(d)}</td>` +
-        `<td style="font-weight:800;font-size:var(--fs-lg);color:${col(d.score)};font-variant-numeric:tabular-nums">${d.score.toFixed(2)}</td>` +
-        (() => { const b = (d.meta || {}).bench || {};
-          if (b.pt_gpu == null) return '<td style="color:var(--mut);text-align:center">–</td>';
-          const h = b.headroom;
-          return `<td style="text-align:center;font-variant-numeric:tabular-nums;font-size:var(--fs-xs);white-space:nowrap">${b.pt_gpu.toFixed(0)}ms` +
-            (h == null ? "" : `<br><span style="color:${h < 1 ? "#f85149" : h < 2 ? "#d29922" : "var(--mut)"}">${h}배</span>`) + `</td>`; })() +
-        `<td style="color:var(--mut);font-variant-numeric:tabular-nums;white-space:nowrap;font-size:var(--fs-xs)">${fmtT(d.mtime)}</td>` +
-        `<td style="color:var(--mut);user-select:none" title="구성 상세 · 규칙 스윕 전체">▸</td>`;
-      tb.appendChild(tr);
-      // 펼침: 구성 표(이름 → 뜻) + 규칙 스윕 표
-      const expName = d.name + ((d._members || []).length > 1 ? ` 외 ${d._members.length - 1}건` : "");
-      const fam = (d._family || [d]).slice().sort((a, b) => b.score - a.score);
-      const H3 = t => `<div style="margin:10px 0 4px;font-weight:700;color:var(--tx)">${t}</div>`;
-
-
-      // ---- 2. 모델별 성능 ----
-      const famTbl = (fam[0].meta || {}).model
-        ? H3("모델별 성능") +
-          `<table style="border-collapse:collapse"><thead><tr style="color:var(--mut)">` +
-          `<th style="text-align:left;padding:2px 8px">모델</th><th style="padding:2px 8px">배치</th>` +
-          `<th style="padding:2px 8px">F1</th><th style="padding:2px 8px">mAP50</th>` +
-          `<th style="padding:2px 8px">정검</th><th style="padding:2px 8px">미검</th><th style="padding:2px 8px">오검</th>` +
-          `<th style="padding:2px 8px" title="한 표본 처리시간. 한 표본 = 그 항목이 주기마다 돌리는 뷰 전부">.pt GPU</th>` +
-          `<th style="padding:2px 8px">.pt CPU</th>` +
-          `<th style="padding:2px 8px">onnx GPU</th>` +
-          `<th style="padding:2px 8px">onnx CPU</th>` +
-          `<th style="padding:2px 8px" title="표본 주기 ÷ 가장 빠른 경로. 1 미만이면 실시간 불가">여유</th></tr></thead><tbody>` +
-          fam.map(x => { const xm = x.meta || {}, xt = xm.train || {}, em = xm.eval_map;
-            return `<tr data-pick="${x.name}" style="cursor:pointer${x === d ? ';background:#3fb95022' : ''}" title="이 모델의 규칙 스윕 보기">` +
-              `<td style="padding:2px 8px"><b>${xm.model || "–"}</b></td>` +
-              `<td style="text-align:center;color:var(--mut)">${xt.batch || "–"}</td>` +
-              `<td style="text-align:center;font-weight:700;color:${col(x.score)}">${x.score.toFixed(2)}</td>` +
-              `<td style="text-align:center">${em ? em.map50.toFixed(3) : "–"}</td>` +
-              `<td style="text-align:center;color:#3fb950">${x.tp}</td>` +
-              `<td style="text-align:center;color:#d29922">${x.fn}</td>` +
-              `<td style="text-align:center;color:#f85149">${x.fp}</td>` +
-              (() => { const b = xm.bench || {};
-                const ms = v => v == null ? '<span style="color:var(--mut)">–</span>' : v.toFixed(0) + "ms";
-                const h = b.headroom;
-                return `<td style="text-align:center;font-variant-numeric:tabular-nums">${ms(b.pt_gpu)}</td>` +
-                  `<td style="text-align:center;font-variant-numeric:tabular-nums">${ms(b.pt_cpu)}</td>` +
-                  `<td style="text-align:center;font-variant-numeric:tabular-nums">${ms(b.onnx_gpu)}</td>` +
-                  `<td style="text-align:center;font-variant-numeric:tabular-nums">${ms(b.onnx_cpu)}</td>` +
-                  `<td style="text-align:center;font-weight:700;color:${h == null ? "var(--mut)" : h < 1 ? "#f85149" : h < 2 ? "#d29922" : "#3fb950"}">${h == null ? "–" : h + "배"}</td>`; })() +
-              `</tr>`; }).join("") +
-          `</tbody></table>` : "";
-
-      // ---- 3. 규칙 스윕: 고른 모델 기준. 기본 규칙 대비 증감을 같이 보여준다 ----
-      const detailOf = (x) => {
-        const xm = x.meta || {}, rules = x.rules || [];
-        if (rules.length < 2) return "";
-        return H3("규칙 스윕") +
-          `<table style="border-collapse:collapse"><thead><tr style="color:var(--mut)">` +
-          `<th style="text-align:left;padding:2px 8px">규칙</th><th style="padding:2px 8px">F1</th>` +
-          `<th style="padding:2px 8px">정검</th>` +
-          `<th style="padding:2px 8px">미검</th><th style="padding:2px 8px">오검</th></tr></thead><tbody>` +
-          rules.map(r => { const on = r.rule === x.rule;
-            return `<tr${on ? ' style="background:#3fb95022"' : ''}>` +
-              `<td style="padding:2px 8px">${on ? "▸ " : ""}${r.rule}</td>` +
-              `<td style="text-align:center;font-weight:700;color:${col(r.score)}">${r.score.toFixed(2)}</td>` +
-              `<td style="text-align:center;color:#3fb950">${r.tp}</td>` +
-              `<td style="text-align:center;color:#d29922">${r.fn}</td>` +
-              `<td style="text-align:center;color:#f85149">${r.fp}</td></tr>`; }).join("") +
-          `</tbody></table>`;
-      };
-
-      const sub = el("tr"); sub.hidden = true;
-      sub.innerHTML = `<td colspan="7" style="padding:6px 14px 14px;font-size:var(--fs-xs)">` + famTbl + `<div id="det_${d.name}">${detailOf(d)}</div>` +
-        `</td>`;
-      tb.appendChild(sub);
-      sub.querySelectorAll("tr[data-pick]").forEach(rowEl => {          // 모델 행 클릭 → 그 모델 상세로 교체
-        rowEl.onclick = ev => {
-          ev.stopPropagation();
-          const picked = fam.find(x => x.name === rowEl.dataset.pick);
-          if (!picked) return;
-          sub.querySelector("#det_" + d.name).innerHTML = detailOf(picked);
-          sub.querySelectorAll("tr[data-pick]").forEach(r2 => r2.style.background = "");
-          rowEl.style.background = "#3fb95022";
-        };
-      });
-      tr.onclick = () => { sub.hidden = !sub.hidden; tr.lastElementChild.textContent = sub.hidden ? "▸" : "▾"; };
-    });
-    tbl.appendChild(tb); sec.appendChild(tbl);
-    if (item === "방화") {                              // 이 항목 표에 나온 학습셋 이름 풀이
-      const used = [...new Set(rows.flatMap(d => [(d.meta || {}).base, ...((d.meta || {}).extras || []), ...Object.keys((d.meta || {}).oversample || {})]).filter(Boolean))];
-      if (used.length) sec.appendChild(el("div", "", `<div style="color:var(--mut);font-size:var(--fs-2xs);margin-top:6px;line-height:1.6">학습셋: ${used.map(u => `<b style="color:var(--tx);font-weight:600">${u}</b> = ${dsName(u)}`).join(" · ")}</div>`));
-    }
-    // ---- 클립 × 실험 히트맵: 어떤 클립을 늘 놓치는지 (score_kisa 클립별 판정이 있는 실험만) ----
-    const withClips = rows.filter(d => d.clips && Object.keys(d.clips).length);
-    if (withClips.length) {
-      const clips = [...new Set(withClips.flatMap(d => Object.keys(d.clips)))].sort();
-      const hm = el("table"); hm.style.cssText = "border-collapse:collapse;font-size:var(--fs-xs);margin-top:10px";
-      hm.innerHTML = `<thead><tr style="color:var(--mut)"><th style="text-align:left;padding:4px 6px">클립별 판정(최고 규칙)</th>${clips.map(cn => `<th style="padding:4px 5px;font-weight:600;writing-mode:vertical-rl;transform:rotate(180deg);white-space:nowrap">${cn.replace(/^C00_/, "")}</th>`).join("")}<th style="padding:4px 6px;color:var(--mut)">미검</th></tr></thead>`;
-      const hb = el("tbody");
-      withClips.forEach(d => {
-        const tr = el("tr"); tr.style.cssText = "border-top:1px solid var(--line)";
-        let miss = 0;
-        tr.innerHTML = `<td style="padding:4px 6px;font-weight:600;white-space:nowrap">${d.name.replace(/_\d{8}$/, "")}</td>` + clips.map(cn => {
-          const v = d.clips[cn] || ""; const k = v.startsWith("정검") ? "정검" : v.startsWith("미검") ? "미검" : v.startsWith("오검") ? "오검" : v ? "무GT" : "";
-          if (k === "미검") miss++;
-          return `<td title="${cn}: ${v || "없음"}" style="width:22px;height:20px;text-align:center;background:${k ? VC[k] + (k === "무GT" ? "" : "cc") : "transparent"};color:#06090f;font-weight:800;font-size:var(--fs-2xs)">${k === "정검" ? "○" : k === "미검" ? "✕" : k === "오검" ? "!" : k ? "·" : ""}</td>`;
-        }).join("") + `<td style="padding:4px 6px;color:#f85149;font-weight:800">${miss}</td>`;
-        hb.appendChild(tr);
-      });
-      hm.appendChild(hb);
-      const hw = el("div"); hw.style.cssText = "overflow-x:auto"; hw.appendChild(hm); sec.appendChild(hw);
-      sec.appendChild(el("div", "", '<div style="color:var(--mut);font-size:var(--fs-2xs);margin-top:4px">○ 정검 · ✕ 미검 · ! 오검(GT 없는 클립) · 열 전체가 ✕인 클립 = 데이터/규칙으로 풀어야 할 병목</div>'));
-    }
-    wrap.appendChild(sec);
-  });
-  wrap.appendChild(el("div", "", '<div style="color:var(--mut);font-size:var(--fs-xs);margin-top:16px;line-height:1.7">· 점수 = KISA 배포 검증영상 F1(규칙 스윕 중 최고). 초록 ≥90 · 노랑 ≥70 · 빨강 70미만 · 행을 누르면 구성 상세와 규칙 스윕 전체<br>· 방화 = 러너 실험(exp_queue.py) · 침입·배회·쓰러짐 = 라이브 SA 생성기 채점 로그(val_*.log) + 09-07 정리본(ALL_RESULTS.json)<br>· 시각은 전부 한국 시간(KST)</div>'));
-  c.innerHTML = ""; c.appendChild(wrap);
+  if (CUR.mode !== "results") return;
+  if (D.error) { c.innerHTML = `<div class="empty">${nrEsc(D.error)}</div>`; return; }
+  const n = {}; Object.values(D.runs).forEach(r => n[r.status] = (n[r.status] || 0) + 1);
+  const g = q.gpu, tag = s => `<span class="tag">${s}</span>`;
+  c.innerHTML = `<div class="nr"><div class="nr-head"><div class="rtitle">새 데이터 실험 비교</div>` +
+    tag(`블록 ${D.blocks.length}`) + tag(`채점 완료 ${n.done || 0}`) + tag(`채점 대기 ${n.scoring || 0}`) + tag(`학습 중 ${n.train || 0}`) + tag(`대기 ${n.queue || 0}`) +
+    (g ? tag(`GPU ${Math.round(g.used_mib / 1024)}/${Math.round(g.total_mib / 1024)}GB`) + tag(`러너 ${q.runners == null ? "-" : q.runners}개`) : "") +
+    '<button type="button" class="nr-btn" id="nrRf">새로고침</button></div>' +
+    nrTerms(D.terms || []) +
+    D.blocks.map(b => nrBlock(b, D, q)).join("") + (D.others.length ? nrOthers(D, q) : "") +
+    `<details class="nr-log"><summary>러너 로그</summary>${(q.log || []).slice(-8).map(l => `<div>${nrEsc(l)}</div>`).join("") || "로그 없음"}</details></div>`;
+  c.scrollTop = y;
+  $("#nrRf").onclick = buildResults;
+  const tm = c.querySelector(".nr-terms"); if (tm) tm.ontoggle = () => { nrTerms.open = tm.open; };   // 1분 갱신 때 펼친 상태 유지
+  clearTimeout(window._resT);                     // 학습 중 · 채점 대기 실험이 있으면 1분마다 다시 읽는다(스크롤 유지)
+  if (Object.values(D.runs).some(r => r.status === "train" || r.status === "scoring")) window._resT = setTimeout(() => { if (CUR.mode === "results") buildResults(); }, 60000);
 }
 
 
