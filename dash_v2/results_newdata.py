@@ -28,9 +28,9 @@ BLOCKS = G / "configs/result_blocks.yaml"
 ITEMS = {"사람": ["intrusion", "loitering"], "방화": ["fire"]}
 SKIP = {"name", "project", "data", "save_dir", "exist_ok", "resume", "workers", "cache", "device",
         "plots", "verbose", "save", "save_period", "time"}           # 실험 이름 · 경로 · 저장 · 로더(결과와 무관)
-SHOW = ["model", "imgsz", "batch", "epochs", "patience", "seed", "multi_scale", "optimizer"]   # 통제변수 · 학습 설정에 따로 보이는 인자
+SHOW = ["model", "imgsz", "batch", "epochs", "patience", "seed", "multi_scale", "optimizer", "fitness"]   # 통제변수 · 학습 설정에 따로 보이는 인자
 LABEL = {"model": "모델", "imgsz": "해상도", "batch": "배치", "epochs": "Epoch", "patience": "Patience", "seed": "Seed",
-         "multi_scale": "Multi_scale", "optimizer": "Optimizer", "data": "학습 데이터", "val": "검증셋"}
+         "multi_scale": "Multi_scale", "optimizer": "Optimizer", "fitness": "best 기준", "data": "학습 데이터", "val": "검증셋"}
 RE_OPT = re.compile(r"\b([A-Za-z]+)\(lr=([0-9.e-]+)(?:, momentum=([0-9.]+))?\)")
 _OPT = {}                                                          # 찾은 optimizer 는 안 바뀐다
 
@@ -134,6 +134,8 @@ def run(exp, E):
     c = meta or e
     item = _item(c)
     args, planned = _args(exp, e)
+    if isinstance(args, dict):                                         # best 기준은 울트라리틱스 인자가 아니라 args.yaml 에 없다(meta · 큐의 train)
+        args.setdefault("fitness", ((meta or e).get("train") or {}).get("fitness", "map5095"))
     sc = {}
     for ck, per in RC.official(exp).items():
         for it, o in per.items():

@@ -340,6 +340,7 @@ def train_cmd(exp, defaults, data_yaml, n_train=0):
            "--project", str(V / "runs" / exp["name"]), "--device", "0",
            "--batch", str(a.get("batch", 128)), "--epochs", str(a.get("epochs", 80)),
            "--imgsz", str(a.get("imgsz", 640)), "--multi-scale", "--no-export", "--force",
+           "--fitness", str(a.get("fitness", "map5095")),        # best.pt 기준(2026-09-30). 큐 yaml train 에 fitness: map50
            "--cache", str(cache), "--workers", str(a.get("workers", 8)),
            "--extra", f"multi_scale={a.get('multi_scale', 0.5)}"]
     extra = dict(defaults.get("extra", {}), **exp.get("extra", {}))   # 예: scale: 0.9

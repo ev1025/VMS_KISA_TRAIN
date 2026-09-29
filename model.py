@@ -79,6 +79,22 @@ def export_one(pt, opset=12, dynamic=True, quiet=False):
 
 
 # ---------------- train (단일/다종/HP재학습) ----------------
+def set_fitness(kind):
+    """best.pt 고르는 기준(2026-09-30). map5095 = 울트라리틱스 기본(mAP@0.5:0.95 만), map50 = mAP@0.5 만.
+    방화는 불 · 연기 박스 경계가 흐려 mAP@0.5:0.95 가 학습 초반(60 에폭 중 5 ~ 8)에 첨점이 나 best 가 덜 학습된 판이었다.
+    콜백은 best 저장 뒤에 불려 기준을 못 바꾸므로 Metric.fitness 를 바꿔 끼운다(같은 프로세스 · 단일 GPU 학습에서만 먹는다)."""
+    if kind == "map5095":
+        return
+    assert kind == "map50", kind
+    import numpy as np
+    from ultralytics.utils import metrics as M
+
+    def fitness(self):
+        return float(np.nan_to_num(np.array(self.mean_results()))[2])     # [P, R, mAP50, mAP50-95] 중 mAP50
+    M.Metric.fitness = fitness
+    print("[best 기준] mAP@0.5", flush=True)
+
+
 def cmd_train(a):
     hp = {}
     if a.hp:
@@ -98,6 +114,7 @@ def cmd_train(a):
             if not a.no_export: export_one(out)
             results.append((name, True, 0.0)); continue
 
+        set_fitness(a.fitness)
         kw = dict(RECIPE, box=a.box); kw.update(hp)   # hp가 box/증강 등 덮어씀
         if a.cache: kw["cache"] = a.cache
         if a.workers is not None: kw["workers"] = a.workers
@@ -309,6 +326,7 @@ def build():
     t.add_argument("--workers", type=int, default=None, help="dataloader 워커 수(병렬 학습 시 CPU 분배)")
     t.add_argument("--extra", nargs="*", default=[], help="ultralytics train 인자 직접 전달 k=v (예: deterministic=False)")
     t.add_argument("--epochs", type=int, default=100)
+    t.add_argument("--fitness", default="map5095", choices=["map5095", "map50"], help="best.pt 고르는 기준(기본 = 울트라리틱스 mAP@0.5:0.95)")
     t.add_argument("--batch", type=int, default=-1, help="-1=AutoBatch, 서버 DDP는 32 등 고정")
     t.add_argument("--no-export", action="store_true", help="학습 후 onnx 자동변환 끔")
     t.add_argument("--force", action="store_true", help="best.pt 있어도 재학습")
