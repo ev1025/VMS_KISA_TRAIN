@@ -171,7 +171,16 @@ function nrTerms(T) {                            // 맨 위 '용어 정리'(접�
   if (!T.length) return "";
   let g0 = null;
   const rows = T.map(t => { const g = t.g === g0 ? "" : (g0 = t.g); return `<tr><td class="nr-mut">${nrEsc(g)}</td><th>${nrEsc(t.t)}</th><td>${nrEsc(t.d)}</td></tr>`; }).join("");
-  return `<details class="nr-terms"${nrTerms.open ? " open" : ""}><summary>용어 정리 ${nrMut(T.length + "개")}</summary><table>${rows}</table></details>`;
+  return `<details class="nr-terms"${nrTerms.open ? " open" : ""}><summary>용어 정리 ${nrMut(T.length + "개")}</summary><div class="nr-tscroll"><table>${rows}</table></div></details>`;
+}
+function nrScore(S) {                            // 항목별 실제로 낼 수 있는 최고 점수(공식 채점) · 그 모델
+  if (!S.length) return "";
+  return `<div class="nr-score">` + S.map(s => {
+    const has = s.f1 != null, cls = !has ? "" : (s.f1 >= 90 ? " ok" : " bad");
+    const tip = has && s.tp != null ? ` title="정검 ${s.tp} · 미검 ${s.fn} · 오검 ${s.fp}"` : "";
+    return `<div class="nr-sc${cls}"${tip}><div class="nr-sc-it">${nrEsc(s.item)}</div><div class="nr-sc-v">${has ? s.f1.toFixed(2) : "–"}</div>` +
+      `<div class="nr-sc-m">${has ? nrEsc(s.model || s.exp) + (s.ck ? " · " + nrEsc(s.ck) : "") : "채점 전"}</div></div>`;
+  }).join("") + `</div>`;
 }
 function nrQueueHtml(q) {                       // 맨 위 큐 상자: 옛 결과 탭과 같은 모양(실행 중 실험 · 에폭 · 이 에폭 · 속도 · 에폭당 · 예상 종료 · 최근 mAP · GPU + 러너 로그)
   const Y = new Date().getFullYear();
@@ -181,8 +190,8 @@ function nrQueueHtml(q) {                       // 맨 위 큐 상자: 옛 결�
   });
   const run = q.running || [], jobs = q.jobs || [];
   const lastLog = (q.log || []).slice(-6).map(l => `<div class="nr-qlog">${nrEsc(kst(l))}</div>`).join("");
-  return `<summary style="font-weight:800;cursor:pointer">큐 <span style="color:${run.length ? "#3fb950" : "var(--mut)"}">${run.length ? "실행 중 " + run.length + "잡" : "대기/없음"}</span>` +
-    (run.length ? ` <span style="color:var(--tx);font-weight:600">${run.map(nrEsc).join(" · ")}</span>` : "") + `</summary>` +
+  return `<div class="nr-qhead">큐 <span style="color:${run.length ? "#3fb950" : "var(--mut)"}">${run.length ? "실행 중 " + run.length + "잡" : "대기/없음"}</span>` +
+    (run.length ? ` <span style="color:var(--tx);font-weight:600">${run.map(nrEsc).join(" · ")}</span>` : "") + `</div>` +
     (jobs.length ? `<div class="nr-qtbl"><table style="border-collapse:collapse;margin:8px 0 4px;font-size:var(--fs-xs)"><thead><tr style="color:var(--mut);text-align:left"><th style="padding:2px 10px 2px 0">실험</th><th style="padding:2px 10px">에폭</th><th style="padding:2px 10px">이 에폭</th><th style="padding:2px 10px">속도</th><th style="padding:2px 10px">에폭당</th><th style="padding:2px 10px">남음 → 예상 종료(KST)</th><th style="padding:2px 10px" title="직전 에폭 검증">최근 mAP50 / 50-95</th><th style="padding:2px 10px">GPU</th></tr></thead><tbody>` +
       jobs.map(j => j.epoch == null ? `<tr><td style="padding:3px 10px 3px 0;font-weight:700">${nrEsc(j.name)}</td><td colspan="7" style="color:var(--mut)">${nrEsc(j.state || "")}</td></tr>` :
         `<tr><td style="padding:3px 10px 3px 0;font-weight:700;white-space:nowrap">${nrEsc(j.name)}</td>` +
@@ -214,8 +223,8 @@ async function buildResults() {
   try { q = await (await fetch("/api/queue")).json(); } catch (e) {}
   if (CUR.mode !== "results") return;
   if (D.error) { c.innerHTML = `<div class="empty">${nrEsc(D.error)}</div>`; return; }
-  c.innerHTML = `<div class="nr"><details class="nr-queue" id="nrQ" data-id="_queue"${nrOpen.has("_queue") ? " open" : ""}>${nrQueueHtml(q)}</details>` +
-    nrTerms(D.terms || []) +
+  c.innerHTML = `<div class="nr"><div class="nr-top"><div class="nr-queue" id="nrQ">${nrQueueHtml(q)}</div>` +   // 위에 고정: 큐(항상 펼침) · 용어 정리 · 항목별 최고 점수
+    nrTerms(D.terms || []) + nrScore(D.score || []) + `</div>` +
     D.blocks.map(b => nrBlock(b, D, q)).join("") + (D.others.length ? nrOthers(D, q) : "") + "</div>";
   c.scrollTop = y;
   const tm = c.querySelector(".nr-terms"); if (tm) tm.ontoggle = () => { nrTerms.open = tm.open; };   // 1분 갱신 때 펼친 상태 유지

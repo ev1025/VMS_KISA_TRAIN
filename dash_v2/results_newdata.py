@@ -211,6 +211,27 @@ def block(b, R):
             "verdicts": {x: verdict(R[x], R[ids[0]]) for x in ids[1:]}}
 
 
+FALL = ("falldown_pose1280_20260915", "yolo11x-pose 1280 + SeqNet(이전 모델)")   # 쓰러짐은 새로 학습하지 않고 이전 모델 그대로(09-29 사용자)
+RE_FALL = re.compile(r"자세 1280 .*?→ ([0-9.]+)\s+\(정검 (\d+) 미검 (\d+) 오검 (\d+)\)")
+
+
+def scorecard(R):
+    """항목별 실제로 낼 수 있는 최고 점수 = 작업 PC 공식 채점 중 최고(같으면 늦게 끝난 판). 채점편 스윕 첨점이 아니라 한 모델의 한 번 채점값."""
+    out = []
+    for it, ko in (("intrusion", "침입"), ("loitering", "배회"), ("fire", "방화")):
+        cand = [(s["f1"], r.get("ended") or "", x, ck, s) for x, r in R.items() for ck, s in (r["scores"].get(it) or {}).items()]
+        if not cand:
+            out.append({"item": ko})
+            continue
+        f1, _, x, ck, s = max(cand, key=lambda c: (c[0], c[1]))
+        out.append({"item": ko, "f1": f1, "exp": x, "ck": ck, "tp": s["tp"], "fn": s["fn"], "fp": s["fp"]})
+    f = G / "results" / FALL[0] / "score.txt"
+    m = RE_FALL.search(f.read_text(encoding="utf-8")) if f.is_file() else None
+    out.append({"item": "쓰러짐", "f1": float(m.group(1)), "exp": FALL[0], "model": FALL[1],
+                "tp": int(m.group(2)), "fn": int(m.group(3)), "fp": int(m.group(4))} if m else {"item": "쓰러짐"})
+    return out
+
+
 def build():
     if not (G / "results").is_dir():                                 # 결과 사본이 없는 서버
         return {"error": "이 서버에는 학습 결과(results)가 없습니다. 결과 탭은 학습 서버(서버 A)에서 보세요"}
@@ -230,7 +251,7 @@ def build():
             others.append(x)
     R = {x: run(x, E) for x in names + others}
     return {**{k: v for k, v in cfg.items() if k != "blocks"},          # dv · key_clips · terms(용어 풀이) 등은 그대로 넘긴다
-            "blocks": [block(b, R) for b in cfg.get("blocks") or []], "others": others, "runs": R}
+            "blocks": [block(b, R) for b in cfg.get("blocks") or []], "others": others, "runs": R, "score": scorecard(R)}
 
 
 if __name__ == "__main__":

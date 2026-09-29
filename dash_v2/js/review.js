@@ -203,7 +203,7 @@ function renderCenter(row, opt) {
   if (review) {
     leg.innerHTML = '<span><i style="background:#3fb95055"></i>정답 유효창(-2~+10초)</span>' + (!rv ? "" :
       (rv.item === "fire" ? '<span><i style="background:var(--fire)"></i>불 최고 확신도</span><span><i style="background:var(--smoke)"></i>연기</span>'
-                          : '<span><i style="background:var(--blue)"></i>구역 안 사람 최고 확신도</span>') +
+                          : '<span><i style="background:#8b949e"></i>화면 전체 사람 최고 확신도</span><span><i style="background:var(--blue)"></i>구역 안 사람 최고 확신도</span>') +
       `<span><i style="background:#c9d1d9"></i>규칙 문턱 ${rv.conf}</span><span><i style="background:var(--fire)"></i>예측 경보</span>`);
   } else {
     leg.innerHTML = row.signal_type === "raw"
@@ -259,7 +259,10 @@ function drawBarRv(bar, rv, gt, sa, total, cur) {
   let s = `<svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="none">` + barFrame(gt, total, W, H, px);
   if (rv) {
     if (rv.item === "fire") { s += plotPath(rv.signal, 1, "#f85149", px, H); s += plotPath(rv.signal, 2, "#a371f7", px, H); }
-    else s += plotPath(rv.signal, 1, "#58a6ff", px, H);
+    else {                                               // 흐린 회색 = 화면 전체 사람(구역 밖 · 꼭짓점 미달 포함), 파랑 = 규칙이 구역 안으로 치는 사람
+      rv._all = rv._all || (rv.samples || []).map(([t, bx]) => [t, bx.reduce((m, b) => Math.max(m, b[1]), 0)]);
+      s += plotPath(rv._all, 1, "#8b949e99", px, H); s += plotPath(rv.signal, 1, "#58a6ff", px, H);
+    }
     if (rv.conf != null) { const y = H - Math.min(1, rv.conf) * (H - 6) - 3; s += `<line x1="0" y1="${y}" x2="${W}" y2="${y}" stroke="#c9d1d9" stroke-width="1" stroke-dasharray="3 4" opacity=".6"/>`; }
   }
   if (sa != null) s += `<line x1="${px(sa)}" y1="0" x2="${px(sa)}" y2="${H}" stroke="#f85149" stroke-width="2" stroke-dasharray="4 3"/>`;

@@ -156,7 +156,16 @@ video{width:100%;aspect-ratio:16/9;object-fit:fill;display:block;background:#000
 .nr-keys .ok{color:var(--ok);background:#3fb95018}.nr-keys .miss{color:var(--miss);background:#d2992222}.nr-keys .bad{color:var(--bad);background:#f8514922}
 .nr-note{font-size:var(--fs-xs);color:var(--mut);border-left:2px solid var(--line);padding-left:8px}.nr-note b{color:var(--tx)}.nr-note .nr-ul{margin-top:2px}
 .nr-queue{padding:10px 12px;border:1px solid var(--line);border-radius:var(--r-lg);background:var(--panel);font-size:var(--fs-xs);line-height:1.7}
-.nr-queue > summary{font-size:var(--fs-lg)}   /* 큐 제목만 블록 제목 크기, 안쪽 러너 로그는 그대로 */
+.nr-qhead{font-size:var(--fs-lg);font-weight:800}   /* 큐 제목 = 블록 제목 크기(큐는 항상 펼침), 안쪽 러너 로그는 그대로 */
+.nr-top{position:sticky;top:0;z-index:6;display:flex;flex-direction:column;gap:8px;background:var(--bg);padding:8px 0 10px;border-bottom:1px solid var(--line)}
+.nr-top .nr-qtbl{max-height:26vh;overflow:auto}.nr-tscroll{max-height:38vh;overflow:auto}   /* 고정 영역이 화면을 다 덮지 않게 */
+.nr-score{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px}
+.nr-sc{background:var(--panel);border:1px solid var(--line);border-radius:var(--r-lg);padding:8px 12px;min-width:0}
+.nr-sc-it{font-size:var(--fs-xs);color:var(--mut);font-weight:700;letter-spacing:.02em}
+.nr-sc-v{font-size:22px;font-weight:800;font-variant-numeric:tabular-nums;line-height:1.25}
+.nr-sc.ok .nr-sc-v{color:var(--ok)}.nr-sc.bad .nr-sc-v{color:var(--miss)}
+.nr-sc-m{font-family:ui-monospace,Menlo,monospace;font-size:var(--fs-2xs);color:var(--mut);overflow-wrap:anywhere}
+@media (max-width:820px){.nr-score{grid-template-columns:repeat(2,minmax(0,1fr))}}
 .nr-qtbl{overflow-x:auto}.nr-qlog{color:var(--mut);font-family:ui-monospace,Menlo,monospace;white-space:pre-wrap}
 </style></head><body>
 <div class="top">
