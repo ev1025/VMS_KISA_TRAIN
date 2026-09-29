@@ -91,7 +91,7 @@ function buildSrc() {
   sel.onchange = () => { CUR.item = sel.value; CUR.name = null; FILT = "all"; rvRefresh(); };
 }
 function rvLabel(m) {
-  const sc = m.official && m.official["점수"] != null ? ` · 작업PC ${m.official["점수"].toFixed(2)}`
+  const sc = m.official && m.official["점수"] != null ? ` · 공식 ${m.official["점수"].toFixed(2)}`
            : m.score && m.score["점수"] != null ? ` · ${m.score["점수"].toFixed(2)}` : "";
   const wait = m.done ? "" : (m.progress ? ` (계산 중 ${m.progress.done}/${m.progress.total})` : " (계산 대기)");
   return `${m.exp} · ${m.ckpt} · ${m.res}${sc}${wait}`;
@@ -118,7 +118,7 @@ function buildFilt() {
   else if (RV.summ && RV.summ.score) {
     const s = RV.summ.score, o = RV.summ.official;
     note.innerHTML = `이 화면: 정검 <b>${s["정검"]}</b> · 미검 <b>${s["미검"]}</b> · 오검 <b>${s["오검"]}</b> → <b>${s["점수"].toFixed(2)}</b>` +
-      (o ? `<br>작업 PC 채점: ${o["점수"].toFixed(2)}${o["점수"] !== s["점수"] ? ' <span class="tag warn">다름</span>' : ""}` : "");
+      (o ? `<br>공식 채점: ${o["점수"].toFixed(2)}${o["점수"] !== s["점수"] ? ' <span class="tag warn">다름</span>' : ""}` : "");
   }
   box.appendChild(note);
   if (!rvKey()) return;                                   // 판정은 모델이 있어야 있다
@@ -414,7 +414,7 @@ function renderRight(row, rv) {
     const v = rv ? rv.verdict : (ci ? ci.verdict : "-");
     const d = el("div", "kv"); d.appendChild(el("span", "", "판정"));
     const b = el("b", "", v);
-    if (ci && ci.official && ci.official !== v) b.appendChild(el("span", "tag warn", "작업 PC: " + ci.official));   // 장비 차이로 갈린 편
+    if (ci && ci.official && ci.official !== v) b.appendChild(el("span", "tag warn", "공식: " + ci.official));   // 장비 차이로 갈린 편
     d.appendChild(b); r.appendChild(d);
   }
   r.appendChild(KV("시간대", row.tod || "-"));
@@ -439,7 +439,7 @@ function renderRight(row, rv) {
     r.appendChild(KV("체크포인트 · 해상도", `${m.ckpt} · ${m.res}`));
     r.appendChild(KV("학습 데이터", (m.data || []).join(" · ") || "-"));
     const s = RV.summ && RV.summ.score, o = RV.summ && RV.summ.official;
-    if (s) r.appendChild(KV("이 항목 점수", `${s["점수"].toFixed(2)}` + (o ? ` · 작업 PC ${o["점수"].toFixed(2)}` : "")));
+    if (s) r.appendChild(KV("이 항목 점수", `${s["점수"].toFixed(2)}` + (o ? ` · 공식 ${o["점수"].toFixed(2)}` : "")));
     if (RV.summ && RV.summ.made) r.appendChild(KV("계산 시각", RV.summ.made));
   }
   if (CUR.item === "fire") renderLabels(r, row);

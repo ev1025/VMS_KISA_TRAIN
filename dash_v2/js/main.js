@@ -20,7 +20,11 @@ function buildMode() {
 function applyMode() {
   document.onkeydown = null;   // 편집기 밖에선 단축키 끄기
   $("#right").hidden = (CUR.mode === "results");   // 결과 탭은 우측 없이
-  $(".srcbox").hidden = (CUR.mode === "results");   // 결과 탭은 소스 드롭다운 숨김
+  $(".left").style.display = (CUR.mode === "results") ? "none" : "";   // 결과 탭은 결과만(왼쪽 패널째 숨김). .srcbox 의 display:flex 가 [hidden] 을 이겨 드롭다운이 남던 것도 여기서 끝(2026-09-29)
+  if (CUR.mode !== "review") {                      // 검수 탭의 항목 이름표 · 모델 · 판정 필터를 바로 거둔다. 데이터 탭은 목록을 받아 온 뒤에야 다시 그려 그 사이 남아 보였다
+    $("#filtBox").hidden = true; $("#filtBox").innerHTML = "";
+    const lb = $(".srcbox label"); if (lb && lb.textContent === "검수 항목") lb.textContent = "데이터 원본";
+  }
   const kindBox = $("#dsKind"); if (kindBox) kindBox.style.display = (CUR.mode === "data") ? "flex" : "none";   // 원본/학습 버튼은 데이터 확인에서만
   const emptyMsg = { data: "데이터셋과 이미지를 선택하세요", review: "영상을 선택하세요" }[CUR.mode];
   $("#center").innerHTML = '<div class="empty">' + emptyMsg + '</div>';
@@ -51,6 +55,11 @@ const nrMut = s => `<span class="nr-mut">${s}</span>`;
 const nrList = a => (a || []).length ? `<ul class="nr-ul">${a.map(x => `<li>${x}</li>`).join("")}</ul>` : nrMut("-");
 const nrArr = v => v == null ? [] : Array.isArray(v) ? v : [v];
 function nrJob(q, exp) { return (q.jobs || []).find(j => j.name === exp); }
+const nrOpen = (() => { try { const v = JSON.parse(localStorage.getItem("nr_open") || "null"); if (Array.isArray(v)) return new Set(v); } catch (e) {} return new Set(["_queue"]); })();   // 펼친 블록(새로고침 · 다시 열어도 유지)
+function nrSaveOpen() { try { localStorage.setItem("nr_open", JSON.stringify([...nrOpen])); } catch (e) {} }
+function nrBindToggles(root) {
+  root.querySelectorAll("details[data-id]").forEach(d => { d.ontoggle = () => { d.open ? nrOpen.add(d.dataset.id) : nrOpen.delete(d.dataset.id); nrSaveOpen(); }; });
+}
 function nrStatus(r, q) {                        // 상태만(날짜는 '학습 종료' 칸)
   if (r.status === "done") return '<span class="nr-ok">채점 완료</span>';
   if (r.status === "scoring") return "채점 대기";
@@ -142,18 +151,21 @@ function nrBlock(b, D, q) {
       `<td class="nr-num">${nrScore(r)}</td>${kc ? `<td>${nrKeys(r, kc)}</td>` : ""}<td class="nr-num">${delta}</td><td>${chip}</td></tr>`;
   }).join("");
   const concl = nrArr(b.conclusion);
-  return `<section class="nr-block"><h3 class="nr-bt">${nrEsc(b.date ? `[${b.date}] ` : "")}${nrEsc(b.title)}</h3>` +
+  const chips = b.members.map(x => { const v = b.verdicts[x], r = D.runs[x];     // 접었을 때도 판정이 보이게
+    return v ? `<span class="nr-chip ${v.call === "동률" ? "tie" : v.call === "개선" ? "win" : "lose"}">${v.call}</span>`
+      : `<span class="nr-chip wait">${r.status === "train" ? "학습 중" : r.status === "queue" ? "대기" : "채점 대기"}</span>`; }).join("");
+  return `<details class="nr-block" data-id="${nrEsc(b.id)}"${nrOpen.has(b.id) ? " open" : ""}><summary class="nr-bt">${nrEsc(b.date ? `[${b.date}] ` : "")}${nrEsc(b.title)}<span class="nr-sum">${chips}</span></summary><div class="nr-body">` +
     (b.question ? `<p class="nr-q"><b>목적:</b> ${nrEsc(b.question)}</p>` : "") + nrCond(b, D) +
     `<div class="nr-tbl"><table>${head}${rows}</table></div>` +
-    (concl.length ? `<div class="nr-note"><b>결론</b>${nrList(concl.map(nrEsc))}</div>` : "") + "</section>";
+    (concl.length ? `<div class="nr-note"><b>결론</b>${nrList(concl.map(nrEsc))}</div>` : "") + "</div></details>";
 }
 function nrOthers(D, q) {                        // 블록에 아직 안 넣은 새 데이터 실험(끝난 것 · 학습 중인 것)
   const rows = D.others.map(x => { const r = D.runs[x];
     return `<tr><td class="nr-exp">${nrEsc(x).replace(/_/g, "_<wbr>")}</td><td>${r.item}</td><td class="nr-num">${nrEsc(r.args.imgsz)} / ${nrEsc(r.args.batch)}</td>` +
       `<td class="nr-chg"><div class="nr-sub">${r.data.map(nrEsc).join("<br>")}</div></td><td class="nr-st">${nrStatus(r, q)}</td><td class="nr-num">${nrEnded(r, q)}</td><td class="nr-num">${nrScore(r)}</td></tr>`; }).join("");
-  return `<section class="nr-block"><h3 class="nr-bt">블록에 없는 새 데이터 실험 ${nrMut(D.others.length + "개")}</h3>` +
+  return `<details class="nr-block" data-id="_others"${nrOpen.has("_others") ? " open" : ""}><summary class="nr-bt">블록에 없는 새 데이터 실험 ${nrMut(D.others.length + "개")}</summary><div class="nr-body">` +
     `<p class="nr-q">configs/result_blocks.yaml 에 블록 추가 시 위로 이동</p>` +
-    `<div class="nr-tbl"><table><tr><th>실험</th><th>항목</th><th>해상도 / 배치</th><th>학습 데이터</th><th>상태</th><th>학습 종료</th><th>F1 best / last</th></tr>${rows}</table></div></section>`;
+    `<div class="nr-tbl"><table><tr><th>실험</th><th>항목</th><th>해상도 / 배치</th><th>학습 데이터</th><th>상태</th><th>학습 종료</th><th>F1 best / last</th></tr>${rows}</table></div></div></details>`;
 }
 function nrTerms(T) {                            // 맨 위 '용어 정리'(접힘). 정의는 result_blocks.yaml terms
   if (!T.length) return "";
@@ -169,8 +181,8 @@ function nrQueueHtml(q) {                       // 맨 위 큐 상자: 옛 결�
   });
   const run = q.running || [], jobs = q.jobs || [];
   const lastLog = (q.log || []).slice(-6).map(l => `<div class="nr-qlog">${nrEsc(kst(l))}</div>`).join("");
-  return `<div style="font-weight:800">큐 <span style="color:${run.length ? "#3fb950" : "var(--mut)"}">${run.length ? "실행 중 " + run.length + "잡" : "대기/없음"}</span>` +
-    (run.length ? ` <span style="color:var(--tx);font-weight:600">${run.map(nrEsc).join(" · ")}</span>` : "") + `</div>` +
+  return `<summary style="font-weight:800;cursor:pointer">큐 <span style="color:${run.length ? "#3fb950" : "var(--mut)"}">${run.length ? "실행 중 " + run.length + "잡" : "대기/없음"}</span>` +
+    (run.length ? ` <span style="color:var(--tx);font-weight:600">${run.map(nrEsc).join(" · ")}</span>` : "") + `</summary>` +
     (jobs.length ? `<div class="nr-qtbl"><table style="border-collapse:collapse;margin:8px 0 4px;font-size:var(--fs-xs)"><thead><tr style="color:var(--mut);text-align:left"><th style="padding:2px 10px 2px 0">실험</th><th style="padding:2px 10px">에폭</th><th style="padding:2px 10px">이 에폭</th><th style="padding:2px 10px">속도</th><th style="padding:2px 10px">에폭당</th><th style="padding:2px 10px">남음 → 예상 종료(KST)</th><th style="padding:2px 10px" title="직전 에폭 검증">최근 mAP50 / 50-95</th><th style="padding:2px 10px">GPU</th></tr></thead><tbody>` +
       jobs.map(j => j.epoch == null ? `<tr><td style="padding:3px 10px 3px 0;font-weight:700">${nrEsc(j.name)}</td><td colspan="7" style="color:var(--mut)">${nrEsc(j.state || "")}</td></tr>` :
         `<tr><td style="padding:3px 10px 3px 0;font-weight:700;white-space:nowrap">${nrEsc(j.name)}</td>` +
@@ -202,12 +214,12 @@ async function buildResults() {
   try { q = await (await fetch("/api/queue")).json(); } catch (e) {}
   if (CUR.mode !== "results") return;
   if (D.error) { c.innerHTML = `<div class="empty">${nrEsc(D.error)}</div>`; return; }
-  c.innerHTML = `<div class="nr"><div class="nr-queue" id="nrQ">${nrQueueHtml(q)}</div>` +
+  c.innerHTML = `<div class="nr"><details class="nr-queue" id="nrQ" data-id="_queue"${nrOpen.has("_queue") ? " open" : ""}>${nrQueueHtml(q)}</details>` +
     nrTerms(D.terms || []) +
     D.blocks.map(b => nrBlock(b, D, q)).join("") + (D.others.length ? nrOthers(D, q) : "") + "</div>";
   c.scrollTop = y;
   const tm = c.querySelector(".nr-terms"); if (tm) tm.ontoggle = () => { nrTerms.open = tm.open; };   // 1분 갱신 때 펼친 상태 유지
-  nrQueueBind($("#nrQ"));
+  nrQueueBind($("#nrQ")); nrBindToggles(c);
   clearTimeout(window._resQ); if ((q.jobs || []).length) window._resQ = setTimeout(nrQueueTick, 30000);
   clearTimeout(window._resT);                     // 학습 중 · 채점 대기 실험이 있으면 1분마다 다시 읽는다(스크롤 유지)
   if (Object.values(D.runs).some(r => r.status === "train" || r.status === "scoring")) window._resT = setTimeout(() => { if (CUR.mode === "results") buildResults(); }, 60000);

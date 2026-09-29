@@ -21,7 +21,7 @@ HERE = Path(__file__).parent
 G = HERE.parent
 # 영상·이미지를 내보낼 때 "이 경계 안의 파일만" 확인하는 기준. 심링크가 vms/data 로 나가도 허용한다.
 # 다른 장비(Thor 등)에 올려 돌릴 때는 VMS_WS 로 덮어쓴다. 기본값은 예전 동작 그대로다.
-WS = Path(os.environ.get("VMS_WS") or "/NHNHOME/WORKSPACE/26mss002_E3")
+WS = Path(os.environ.get("VMS_WS") or G.parent)   # 저장소 바로 위 폴더. 서버 A 는 예전과 같은 경로, 사본 서버(B 등)는 그 서버 작업 폴더(2026-09-29)
 RAW = G / "data/원본데이터"        # 라벨 대상 영상이 카테고리 폴더로 들어 있는 곳
 PORT = 8890
 
