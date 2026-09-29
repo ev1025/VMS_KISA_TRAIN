@@ -36,7 +36,14 @@ def best_pt(exp):
     'deploy:<파일명>' 은 실험이 아니라 배포 가중치라 model/ 에서 바로 찾는다."""
     if exp.startswith("deploy:"):
         p = V / "model" / exp.split(":", 1)[1]
-        return p if p.is_file() else None
+        if p.is_file():
+            return p
+        try:                                   # fire_fog.pt 처럼 model/ 에 없는 것은 MODELS.json 의 found_at 에서
+            sys.path.insert(0, str(V / "scripts"))
+            from model_rank import deploy_pt
+            return deploy_pt(exp.split(":", 1)[1])
+        except Exception:
+            return None
     mj = V / "results" / exp / "meta.json"
     if mj.is_file():
         try:
@@ -69,9 +76,24 @@ def gt_seconds(stem):
         return None
 
 
+def train_imgsz(exp):
+    """실험의 학습 해상도(meta.train.imgsz). 배포 가중치는 채점기와 같은 960. 모르면 None.
+    (2026-09-26) 방화 덤프가 640 고정이라 960 학습 판은 채점과 다른 그림을 보고 있었다."""
+    if exp.startswith("deploy:"):
+        return 960
+    mj = V / "results" / exp / "meta.json"
+    try:
+        t = (json.loads(mj.read_text(encoding="utf-8")) or {}).get("train") or {}
+        return int(t["imgsz"]) if t.get("imgsz") else None
+    except Exception:
+        return None
+
+
 def model_kind(exp):
     """이 실험이 불 모델인지 사람 모델인지. 큐마다 item 을 방화/사람/침입/배회/쓰러짐 으로
     달리 적어 놔서 방화만 불로 보고 나머지는 사람으로 본다."""
+    if exp.startswith("deploy:"):                  # 배포 가중치는 meta.json 이 없다. 파일명으로(person_v3.pt 가 불로 덤프되던 것, 2026-09-26)
+        return "person" if "person" in exp else "fire"
     mj = V / "results" / exp / "meta.json"
     if mj.is_file():
         try:
@@ -127,7 +149,7 @@ def dump(exp, stem):
     outdir = V / "dumps/fire_box" / exp
     outdir.mkdir(parents=True, exist_ok=True)
     kind = model_kind(exp)
-    imgsz = 640 if kind == "fire" else 960      # 사람은 풀프레임 한 장이라 조금 키워 본다
+    imgsz = train_imgsz(exp) or (640 if kind == "fire" else 960)   # 학습 해상도. 모르면 예전값(옛 방화 640 · 사람 960)
     model = YOLO(str(pt))
     cap = cv2.VideoCapture(str(mp4))
     fps = cap.get(cv2.CAP_PROP_FPS) or 30.0

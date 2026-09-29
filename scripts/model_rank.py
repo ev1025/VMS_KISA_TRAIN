@@ -25,10 +25,57 @@ from pathlib import Path
 V = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(V / "_kisa_port/tools"))
 
-DEPLOY = {"fresh_48k_wildall_20260909": "방화 앙상블 1번(fire_fog)",
-          "s2_s960_20260913": "방화 앙상블 2번(fire_small)",
-          "g_wildpos_20260912": "직전 방화 단일 배포본"}
 DELAY = 10.0
+
+
+def _models_json():
+    """results/MODELS.json 의 가중치 항목. 형식이 둘이다.
+       옛(09-16): {"models": {파일: {task, kisa_f1, used_by}}} · 지금(09-23~): {파일: {experiment, best_score_10clips, ...}}"""
+    mj = V / "results/MODELS.json"
+    if not mj.is_file():
+        return {}
+    try:
+        raw = json.loads(mj.read_text(encoding="utf-8")) or {}
+    except Exception:
+        return {}
+    if isinstance(raw.get("models"), dict):
+        return raw["models"]
+    return {k: v for k, v in raw.items() if k.endswith(".pt") and isinstance(v, dict)}
+
+
+def deploy_pt(fn, d=None):
+    """배포 가중치 파일. model/<fn> 이 없으면 MODELS.json 의 found_at(runs/... 상대경로)에서 찾는다. 없으면 None."""
+    p = V / "model" / fn
+    if p.is_file():
+        return p
+    if d is None:
+        d = _models_json().get(fn) or {}
+    for rel in d.get("found_at") or []:
+        q = V / rel
+        if q.is_file():
+            return q
+    return None
+
+
+LEAK = ("human_fire", "evalset_fire")     # 채점 10편 프레임이 든 셋. 이걸 학습에 쓴 판은 점수가 거품이라 순위에서 뺀다
+
+
+def is_leak(meta):
+    s = json.dumps([meta.get("base"), meta.get("oversample"), meta.get("extras")], ensure_ascii=False)
+    return any(k in s for k in LEAK)
+
+
+def _deploy_labels():
+    """실험 → '배포(파일명)' 이름표. 파일에서 만든다(손으로 적어 두면 09-16 것처럼 낡는다)."""
+    out = {}
+    for fn, d in _models_json().items():
+        exp = d.get("experiment")
+        if exp:
+            out[exp] = "배포(%s)" % fn
+    return out
+
+
+DEPLOY = _deploy_labels()
 
 
 def _fire_cfg():
@@ -118,18 +165,11 @@ def deployed():
     """배포 중인 가중치(model/*.pt). 실험이 아니라 results/ 에 없어서 따로 읽는다.
     갈래·점수는 results/MODELS.json 하나만 본다(가중치 계보 단일 기준)."""
     out = []
-    mj = V / "results/MODELS.json"
-    if not mj.is_file():
-        return out
-    try:
-        models = (json.loads(mj.read_text(encoding="utf-8")) or {}).get("models") or {}
-    except Exception:
-        return out
-    for fn, d in models.items():
-        pt = V / "model" / fn
-        if not pt.is_file():
+    for fn, d in _models_json().items():
+        pt = deploy_pt(fn, d)
+        if pt is None:
             continue
-        task = str(d.get("task") or "")
+        task = str(d.get("task") or fn)   # 지금 형식엔 task 가 없다. 파일명(fire_*/person_*)으로 갈래를 본다
         if "person" in task:
             kind = "person"
         elif "fire" in task:
@@ -137,7 +177,9 @@ def deployed():
         else:
             continue                       # 자세·SeqNet 은 박스 오버레이 대상이 아니다
         f1s = [v for v in (d.get("kisa_f1") or {}).values() if isinstance(v, (int, float))]
-        used = ",".join(d.get("used_by") or []) or "배포"
+        if not f1s and isinstance(d.get("best_score_10clips"), (int, float)):
+            f1s = [d["best_score_10clips"]]
+        used = ",".join(d.get("used_by") or []) or (d.get("experiment") or "배포")
         if f1s:
             key, why = (1, round(sum(f1s) / len(f1s), 2)), "배포(%s) KISA F1 %.2f" % (used, sum(f1s) / len(f1s))
         else:
@@ -156,6 +198,8 @@ def rank():
         try:
             d = json.loads(mj.read_text(encoding="utf-8")) or {}
         except Exception:
+            continue
+        if is_leak(d):
             continue
         kind = "fire" if d.get("item") == "방화" else "person"
         f1 = fire_f1(exp) if kind == "fire" else person_f1(exp)
