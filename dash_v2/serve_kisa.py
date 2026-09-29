@@ -2353,9 +2353,14 @@ class H(BaseHTTPRequestHandler):
             return
         m = re.match(r"/frame/(.+\.png)$", p)
         if m:
-            fp = data_path("data/학습데이터/손라벨/full", "labelfull")/urllib.parse.unquote(m.group(1))
-            if fp.exists(): self._stream(fp, "image/png")
-            else: self.send_error(404)
+            name = urllib.parse.unquote(m.group(1))
+            fp = data_path("data/학습데이터/손라벨/full", "labelfull")/name
+            if fp.exists(): self._stream(fp, "image/png"); return
+            # 뽑아 둔 프레임 폴더가 없으면(지금 서버 A · B 다 없음) 손라벨 줄의 원본 영상 · 초(t)로 그 자리에서 뽑는다
+            row = next((r for r in read_json(label_file("fire"), []) if r.get("file") == name and r.get("src") and r.get("t") is not None), None)
+            data = read_frame(row["src"].rsplit(".", 1)[0], float(row["t"])) if row else None
+            if data is None: self.send_error(404)
+            else: self._bytes(data, "image/jpeg")
             return
         self.send_error(404)
 
