@@ -115,8 +115,6 @@ video{width:100%;aspect-ratio:16/9;object-fit:fill;display:block;background:#000
 ::-webkit-scrollbar-corner{background:transparent}
 /* 결과 탭(2026-09-29 재설계, main.js buildResults): 비교 블록 = 조건표(독립 · 종속 · 통제변수) + 실험 표 */
 .nr{padding:18px 22px 40px;max-width:1240px;margin:0 auto;width:100%;display:flex;flex-direction:column;gap:14px}
-.nr-head{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
-.nr-btn{margin-left:auto;background:var(--panel);color:var(--tx);border:1px solid var(--line);border-radius:var(--r);padding:0 12px;height:var(--ctl-h);font-size:var(--fs-xs);font-weight:700;cursor:pointer}
 .nr-mut{color:var(--mut)}.nr-ok{color:var(--ok)}.nr-warn{color:var(--miss);font-size:var(--fs-2xs);font-family:-apple-system,"Segoe UI",sans-serif}
 .nr-terms{background:var(--panel);border:1px solid var(--line);border-radius:var(--r-lg);padding:8px 12px;font-size:var(--fs-xs)}
 .nr-terms summary{cursor:pointer;font-weight:700}
@@ -154,7 +152,8 @@ video{width:100%;aspect-ratio:16/9;object-fit:fill;display:block;background:#000
 .nr-keys{display:inline-grid;grid-template-columns:repeat(2,auto);gap:3px}.nr-keys span{font-size:var(--fs-2xs);font-weight:700;padding:1px 5px;border-radius:var(--r-sm);white-space:nowrap}
 .nr-keys .ok{color:var(--ok);background:#3fb95018}.nr-keys .miss{color:var(--miss);background:#d2992222}.nr-keys .bad{color:var(--bad);background:#f8514922}
 .nr-note{font-size:var(--fs-xs);color:var(--mut);border-left:2px solid var(--line);padding-left:8px}.nr-note b{color:var(--tx)}.nr-note .nr-ul{margin-top:2px}
-.nr-log{font-size:var(--fs-xs);color:var(--mut)}.nr-log summary{cursor:pointer}.nr-log div{font-family:ui-monospace,Menlo,monospace;white-space:pre-wrap}
+.nr-queue{padding:10px 12px;border:1px solid var(--line);border-radius:var(--r-lg);background:var(--panel);font-size:var(--fs-xs);line-height:1.7}
+.nr-qtbl{overflow-x:auto}.nr-qlog{color:var(--mut);font-family:ui-monospace,Menlo,monospace;white-space:pre-wrap}
 </style></head><body>
 <div class="top">
  <div class="brand" title="처음 화면으로" style="cursor:pointer" onclick="try{localStorage.removeItem('kisa_last_view')}catch(e){};location.href='/'">KISA 검수</div>

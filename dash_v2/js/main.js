@@ -42,7 +42,7 @@ function applyMode() {
 
 // ---------- 결과 탭(2026-09-29 재설계): 새 데이터 실험만, 비교 블록으로 ----------
 // 블록 = 대조군 하나 + 독립변수 하나만 다른 실험들. 정의는 configs/result_blocks.yaml, 계산은 dash_v2/results_newdata.py(/api/result_blocks).
-// 블록 머리 표 = 독립변수 · 종속변수 · 판정 기준 · 통제변수(데이터 / 학습 설정, 실제 args.yaml 로 대조) · 교란 변수 · 참고. 진행 · 예상 종료는 /api/queue 를 합친다.
+// 맨 위 = 큐 상자(옛 결과 탭과 같은 모양, 30초 갱신). 블록 머리 표 = 독립변수 · 종속변수 · 판정 기준 · 통제변수(데이터 / 학습 설정, 실제 args.yaml 로 대조) · 교란 변수 · 참고. 진행 · 예상 종료는 /api/queue 를 합친다.
 // 문구 규칙(09-29 사용자 교정안): 명사형 종결, 긴 괄호 부연 금지, 가운데 점 나열 대신 줄마다 불릿.
 const NR_KO = { intrusion: "침입", loitering: "배회", fire: "방화" };
 const nrEsc = s => String(s == null ? "" : s).replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
@@ -161,6 +161,39 @@ function nrTerms(T) {                            // 맨 위 '용어 정리'(접�
   const rows = T.map(t => { const g = t.g === g0 ? "" : (g0 = t.g); return `<tr><td class="nr-mut">${nrEsc(g)}</td><th>${nrEsc(t.t)}</th><td>${nrEsc(t.d)}</td></tr>`; }).join("");
   return `<details class="nr-terms"${nrTerms.open ? " open" : ""}><summary>용어 정리 ${nrMut(T.length + "개")}</summary><table>${rows}</table></details>`;
 }
+function nrQueueHtml(q) {                       // 맨 위 큐 상자: 옛 결과 탭과 같은 모양(실행 중 실험 · 에폭 · 이 에폭 · 속도 · 에폭당 · 예상 종료 · 최근 mAP · GPU + 러너 로그)
+  const Y = new Date().getFullYear();
+  const kst = l => l.replace(/^\[(\d\d)-(\d\d) (\d\d):(\d\d)\]/, (_, mo, da, h, mi) => {   // 옛 러너 줄(UTC, KST 표기 없음) → +9시간. 새 줄은 러너가 KST 로 쓴다
+    const d = new Date(Date.UTC(Y, +mo - 1, +da, +h, +mi) + 9 * 3600e3), z = n => String(n).padStart(2, "0");
+    return `[${z(d.getUTCMonth() + 1)}-${z(d.getUTCDate())} ${z(d.getUTCHours())}:${z(d.getUTCMinutes())} KST]`;
+  });
+  const run = q.running || [], jobs = q.jobs || [];
+  const lastLog = (q.log || []).slice(-6).map(l => `<div class="nr-qlog">${nrEsc(kst(l))}</div>`).join("");
+  return `<div style="font-weight:800">큐 <span style="color:${run.length ? "#3fb950" : "var(--mut)"}">${run.length ? "실행 중 " + run.length + "잡" : "대기/없음"}</span>` +
+    (run.length ? ` <span style="color:var(--tx);font-weight:600">${run.map(nrEsc).join(" · ")}</span>` : "") + `</div>` +
+    (jobs.length ? `<div class="nr-qtbl"><table style="border-collapse:collapse;margin:8px 0 4px;font-size:var(--fs-xs)"><thead><tr style="color:var(--mut);text-align:left"><th style="padding:2px 10px 2px 0">실험</th><th style="padding:2px 10px">에폭</th><th style="padding:2px 10px">이 에폭</th><th style="padding:2px 10px">속도</th><th style="padding:2px 10px">에폭당</th><th style="padding:2px 10px">남음 → 예상 종료(KST)</th><th style="padding:2px 10px" title="직전 에폭 검증">최근 mAP50 / 50-95</th><th style="padding:2px 10px">GPU</th></tr></thead><tbody>` +
+      jobs.map(j => j.epoch == null ? `<tr><td style="padding:3px 10px 3px 0;font-weight:700">${nrEsc(j.name)}</td><td colspan="7" style="color:var(--mut)">${nrEsc(j.state || "")}</td></tr>` :
+        `<tr><td style="padding:3px 10px 3px 0;font-weight:700;white-space:nowrap">${nrEsc(j.name)}</td>` +
+        `<td style="padding:3px 10px;font-variant-numeric:tabular-nums;white-space:nowrap"><b>${j.epoch}</b>/${j.epochs} <span style="display:inline-block;width:70px;height:6px;background:var(--panel2);border-radius:var(--r-sm);vertical-align:middle;margin-left:4px"><span style="display:block;width:${Math.round(j.epoch / j.epochs * 100)}%;height:100%;background:#3fb950;border-radius:var(--r-sm)"></span></span></td>` +
+        `<td style="padding:3px 10px;font-variant-numeric:tabular-nums">${j.pct}% <span style="color:var(--mut)">(${j.it}/${j.its} · ${nrEsc(j.elapsed)} 경과 · ${nrEsc(j.eta)} 남음)</span></td>` +
+        `<td style="padding:3px 10px;font-variant-numeric:tabular-nums;white-space:nowrap">${j.it_s} it/s</td><td style="padding:3px 10px;white-space:nowrap">${j.epoch_min != null ? j.epoch_min + "분" : "–"}</td>` +
+        `<td style="padding:3px 10px;font-variant-numeric:tabular-nums;white-space:nowrap">${j.remain_h}시간 → <b>${nrEsc(j.finish_kst || "–")}</b></td>` +
+        `<td style="padding:3px 10px;font-variant-numeric:tabular-nums;white-space:nowrap">${j.val ? `${j.val.map50.toFixed(3)} / ${j.val.map5095.toFixed(3)} <span style="color:var(--mut)">(P ${j.val.P.toFixed(2)} R ${j.val.R.toFixed(2)})</span>` : '<span style="color:var(--mut)">첫 검증 전</span>'}</td>` +
+        `<td style="padding:3px 10px;white-space:nowrap">${nrEsc(j.mem == null ? "–" : j.mem)}</td></tr>`).join("") + `</tbody></table></div>` : "") +
+    `<details class="nr-qdet"${nrQueueHtml.open ? " open" : ""}><summary style="cursor:pointer;color:var(--mut)">러너 로그</summary>${lastLog || '<div style="color:var(--mut)">로그 없음</div>'}</details>`;
+}
+function nrQueueBind(box) {                      // 러너 로그 펼침 상태를 갱신 뒤에도 유지
+  const d = box && box.querySelector(".nr-qdet"); if (d) d.ontoggle = () => { nrQueueHtml.open = d.open; };
+}
+async function nrQueueTick() {                   // 학습 중이면 30초마다 큐 상자만 갱신(화면 전체를 다시 그리지 않음)
+  const box = $("#nrQ");
+  if (CUR.mode !== "results" || !box) return;
+  try {
+    const q2 = await (await fetch("/api/queue")).json();
+    box.innerHTML = nrQueueHtml(q2); nrQueueBind(box);
+    if ((q2.jobs || []).length) window._resQ = setTimeout(nrQueueTick, 30000);
+  } catch (e) {}
+}
 async function buildResults() {
   const c = $("#center"), y = c.scrollTop;
   if (!c.querySelector(".nr")) c.innerHTML = '<div class="empty">불러오는 중…</div>';
@@ -169,18 +202,13 @@ async function buildResults() {
   try { q = await (await fetch("/api/queue")).json(); } catch (e) {}
   if (CUR.mode !== "results") return;
   if (D.error) { c.innerHTML = `<div class="empty">${nrEsc(D.error)}</div>`; return; }
-  const n = {}; Object.values(D.runs).forEach(r => n[r.status] = (n[r.status] || 0) + 1);
-  const g = q.gpu, tag = s => `<span class="tag">${s}</span>`;
-  c.innerHTML = `<div class="nr"><div class="nr-head"><div class="rtitle">새 데이터 실험 비교</div>` +
-    tag(`블록 ${D.blocks.length}`) + tag(`채점 완료 ${n.done || 0}`) + tag(`채점 대기 ${n.scoring || 0}`) + tag(`학습 중 ${n.train || 0}`) + tag(`대기 ${n.queue || 0}`) +
-    (g ? tag(`GPU ${Math.round(g.used_mib / 1024)}/${Math.round(g.total_mib / 1024)}GB`) + tag(`러너 ${q.runners == null ? "-" : q.runners}개`) : "") +
-    '<button type="button" class="nr-btn" id="nrRf">새로고침</button></div>' +
+  c.innerHTML = `<div class="nr"><div class="nr-queue" id="nrQ">${nrQueueHtml(q)}</div>` +
     nrTerms(D.terms || []) +
-    D.blocks.map(b => nrBlock(b, D, q)).join("") + (D.others.length ? nrOthers(D, q) : "") +
-    `<details class="nr-log"><summary>러너 로그</summary>${(q.log || []).slice(-8).map(l => `<div>${nrEsc(l)}</div>`).join("") || "로그 없음"}</details></div>`;
+    D.blocks.map(b => nrBlock(b, D, q)).join("") + (D.others.length ? nrOthers(D, q) : "") + "</div>";
   c.scrollTop = y;
-  $("#nrRf").onclick = buildResults;
   const tm = c.querySelector(".nr-terms"); if (tm) tm.ontoggle = () => { nrTerms.open = tm.open; };   // 1분 갱신 때 펼친 상태 유지
+  nrQueueBind($("#nrQ"));
+  clearTimeout(window._resQ); if ((q.jobs || []).length) window._resQ = setTimeout(nrQueueTick, 30000);
   clearTimeout(window._resT);                     // 학습 중 · 채점 대기 실험이 있으면 1분마다 다시 읽는다(스크롤 유지)
   if (Object.values(D.runs).some(r => r.status === "train" || r.status === "scoring")) window._resT = setTimeout(() => { if (CUR.mode === "results") buildResults(); }, 60000);
 }
