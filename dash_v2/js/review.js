@@ -164,7 +164,24 @@ function renderCenter(row, opt) {
   const v = el("video"); v.controls = false; v.preload = "metadata";
   v.src = "/vid/" + row.video.replace(/\\/g, "/").split("/").map(encodeURIComponent).join("/");
   const zoneov = el("div", "zoneov");
-  v.onerror = () => { stage.innerHTML = '<div class="novid">⚠ 영상을 불러올 수 없습니다<br><small>' + row.video + "</small></div>"; };
+  // 재생 중 연결이 끊기거나(서버 재시작 · 터널) 디코더가 오류를 내면 멈춘 자리에서 다시 불러와 이어 재생한다(최대 3번, 2026-09-29).
+  // 그래도 안 되면 브라우저 오류 코드를 보인다(1 중단 · 2 네트워크 · 3 디코딩 · 4 형식)
+  let _tries = 0, _lastT = 0, _wantPlay = false;
+  v.addEventListener("timeupdate", () => { if (v.currentTime > 0) _lastT = v.currentTime; });
+  v.addEventListener("play", () => { _wantPlay = true; }); v.addEventListener("pause", () => { if (!v.error) _wantPlay = false; });
+  v.onerror = () => {
+    const e = v.error, why = e ? `오류 ${e.code}${e.message ? " · " + e.message : ""}` : "";
+    console.warn("영상 오류", row.video, _lastT.toFixed(2), why);
+    if (_tries++ < 3) {
+      const t = _lastT, go = _wantPlay;
+      setTimeout(() => {
+        v.addEventListener("loadedmetadata", () => { v.currentTime = t; if (go) v.play().catch(() => {}); }, { once: true });
+        v.load();
+      }, 600 * _tries);
+      return;
+    }
+    stage.innerHTML = '<div class="novid">⚠ 영상을 불러올 수 없습니다<br><small>' + row.video + (why ? " · " + why + ` · ${fmt(_lastT)}` : "") + "</small></div>";
+  };
   stage.appendChild(v); stage.appendChild(zoneov); c.appendChild(stage); VID = v;
   const overlay = t => review ? drawZoneRv(zoneov, row, rv, t) : drawZone(zoneov, row, t);
 
