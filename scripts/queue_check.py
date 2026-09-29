@@ -107,9 +107,14 @@ def main():
             맵[n] = m
     이름들 = sorted(맵)
     충돌합 = 0
+    합성 = lambda n: "snowbg" in n            # 배경에 불을 얹어 만든 세트
     for i in range(len(이름들)):
         for j in range(i + 1, len(이름들)):
             a, b = 이름들[i], 이름들[j]
+            # 합성끼리는 같은 배경·같은 시각이어도 '얹은 불' 이 달라 서로 다른 그림이다.
+            # 경로가 달라 각자 제 라벨을 찾으므로 충돌이 아니다.
+            if 합성(a) and 합성(b):
+                continue
             공통 = 맵[a].keys() & 맵[b].keys()
             if not 공통:
                 continue
@@ -169,15 +174,18 @@ def main():
     # 5. 빈 라벨 비율
     print()
     print("=== 빈 라벨(하드네거티브) 비율 ===")
+    # 일부러 빈 라벨만 모은 세트(하드네거티브)는 비율이 높은 것이 정상이다.
+    네거 = ("neg", "snowfog", "배경")
     for n in 있는것:
         m = 맵.get(n)
         if not m:
             continue
         빈 = sum(1 for v in m.values() if not v)
         비율 = 100.0 * 빈 / max(1, len(m))
-        표 = "" if 비율 < 60 else "  **절반 넘음**"
+        하드네거 = any(k in n for k in 네거)
+        표 = "  (하드네거티브 전용)" if 하드네거 else ("" if 비율 < 60 else "  **절반 넘음**")
         print("  %-36s %6d장 중 빈 %5d (%4.1f%%)%s" % (n, len(m), 빈, 비율, 표))
-        if 비율 >= 60:
+        if 비율 >= 60 and not 하드네거:
             나쁨.append("빈 라벨이 %.0f%%: %s" % (비율, n))
 
     print()

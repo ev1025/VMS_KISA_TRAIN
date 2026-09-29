@@ -1,0 +1,23 @@
+# 사람(침입·배회) 학습 큐 (2026-09-25). 방화 큐(firequeue0925) 가 끝나면 이어서 돈다.
+#
+# 무엇을 알아보려는 것인가 (변수 하나)
+#   p1280_mask_hn_20260924(침입 87.27 · 배회 87.72) 에서 0924 가 앞 판보다 잃은 편 다섯 중
+#   넷이 눈 온 편이었다(침입 085 늦음, 배회 232·260 이름, 238 못잡음).
+#   0924 에서 새로 들어간 악천후 20편 중 '눈 7편' 만 빼고 나머지는 0924 와 똑같이 돌린다.
+#     학습셋  trainset_person_nosnow_20260925 = trainset_person_20260924 - 눈 7편(train 623장)
+#     batch   80 (0924 와 같게 고정)
+#   눈 편 점수가 돌아오면 원인은 눈 라벨이다. 야간 8편은 넣지 않는다(변수를 하나로).
+#
+# 러너 변경(2026-09-24~25): best.pt 는 CCTV 영상 프레임 val 로 고른다 · 10에폭마다 저장 ·
+#   평가는 토르에서 한다(results/<실험>/SCORE_ON_THOR). NHN 에서 채점하지 않는다.
+name: queue_person_nosnow_20260925
+defaults:
+  val_small: 600
+  vram_gate_mib: 90000
+  min_free_gb: 300
+  ram_cache_max: 0
+  stagger_sec: 0
+experiments:
+  - { name: p1280_nosnow_20260925, model: yolo11s, item: 사람, names: [person],
+      base: trainset_person_nosnow_20260925, extras: [], oversample: {},
+      train: { imgsz: 1280, multi_scale: 0.0, batch: 80, epochs: 60, cache: False, workers: 8 } }

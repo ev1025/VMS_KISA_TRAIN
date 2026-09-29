@@ -1,0 +1,21 @@
+# 사람 학습 큐 (2026-09-26, 3차). nightrep0926(rep2→rep3)이 끝나면 이어서 돈다. 서버 A 에 늘 두 판이 돌게 하는 큐.
+#
+# 무엇을 알아보려는 것인가
+#   1. p1280_night_m_20260926: night 레시피를 yolo11m 으로. 같은 데이터에서 모델 크기가 배회·침입 편별 결과를 바꾸는지.
+#      (배포 시 속도는 따로 실측해야 함. 배회는 전체프레임이라 여유가 있고 침입 3x3 타일은 빠듯할 수 있음)
+#   2. p1280_full_night_rep2_20260926: full_night(눈 포함 + 야간 8편) 의 시드 재현.
+#   평가는 작업 PC(SCORE_ON_THOR 로 NHN 채점 끔).
+name: queue_person_night_3_20260926
+defaults:
+  val_small: 600
+  vram_gate_mib: 110000
+  min_free_gb: 150
+  ram_cache_max: 0
+  stagger_sec: 0
+experiments:
+  - { name: p1280_night_m_20260926, model: yolo11m, item: 사람, names: [person],
+      base: trainset_person_night_20260925, extras: [], oversample: {},
+      train: { imgsz: 1280, multi_scale: 0.0, batch: 48, epochs: 60, cache: False, workers: 8 } }
+  - { name: p1280_full_night_rep2_20260926, model: yolo11s, item: 사람, names: [person],
+      base: trainset_person_20260925, extras: [], oversample: {}, extra: { seed: 2 },
+      train: { imgsz: 1280, multi_scale: 0.0, batch: 80, epochs: 60, cache: False, workers: 8 } }

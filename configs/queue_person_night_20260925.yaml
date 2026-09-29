@@ -1,0 +1,20 @@
+# 사람 학습 큐 (2026-09-25). 눈 뺀 판(personqueue0925) 이 끝나면 이어서 돈다. 밤에 GPU 가 비지 않게 미리 건다.
+#
+# 무엇을 알아보려는 것인가
+#   p1280_nosnow_20260925(눈 7편 뺌) 위에, 09-24 밤 라벨한 야간 8편을 더한 판.
+#     학습셋  trainset_person_night_20260925 = trainset_person_20260925(야간 8편 추가 · 주간 전파 1,768장 솎음) - 눈 7편
+#             KISA 10.5%
+#     batch   80
+#   p1280_nosnow_20260925 와 비교하면 '야간 8편 추가(+주간 솎음)' 의 효과가 나온다.
+#   평가는 토르가 아니라 시험 PC 와 판이 같은 작업 PC 에서 한다(results/<실험>/SCORE_ON_THOR 로 NHN 채점을 끈다).
+name: queue_person_night_20260925
+defaults:
+  val_small: 600
+  vram_gate_mib: 90000
+  min_free_gb: 300
+  ram_cache_max: 0
+  stagger_sec: 0
+experiments:
+  - { name: p1280_night_20260925, model: yolo11s, item: 사람, names: [person],
+      base: trainset_person_night_20260925, extras: [], oversample: {},
+      train: { imgsz: 1280, multi_scale: 0.0, batch: 80, epochs: 60, cache: False, workers: 8 } }

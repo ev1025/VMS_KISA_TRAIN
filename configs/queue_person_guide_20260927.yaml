@@ -1,0 +1,23 @@
+# 울트라리틱스 가이드 적용 판 (2026-09-27 08:10, 사용자 "울트라리틱스 가이드 적용시켜")
+# 가이드 대조 보고서(report/2026-09-26 KISA 울트라리틱스 가이드 대조.md) 중 학습 쪽 세 가지를 한 판에 넣었다:
+#   ① 사람 배경 비율 41% → 10% [팁]: 41% 의 거의 전부가 COCO 사람 없는 사진(47,897장). COCO 빈 라벨만 6,916장으로 줄임(우리 영상 배경 784장은 전부 둠)
+#   ② 공통 val 로 체크포인트 고르기 [지표]: 학습에 안 쓴 우리 영상 12편 1,201장(val_domain.txt). 자동 검증은 파생 셋에서 0장이 돼 학습 목록 600장(겹침)으로 대신하고 있었다
+#   ③ 처음부터 도는 판은 patience 0 [지표]: 작은 val 로 60에폭 판이 31~37에폭에서 끊긴 적이 있다
+# 비교 대조 = p1280_hnfix_night_20260927(같은 고정본·같은 레시피, 배경 41%)의 last. 작업 PC 실채점(침입·배회 1280)
+# 셋이 65% 로 줄어 우리 영상 비중이 9.7% → 15.9% 로 같이 오른다(배경만 가른 판이 아니니 함께 읽을 것). batch 80 그대로
+# 타일 배율 학습(scale 0.5~2.5)은 ultralytics scale 인자(1±s 대칭)로 못 만들어 코드가 필요해 이번엔 뺐다
+name: queue_person_guide_20260927
+defaults:
+  val_small: 600
+  vram_gate_mib: 110000
+  min_free_gb: 150
+  ram_cache_max: 0
+  stagger_sec: 60
+  val_set: data/학습데이터/trainset_person_hnfix_20260927/val_domain.txt
+experiments:
+  - { name: p1280_hnfix_bg10_20260927, model: yolo11s, item: 사람, names: [person],
+      base: trainset_person_hnfix_bg10_20260927, extras: [], oversample: {}, extra: { patience: 0, seed: 0 },
+      train: { imgsz: 1280, multi_scale: 0.0, batch: 80, epochs: 60, cache: False, workers: 8 } }
+  - { name: p1280_hnfix_bg10rep_20260927, model: yolo11s, item: 사람, names: [person],
+      base: trainset_person_hnfix_bg10_20260927, extras: [], oversample: {}, extra: { patience: 0, seed: 1 },
+      train: { imgsz: 1280, multi_scale: 0.0, batch: 80, epochs: 60, cache: False, workers: 8 } }

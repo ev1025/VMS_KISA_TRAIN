@@ -1,0 +1,77 @@
+# 사람 학습 큐: 하드네거티브·라벨을 바로잡은 고정본(hnfix)으로 다시 (2026-09-27 00:50, 사용자 "잘못된 사람 하드네거티브를 바로잡은 데이터로 학습 재설계").
+#
+# 데이터 (09-27 고정본, 큐가 도는 동안 안 바뀜)
+#   trainset_person_hnfix_20260927      = night 레시피(악천후 눈 7편 뺌). 원본 = trainset_person_night_clean_20260926 을 얼린 것
+#   trainset_person_hnfix_full_20260927 = 같은 정리에 눈 7편 포함(원본 = trainset_person_clean_20260926)
+#   person_hnfix_kisa_20260927          = 우리 KISA 영상 양성 프레임(오버샘플용)
+#   바로잡은 것: 하드네거티브를 라벨 구간 바로 앞뒤(920장 중 8% 에 사람)에서 영상 앞쪽(v3 로 사람 없음 확인)으로 교체 ·
+#   사람이 있던 옛 하드네거티브·'객체 없음' 111장 중 사람 65장 양성, 46장 뺌 · '객체 없음'은 박스(손·SAM)가 없을 때만 배경 ·
+#   서버 B 최신 라벨 19편 · 채점편 사본(침입·배회) 제외 · SAM 표류·부분 박스 제외
+#
+# 판 순서 = 09-27 18:00 설정 잠금 전에 결과가 나오는 순서 (러너 2개가 앞에서부터 하나씩 가져간다)
+#   1 hnfix_night : night 레시피 그대로 처음부터 60에폭. 데이터 정리 효과를 가장 곧게 본다(약 12.5시간 → 14:30 쯤)
+#   2~8 짧은 이어 학습(각 40분 안팎, 총 제시 약 30만 장): 옛 데이터로 학습한 night_last(시드 0)·rep2_last(시드 2)에서
+#       바로잡은 데이터로 이어 학습. KISA 비중 10.5%(ft10) · 34%(ft33) · 55%(ft55). SGD lr0 0.001 · warmup 0 · mosaic 0 · patience 0.
+#       ft10rep 은 시드 1(잡음 잣대). 06:40 쯤까지 7판
+#   9 hnfix_full : 눈 7편 포함판 처음부터 60에폭(잠금 뒤에 끝남. full_night 대 rep2 결과로 순서를 바꿀 수 있음)
+#   10 hnfix_x2  : KISA 폴더를 1번 더 넣어 비중 약 19%, 54에폭(총 제시를 대조와 맞춤)
+#   11~13 hnfix_m(yolo11m, batch 48 = 옛 큐와 같음) · hnfix_full_rep2(시드 2) · hnfix_x2rep(시드 2)
+# batch 는 yolo11s 80 · yolo11m 48(옛 큐 레시피 그대로. batch 가 달라지면 결과가 달라져 안 바꾼다)
+# 채점: 서버 러너가 score.txt(덤프 재계산)를 쓰고, 작업 PC 실채점(침입·배회 1280, best·last)으로 최종 판단
+name: queue_person_hnfix_20260927
+defaults:
+  val_small: 600
+  vram_gate_mib: 110000
+  min_free_gb: 150
+  ram_cache_max: 0
+  stagger_sec: 60
+experiments:
+  - { name: p1280_hnfix_night_20260927, model: yolo11s, item: 사람, names: [person],
+      base: trainset_person_hnfix_20260927, extras: [], oversample: {}, extra: { seed: 0 },
+      train: { imgsz: 1280, multi_scale: 0.0, batch: 80, epochs: 60, cache: False, workers: 8 } }
+  - { name: p1280_hnfix_ft10_20260927, model: night_last, item: 사람, names: [person],
+      base: trainset_person_hnfix_20260927, base_frac: 0.84, extras: [], oversample: {},
+      extra: { optimizer: SGD, lr0: 0.001, warmup_epochs: 0, mosaic: 0.0, patience: 0, seed: 0 },
+      train: { imgsz: 1280, multi_scale: 0.0, batch: 80, epochs: 3, cache: False, workers: 8 } }
+  - { name: p1280_hnfix_ft33_20260927, model: night_last, item: 사람, names: [person],
+      base: trainset_person_hnfix_20260927, base_frac: 0.30, extras: [], oversample: { person_hnfix_kisa_20260927: 1 },
+      extra: { optimizer: SGD, lr0: 0.001, warmup_epochs: 0, mosaic: 0.0, patience: 0, seed: 0 },
+      train: { imgsz: 1280, multi_scale: 0.0, batch: 80, epochs: 6, cache: False, workers: 8 } }
+  - { name: p1280_hnfix_ft55_20260927, model: night_last, item: 사람, names: [person],
+      base: trainset_person_hnfix_20260927, base_frac: 0.105, extras: [], oversample: { person_hnfix_kisa_20260927: 1 },
+      extra: { optimizer: SGD, lr0: 0.001, warmup_epochs: 0, mosaic: 0.0, patience: 0, seed: 0 },
+      train: { imgsz: 1280, multi_scale: 0.0, batch: 80, epochs: 12, cache: False, workers: 8 } }
+  - { name: p1280_hnfix2_ft10_20260927, model: rep2_last, item: 사람, names: [person],
+      base: trainset_person_hnfix_20260927, base_frac: 0.84, extras: [], oversample: {},
+      extra: { optimizer: SGD, lr0: 0.001, warmup_epochs: 0, mosaic: 0.0, patience: 0, seed: 0 },
+      train: { imgsz: 1280, multi_scale: 0.0, batch: 80, epochs: 3, cache: False, workers: 8 } }
+  - { name: p1280_hnfix2_ft33_20260927, model: rep2_last, item: 사람, names: [person],
+      base: trainset_person_hnfix_20260927, base_frac: 0.30, extras: [], oversample: { person_hnfix_kisa_20260927: 1 },
+      extra: { optimizer: SGD, lr0: 0.001, warmup_epochs: 0, mosaic: 0.0, patience: 0, seed: 0 },
+      train: { imgsz: 1280, multi_scale: 0.0, batch: 80, epochs: 6, cache: False, workers: 8 } }
+  - { name: p1280_hnfix2_ft55_20260927, model: rep2_last, item: 사람, names: [person],
+      base: trainset_person_hnfix_20260927, base_frac: 0.105, extras: [], oversample: { person_hnfix_kisa_20260927: 1 },
+      extra: { optimizer: SGD, lr0: 0.001, warmup_epochs: 0, mosaic: 0.0, patience: 0, seed: 0 },
+      train: { imgsz: 1280, multi_scale: 0.0, batch: 80, epochs: 12, cache: False, workers: 8 } }
+  - { name: p1280_hnfix_ft10rep_20260927, model: night_last, item: 사람, names: [person],
+      base: trainset_person_hnfix_20260927, base_frac: 0.84, extras: [], oversample: {},
+      extra: { optimizer: SGD, lr0: 0.001, warmup_epochs: 0, mosaic: 0.0, patience: 0, seed: 1 },
+      train: { imgsz: 1280, multi_scale: 0.0, batch: 80, epochs: 3, cache: False, workers: 8 } }
+  - { name: p1280_hnfix_full_20260927, model: yolo11s, item: 사람, names: [person],
+      base: trainset_person_hnfix_full_20260927, extras: [], oversample: {}, extra: { seed: 0 },
+      train: { imgsz: 1280, multi_scale: 0.0, batch: 80, epochs: 60, cache: False, workers: 8 } }
+  - { name: p1280_hnfix_x2_20260927, model: yolo11s, item: 사람, names: [person],
+      base: trainset_person_hnfix_20260927, extras: [], oversample: { person_hnfix_kisa_20260927: 1 },
+      extra: { patience: 0, seed: 0 },
+      train: { imgsz: 1280, multi_scale: 0.0, batch: 80, epochs: 54, cache: False, workers: 8 } }
+  # 11~13 = 옛 미세조정 큐 끝에 있던 세 판을 고정본으로 옮긴 것(잠금 뒤, 28일 아침까지 GPU 를 비우지 않게)
+  - { name: p1280_hnfix_m_20260927, model: yolo11m, item: 사람, names: [person],
+      base: trainset_person_hnfix_20260927, extras: [], oversample: {},
+      train: { imgsz: 1280, multi_scale: 0.0, batch: 48, epochs: 60, cache: False, workers: 8 } }
+  - { name: p1280_hnfix_full_rep2_20260927, model: yolo11s, item: 사람, names: [person],
+      base: trainset_person_hnfix_full_20260927, extras: [], oversample: {}, extra: { seed: 2 },
+      train: { imgsz: 1280, multi_scale: 0.0, batch: 80, epochs: 60, cache: False, workers: 8 } }
+  - { name: p1280_hnfix_x2rep_20260927, model: yolo11s, item: 사람, names: [person],
+      base: trainset_person_hnfix_20260927, extras: [], oversample: { person_hnfix_kisa_20260927: 1 },
+      extra: { patience: 0, seed: 2 },
+      train: { imgsz: 1280, multi_scale: 0.0, batch: 80, epochs: 54, cache: False, workers: 8 } }

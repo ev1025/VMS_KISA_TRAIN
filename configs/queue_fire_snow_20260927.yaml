@@ -1,0 +1,103 @@
+# 방화 눈 조건 실험 (2026-09-26 밤 → 09-28). 사람 학습 2판(155GB) 옆 남는 메모리에서 세 번째 판으로 돈다(batch 16 · 약 15GB).
+#
+# 무엇을 알아보려는 것인가 (조사: project/report/2026-09-26 KISA 방화 눈 합성 조사.md)
+#   채점 방화 10편 중 변별 편은 주간 눈 216 · 야간 눈 272 · 주간 안개 195 · 야간 맑음 089 넷뿐이다.
+#   지금까지의 눈 배경 붙여넣기(fire_snowbg_*)는 효과가 약했다(덤프 신뢰도 기준)
+#     흑백불 붙여넣기: 272 최고 불 0.75 -> 0.90 (이미 잡던 편) · 216 최고 0.29 -> 0.42 (0.40 3회 못 넘음)
+#     작은불 붙여넣기: 216 에서 헛불 · 공개셋 설경 6~10배: 점수 하락
+#   216 을 잘 보는 판은 f960_best_s_20260915(best 0.55·last 0.57) 하나다. 나중 판들과 다른 점: 손라벨셋(전파 5%) · azimjaan 포함 ·
+#   안개 음성셋(wildfire_fog_neg) 없음 · batch 88. 그래서 눈 편을 가르는 후보 변수를 하나씩 뗀다.
+#
+# 설계
+#   ft 판 = tier42_ir(단독 실채점 88.89, 오검 0) best.pt 에서 4에폭 이어 학습. 새 손라벨(09-26 토르 동기화, 전파→완료 33편 포함)과
+#          채점편 카메라 146 을 뺀 흑백불 눈배경으로 바꾼 것이 대조군(ctl). 나머지는 대조군에서 한 가지씩만 다르다.
+#          SGD lr0 0.001 · warmup 0 · mosaic 0 · patience 0 · multi_scale 0(메모리 고정). 베이스는 30%만(1에폭 약 23만 장).
+#   full 판 = 처음부터(yolo11s COCO) 60에폭. tier42 레시피를 새 데이터로. batch 16 이라 tier42_ir(batch 300)와 직접 비교는 안 한다(둘끼리 비교)
+#   채점 = 작업 PC 실채점(한 벌 · 960), best · last 둘 다. 서버 러너의 덤프 채점(score_tl, 표본별 신뢰도)도 그대로 둔다(분석용)
+#   판정(미리 정함): 10편이라 1편 = 약 5~10점. 대조군과 그 시드 반복의 차이보다 큰 차이만 효과로 본다.
+#                   눈 편(216·272)의 덤프 신뢰도(정답창 최고값 · 0.40 넘는 표본 수)를 같이 본다.
+name: queue_fire_snow_20260927
+defaults:
+  val_small: 600
+  vram_gate_mib: 165000      # 사람 2판(약 155GB)이 돌아도 이 판은 들어간다. 사람 러너 문턱(90·110GB)은 안 건드린다
+  min_free_gb: 300
+  ram_cache_max: 0
+  stagger_sec: 0
+experiments:
+  # 1. 대조군: 새 손라벨 x4 + 새 안개 x3 + 깨끗한 흑백불 눈배경. 라벨 갱신 효과도 이 판으로 본다
+  - { name: f960_ft_ctl_20260927, model: tier42ir_best, item: 방화, names: [fire, smoke],
+      base: aihub71751_48k, base_frac: 0.3,
+      extras: [fasdd_snowfog, fasdd_yolo, wildfire_pos_yolo, wildfire_fog_neg, fire_snowbg_흑백불_20260926],
+      oversample: { handset_fire_all_20260926: 4, fire_mask_hn_fog_20260926: 3 },
+      extra: { optimizer: SGD, lr0: 0.001, warmup_epochs: 0, mosaic: 0.0, patience: 0, seed: 0 },
+      train: { epochs: 4, batch: 16, imgsz: 960, multi_scale: 0.0, cache: False, workers: 8 } }
+  # 2. 실제 눈 층 합성(새 방법): 손라벨 불 프레임에 실제 눈 영상의 눈 층 + 실측 톤. 대조군 + x2
+  - { name: f960_ft_physnow_20260927, model: tier42ir_best, item: 방화, names: [fire, smoke],
+      base: aihub71751_48k, base_frac: 0.3,
+      extras: [fasdd_snowfog, fasdd_yolo, wildfire_pos_yolo, wildfire_fog_neg, fire_snowbg_흑백불_20260926],
+      oversample: { handset_fire_all_20260926: 4, fire_mask_hn_fog_20260926: 3, fire_snowaug_20260926: 2 },
+      extra: { optimizer: SGD, lr0: 0.001, warmup_epochs: 0, mosaic: 0.0, patience: 0, seed: 0 },
+      train: { epochs: 4, batch: 16, imgsz: 960, multi_scale: 0.0, cache: False, workers: 8 } }
+  # 3. 눈 배경 붙여넣기를 뺀 것: 붙여넣기의 효과(질문 1 에 곧바로 답)
+  - { name: f960_ft_nopaste_20260927, model: tier42ir_best, item: 방화, names: [fire, smoke],
+      base: aihub71751_48k, base_frac: 0.3,
+      extras: [fasdd_snowfog, fasdd_yolo, wildfire_pos_yolo, wildfire_fog_neg],
+      oversample: { handset_fire_all_20260926: 4, fire_mask_hn_fog_20260926: 3 },
+      extra: { optimizer: SGD, lr0: 0.001, warmup_epochs: 0, mosaic: 0.0, patience: 0, seed: 0 },
+      train: { epochs: 4, batch: 16, imgsz: 960, multi_scale: 0.0, cache: False, workers: 8 } }
+  # 4. 작게+눈: 화면을 0.45~0.75 배로 줄여 불을 216 크기(25x12px)로 + 짙은 눈 층. 대조군 + x2
+  - { name: f960_ft_zoomsnow_20260927, model: tier42ir_best, item: 방화, names: [fire, smoke],
+      base: aihub71751_48k, base_frac: 0.3,
+      extras: [fasdd_snowfog, fasdd_yolo, wildfire_pos_yolo, wildfire_fog_neg, fire_snowbg_흑백불_20260926],
+      oversample: { handset_fire_all_20260926: 4, fire_mask_hn_fog_20260926: 3, fire_snowsmall_20260926: 2 },
+      extra: { optimizer: SGD, lr0: 0.001, warmup_epochs: 0, mosaic: 0.0, patience: 0, seed: 0 },
+      train: { epochs: 4, batch: 16, imgsz: 960, multi_scale: 0.0, cache: False, workers: 8 } }
+  # 5. 안개 음성셋(wildfire_fog_neg 12,007장)을 뺀 것: '희뿌연 장면 = 불 아님' 이 눈 장면의 불까지 누르는지
+  - { name: f960_ft_nofogneg_20260927, model: tier42ir_best, item: 방화, names: [fire, smoke],
+      base: aihub71751_48k, base_frac: 0.3,
+      extras: [fasdd_snowfog, fasdd_yolo, wildfire_pos_yolo, fire_snowbg_흑백불_20260926],
+      oversample: { handset_fire_all_20260926: 4, fire_mask_hn_fog_20260926: 3 },
+      extra: { optimizer: SGD, lr0: 0.001, warmup_epochs: 0, mosaic: 0.0, patience: 0, seed: 0 },
+      train: { epochs: 4, batch: 16, imgsz: 960, multi_scale: 0.0, cache: False, workers: 8 } }
+  # 6. 대조군 시드 반복: 잡음 잣대
+  - { name: f960_ft_ctlrep_20260927, model: tier42ir_best, item: 방화, names: [fire, smoke],
+      base: aihub71751_48k, base_frac: 0.3,
+      extras: [fasdd_snowfog, fasdd_yolo, wildfire_pos_yolo, wildfire_fog_neg, fire_snowbg_흑백불_20260926],
+      oversample: { handset_fire_all_20260926: 4, fire_mask_hn_fog_20260926: 3 },
+      extra: { optimizer: SGD, lr0: 0.001, warmup_epochs: 0, mosaic: 0.0, patience: 0, seed: 1 },
+      train: { epochs: 4, batch: 16, imgsz: 960, multi_scale: 0.0, cache: False, workers: 8 } }
+  # 7. 붙여넣기를 실제 눈 층으로 바꾼 것(교체)
+  - { name: f960_ft_physonly_20260927, model: tier42ir_best, item: 방화, names: [fire, smoke],
+      base: aihub71751_48k, base_frac: 0.3,
+      extras: [fasdd_snowfog, fasdd_yolo, wildfire_pos_yolo, wildfire_fog_neg],
+      oversample: { handset_fire_all_20260926: 4, fire_mask_hn_fog_20260926: 3, fire_snowaug_20260926: 2 },
+      extra: { optimizer: SGD, lr0: 0.001, warmup_epochs: 0, mosaic: 0.0, patience: 0, seed: 0 },
+      train: { epochs: 4, batch: 16, imgsz: 960, multi_scale: 0.0, cache: False, workers: 8 } }
+  # 8. 실제 눈 층 시드 반복
+  - { name: f960_ft_physrep_20260927, model: tier42ir_best, item: 방화, names: [fire, smoke],
+      base: aihub71751_48k, base_frac: 0.3,
+      extras: [fasdd_snowfog, fasdd_yolo, wildfire_pos_yolo, wildfire_fog_neg, fire_snowbg_흑백불_20260926],
+      oversample: { handset_fire_all_20260926: 4, fire_mask_hn_fog_20260926: 3, fire_snowaug_20260926: 2 },
+      extra: { optimizer: SGD, lr0: 0.001, warmup_epochs: 0, mosaic: 0.0, patience: 0, seed: 1 },
+      train: { epochs: 4, batch: 16, imgsz: 960, multi_scale: 0.0, cache: False, workers: 8 } }
+  # 9. azimjaan 공개셋(10,739장) 추가: 216 을 보는 유일한 판(best_s)에만 들어 있던 재료
+  - { name: f960_ft_azim_20260927, model: tier42ir_best, item: 방화, names: [fire, smoke],
+      base: aihub71751_48k, base_frac: 0.3,
+      extras: [fasdd_snowfog, fasdd_yolo, wildfire_pos_yolo, wildfire_fog_neg, fire_snowbg_흑백불_20260926, azimjaan_yolo],
+      oversample: { handset_fire_all_20260926: 4, fire_mask_hn_fog_20260926: 3 },
+      extra: { optimizer: SGD, lr0: 0.001, warmup_epochs: 0, mosaic: 0.0, patience: 0, seed: 0 },
+      train: { epochs: 4, batch: 16, imgsz: 960, multi_scale: 0.0, cache: False, workers: 8 } }
+  # 10. 처음부터: tier42 레시피를 새 데이터로(새 기준선). 약 17시간
+  - { name: f960_t42new_ctl_20260927, model: yolo11s, item: 방화, names: [fire, smoke],
+      base: aihub71751_48k,
+      extras: [fasdd_snowfog, fasdd_yolo, wildfire_pos_yolo, wildfire_fog_neg, fire_snowbg_흑백불_20260926],
+      oversample: { handset_fire_all_20260926: 4, fire_mask_hn_fog_20260926: 3 },
+      extra: { seed: 0 },
+      train: { epochs: 60, batch: 16, imgsz: 960, multi_scale: 0.0, cache: False, workers: 8 } }
+  # 11. 처음부터 + 실제 눈 층 x2
+  - { name: f960_t42new_phys_20260927, model: yolo11s, item: 방화, names: [fire, smoke],
+      base: aihub71751_48k,
+      extras: [fasdd_snowfog, fasdd_yolo, wildfire_pos_yolo, wildfire_fog_neg, fire_snowbg_흑백불_20260926],
+      oversample: { handset_fire_all_20260926: 4, fire_mask_hn_fog_20260926: 3, fire_snowaug_20260926: 2 },
+      extra: { seed: 0 },
+      train: { epochs: 60, batch: 16, imgsz: 960, multi_scale: 0.0, cache: False, workers: 8 } }

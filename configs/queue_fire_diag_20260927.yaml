@@ -1,0 +1,38 @@
+# 방화 이어 학습이 왜 무너졌나 가르는 판 (2026-09-27 09:20, 사용자 승인 "그래")
+#
+# 배경: tier42_ir(단독 실채점 88.89)에서 4에폭 이어 학습한 판이 대조군까지 전부 60~74 로 떨어졌다(ctl 60.00 · physnow 63.16 · nopaste 73.68).
+#   대조군은 tier42_ir 와 여러 가지가 한꺼번에 달라 원인을 못 가른다.
+#     레시피: batch 300 → 16 · 처음부터 60에폭 → 이어 4에폭 · lr 0.01·워밍업 3 → SGD 0.001·워밍업 0 · 모자이크 켬 → 끔 · multi_scale 0.333 → 0 · 공개셋 100% → 30%
+#     데이터: 손라벨 완료 x4 + 전파 x2(09-23) → 완료+전파 합쳐 x4(09-26, 토르 동기화 33편 포함) · 안개 합성 09-23 → 09-26
+# 이 판 = 대조군과 레시피 완전히 같고, 손라벨·안개 합성만 tier42_ir 가 학습한 09-23 판으로 되돌린 것
+#   (눈배경은 09-26 판: 09-23 판엔 채점편 카메라 146 배경이 있어 규칙상 못 쓴다. 장 수 2,400 같음)
+#   판정: 이 판도 60점대로 떨어지면 원인은 레시피(토르 새 데이터 무관), 88점대면 새 데이터(라벨·전파 가중치·안개 합성) 쪽
+# 이어서 원래 방화 큐의 처음부터 판 2개(t42new, 이어 학습 레시피를 안 씀)를 이름만 t42new2 로 바꿔 옮겼다(설정 같음).
+# 도는 zoomsnow 는 멈추지 않고 끝까지 둔다(도는 학습 중단은 사용자 확인 필요). 남은 이어 학습 5판과 옛 이름 t42new 2판은 score.txt 로 건너뛰어
+# 옛 방화 러너(firesnow0927)가 zoomsnow 뒤에 스스로 끝나면, 대기(ft_slots0927c)가 이 큐 러너(firediag0927)를 띄운다
+name: queue_fire_diag_20260927
+defaults:
+  val_small: 600
+  vram_gate_mib: 165000
+  min_free_gb: 300
+  ram_cache_max: 0
+  stagger_sec: 0
+experiments:
+  - { name: f960_ft_old0923_20260927, model: tier42ir_best, item: 방화, names: [fire, smoke],
+      base: aihub71751_48k, base_frac: 0.3,
+      extras: [fasdd_snowfog, fasdd_yolo, wildfire_pos_yolo, wildfire_fog_neg, fire_snowbg_흑백불_20260926],
+      oversample: { handset_fire_hand_20260923: 4, handset_fire_prop_20260923: 2, fire_mask_hn_fog_20260923: 3 },
+      extra: { optimizer: SGD, lr0: 0.001, warmup_epochs: 0, mosaic: 0.0, patience: 0, seed: 0 },
+      train: { epochs: 4, batch: 16, imgsz: 960, multi_scale: 0.0, cache: False, workers: 8 } }
+  - { name: f960_t42new2_ctl_20260927, model: yolo11s, item: 방화, names: [fire, smoke],
+      base: aihub71751_48k,
+      extras: [fasdd_snowfog, fasdd_yolo, wildfire_pos_yolo, wildfire_fog_neg, fire_snowbg_흑백불_20260926],
+      oversample: { handset_fire_all_20260926: 4, fire_mask_hn_fog_20260926: 3 },
+      extra: { seed: 0 },
+      train: { epochs: 60, batch: 16, imgsz: 960, multi_scale: 0.0, cache: False, workers: 8 } }
+  - { name: f960_t42new2_phys_20260927, model: yolo11s, item: 방화, names: [fire, smoke],
+      base: aihub71751_48k,
+      extras: [fasdd_snowfog, fasdd_yolo, wildfire_pos_yolo, wildfire_fog_neg, fire_snowbg_흑백불_20260926],
+      oversample: { handset_fire_all_20260926: 4, fire_mask_hn_fog_20260926: 3, fire_snowaug_20260926: 2 },
+      extra: { seed: 0 },
+      train: { epochs: 60, batch: 16, imgsz: 960, multi_scale: 0.0, cache: False, workers: 8 } }

@@ -44,7 +44,10 @@ ALL_MODELS = list(MODELS)                            # train --models all 대상
 
 # 화재/연기 도메인 기본 레시피 (불꽃: 상하반전 금지, 색왜곡 약하게, 막판 모자이크 off)
 RECIPE = dict(flipud=0.0, fliplr=0.5, hsv_h=0.015, hsv_s=0.5, hsv_v=0.4,
-              mosaic=1.0, close_mosaic=10, patience=30, cos_lr=True)
+              mosaic=1.0, close_mosaic=10, patience=30, cos_lr=True,
+              # 10에폭마다 가중치를 남긴다(epoch10.pt ...). best.pt 는 val 의 mAP@0.5:0.95 로만 골라져
+              # KISA 채점(경보 시각)과 기준이 다르다. 나중에 KISA F1 로 에폭을 다시 고를 수 있게 둔다(2026-09-24)
+              save_period=10)
 
 
 def _YOLO(w):

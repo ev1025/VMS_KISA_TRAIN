@@ -2,7 +2,9 @@
 """last.pt 에서 학습을 이어간다(에폭 진척 유지). 체크포인트에 저장된 학습 인자 중 cache/workers 만 바꿔 쓸 수 있다.
 사용: python scripts/resume_train.py <last.pt> [--cache ram|False] [--workers N]
 ultralytics resume 는 인자를 체크포인트에서 읽으므로, 바꾸려면 체크포인트의 train_args 를 고쳐야 한다(원본은 .bak 로 남김)."""
-import argparse, shutil, sys, time
+import argparse, os, shutil, sys, time
+# model.py 와 같은 CUDA 메모리 설정(2026-09-26). 빠지면 재개한 판이 같은 batch 에서 VRAM 을 약 10GB 더 잡았다(77 -> 87GB)
+os.environ.setdefault("PYTORCH_CUDA_ALLOC_CONF", "expandable_segments:True")
 from pathlib import Path
 import torch
 

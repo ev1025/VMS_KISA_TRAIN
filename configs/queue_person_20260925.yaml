@@ -1,0 +1,22 @@
+# 사람(침입·배회) 학습 큐 (2026-09-25). 방화 큐(firequeue0925) 가 끝나면 이어서 돈다.
+#
+# 무엇을 알아보려는 것인가
+#   p1280_mask_hn_20260924(침입 87.27 · 배회 87.72) 대비 두 가지를 바꾼다.
+#     학습셋  trainset_person_20260925 : 09-24 밤 야간 8편 라벨 추가, KISA 비중 11.0% 로 맞춤
+#             (주간 전파 프레임 1,768장을 솎음. 손라벨·야간·악천후·빈라벨은 그대로)
+#     batch   80 -> 170 (배회 93.10 이 나온 0918 과 같은 값)
+#   러너가 바뀌어서 best.pt 를 CCTV 영상 프레임 val(학습과 클립 단위로 안 겹침)로 고르고,
+#   10에폭마다 가중치를 남긴다.
+#
+# 실행 중인 큐 yaml 은 편집하지 않는다.
+name: queue_person_20260925
+defaults:
+  val_small: 600
+  vram_gate_mib: 90000
+  min_free_gb: 300
+  ram_cache_max: 0
+  stagger_sec: 0
+experiments:
+  - { name: p1280_mask_hn_20260925, model: yolo11s, item: 사람, names: [person],
+      base: trainset_person_20260925, extras: [], oversample: {},
+      train: { imgsz: 1280, multi_scale: 0.0, batch: 170, epochs: 60, cache: False, workers: 8 } }

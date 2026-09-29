@@ -1,0 +1,31 @@
+# 방화 학습 큐 (2026-09-25)
+#
+# 무엇을 알아보려는 것인가
+#   f960_tier42_base_20260923(77.78, 089 오검) 에 두 가지만 더한다.
+#     fire_snowbg_작은불_20260923  2,400장 · 눈 배경에 작은 주황 불 합성. 216(주간 눈) 대상
+#     fire_nightneg_20260924         640장 · 불 없는 야간 CCTV 빈 라벨. 089(어두운 바닥 흰 물체) 오검 대상
+#   흑백불 합성은 넣지 않는다(2026-09-24 결정).
+#   나머지(베이스·추가셋·오버샘플·해상도·에폭·batch)는 기준점과 같다.
+#
+# 이번 판부터 달라지는 것(러너·레시피, 2026-09-24)
+#   best.pt 를 고르는 val = 우리 CCTV 영상 프레임 중 학습에 안 쓴 클립(방화 271장).
+#   10에폭마다 가중치를 남긴다(save_period=10).
+#
+# 주의
+#   실행 중인 큐 yaml 은 편집하지 않는다. 사람 큐가 이 뒤에 --wait-tmux 로 붙는다.
+name: queue_fire_20260925
+defaults:
+  val_small: 600
+  vram_gate_mib: 90000
+  min_free_gb: 300
+  ram_cache_max: 0
+  stagger_sec: 0
+  train: { epochs: 60, batch: 300, imgsz: 960, multi_scale: 0.333, cache: False, workers: 8 }
+
+experiments:
+  - { name: f960_snowsmall_nightneg_20260925, model: yolo11s, item: 방화, names: [fire, smoke],
+      base: aihub71751_48k,
+      extras: [fasdd_snowfog, fasdd_yolo, wildfire_pos_yolo, wildfire_fog_neg,
+               fire_snowbg_작은불_20260923, fire_nightneg_20260924],
+      oversample: { handset_fire_hand_20260923: 4, handset_fire_prop_20260923: 2,
+                    fire_mask_hn_fog_20260923: 3 } }

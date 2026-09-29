@@ -1,0 +1,70 @@
+# 사람 학습 큐 (2026-09-26 밤 → 09-27). 비율·반복 가설을 한 변수씩 가르는 판. 전부 깨끗한 학습셋(채점편 사본·SAM 표류·부분 박스 제외, 좌표 복원).
+#
+# 무엇을 알아보려는 것인가
+#   손라벨 판(night 계열)이 배포본(의사라벨 v3)을 못 넘는 이유로 "KISA 반복이 부족하다" 는 가설이 나왔다.
+#   원장을 보면 0915(x8)→0918(x1)에서 줄어든 것은 KISA 노출량이 아니라 프레임당 반복(540→60번)이고, 비중은 10% 로 같았다.
+#   그래서 비중(=반복)만 바꾼 판을 만든다. 채점은 작업 PC 에서 침입·배회 1280, best·last 둘 다.
+#   판정(미리 정함): 새 판 평균이 대조(night·rep2·rep3 best·last) 평균보다 침입 3편 이상 · 최저값이 대조 평균 이상 · 오검 증가 1 이하.
+#
+#   ft 판 = night 마지막 가중치(night_last, 시드 0 / rep2_last, 시드 2)에서 짧게 이어 학습. 총 제시 약 30만 장으로 고정.
+#          KISA 비중 10.5%(대조) · 34% · 55%. SGD lr0 0.001 · warmup 0 · mosaic 0 · patience 0. ft10rep 은 시드 1 (잡음 잣대).
+#   x2 판 = COCO 사전학습에서 처음부터, KISA 전용 폴더를 1번 더 넣어 비중 약 19%. 총 제시를 대조와 맞추려 54에폭.
+#   night_m · full_night_rep2 = 원래 3차 큐(night3_0926)에 있던 두 판을 깨끗한 셋으로 옮긴 것.
+name: queue_person_ft_20260927
+defaults:
+  val_small: 600
+  vram_gate_mib: 110000
+  min_free_gb: 150
+  ram_cache_max: 0
+  stagger_sec: 60
+experiments:
+  # 0. night 레시피 그대로, 깨끗한 학습셋(오염 제거·좌표 복원·악천후 3편 재라벨)으로 다시. 라벨 정리 효과를 가장 곧게 보는 판
+  - { name: p1280_night_clean_20260927, model: yolo11s, item: 사람, names: [person],
+      base: trainset_person_night_clean_20260926, extras: [], oversample: {}, extra: { seed: 0 },
+      train: { imgsz: 1280, multi_scale: 0.0, batch: 80, epochs: 60, cache: False, workers: 8 } }
+  - { name: p1280_night_ft10_20260927, model: night_last, item: 사람, names: [person],
+      base: trainset_person_night_clean_20260926, base_frac: 0.84, extras: [], oversample: {},
+      extra: { optimizer: SGD, lr0: 0.001, warmup_epochs: 0, mosaic: 0.0, patience: 0, seed: 0 },
+      train: { imgsz: 1280, multi_scale: 0.0, batch: 80, epochs: 3, cache: False, workers: 8 } }
+  - { name: p1280_night_ft10rep_20260927, model: night_last, item: 사람, names: [person],
+      base: trainset_person_night_clean_20260926, base_frac: 0.84, extras: [], oversample: {},
+      extra: { optimizer: SGD, lr0: 0.001, warmup_epochs: 0, mosaic: 0.0, patience: 0, seed: 1 },
+      train: { imgsz: 1280, multi_scale: 0.0, batch: 80, epochs: 3, cache: False, workers: 8 } }
+  - { name: p1280_night_ft33_20260927, model: night_last, item: 사람, names: [person],
+      base: trainset_person_night_clean_20260926, base_frac: 0.30, extras: [], oversample: { person_night_kisa_20260927: 1 },
+      extra: { optimizer: SGD, lr0: 0.001, warmup_epochs: 0, mosaic: 0.0, patience: 0, seed: 0 },
+      train: { imgsz: 1280, multi_scale: 0.0, batch: 80, epochs: 6, cache: False, workers: 8 } }
+  - { name: p1280_night_ft55_20260927, model: night_last, item: 사람, names: [person],
+      base: trainset_person_night_clean_20260926, base_frac: 0.105, extras: [], oversample: { person_night_kisa_20260927: 1 },
+      extra: { optimizer: SGD, lr0: 0.001, warmup_epochs: 0, mosaic: 0.0, patience: 0, seed: 0 },
+      train: { imgsz: 1280, multi_scale: 0.0, batch: 80, epochs: 12, cache: False, workers: 8 } }
+  - { name: p1280_night_x2_20260927, model: yolo11s, item: 사람, names: [person],
+      base: trainset_person_night_clean_20260926, extras: [], oversample: { person_night_kisa_20260927: 1 },
+      extra: { patience: 0, seed: 0 },
+      train: { imgsz: 1280, multi_scale: 0.0, batch: 80, epochs: 54, cache: False, workers: 8 } }
+  - { name: p1280_night2_ft10_20260927, model: rep2_last, item: 사람, names: [person],
+      base: trainset_person_night_clean_20260926, base_frac: 0.84, extras: [], oversample: {},
+      extra: { optimizer: SGD, lr0: 0.001, warmup_epochs: 0, mosaic: 0.0, patience: 0, seed: 0 },
+      train: { imgsz: 1280, multi_scale: 0.0, batch: 80, epochs: 3, cache: False, workers: 8 } }
+  - { name: p1280_night2_ft10rep_20260927, model: rep2_last, item: 사람, names: [person],
+      base: trainset_person_night_clean_20260926, base_frac: 0.84, extras: [], oversample: {},
+      extra: { optimizer: SGD, lr0: 0.001, warmup_epochs: 0, mosaic: 0.0, patience: 0, seed: 1 },
+      train: { imgsz: 1280, multi_scale: 0.0, batch: 80, epochs: 3, cache: False, workers: 8 } }
+  - { name: p1280_night2_ft33_20260927, model: rep2_last, item: 사람, names: [person],
+      base: trainset_person_night_clean_20260926, base_frac: 0.30, extras: [], oversample: { person_night_kisa_20260927: 1 },
+      extra: { optimizer: SGD, lr0: 0.001, warmup_epochs: 0, mosaic: 0.0, patience: 0, seed: 0 },
+      train: { imgsz: 1280, multi_scale: 0.0, batch: 80, epochs: 6, cache: False, workers: 8 } }
+  - { name: p1280_night2_ft55_20260927, model: rep2_last, item: 사람, names: [person],
+      base: trainset_person_night_clean_20260926, base_frac: 0.105, extras: [], oversample: { person_night_kisa_20260927: 1 },
+      extra: { optimizer: SGD, lr0: 0.001, warmup_epochs: 0, mosaic: 0.0, patience: 0, seed: 0 },
+      train: { imgsz: 1280, multi_scale: 0.0, batch: 80, epochs: 12, cache: False, workers: 8 } }
+  - { name: p1280_night_m_20260927, model: yolo11m, item: 사람, names: [person],
+      base: trainset_person_night_clean_20260926, extras: [], oversample: {},
+      train: { imgsz: 1280, multi_scale: 0.0, batch: 48, epochs: 60, cache: False, workers: 8 } }
+  - { name: p1280_full_night_rep2_20260927, model: yolo11s, item: 사람, names: [person],
+      base: trainset_person_clean_20260926, extras: [], oversample: {}, extra: { seed: 2 },
+      train: { imgsz: 1280, multi_scale: 0.0, batch: 80, epochs: 60, cache: False, workers: 8 } }
+  - { name: p1280_night_x2rep_20260927, model: yolo11s, item: 사람, names: [person],
+      base: trainset_person_night_clean_20260926, extras: [], oversample: { person_night_kisa_20260927: 1 },
+      extra: { patience: 0, seed: 2 },
+      train: { imgsz: 1280, multi_scale: 0.0, batch: 80, epochs: 54, cache: False, workers: 8 } }

@@ -1,0 +1,31 @@
+# 방화 야간 하드네거티브 단독 판 (2026-09-25 저녁)
+#
+# 무엇을 알아보려는 것인가
+#   야간 하드네거티브(불 없는 야간 CCTV 빈 라벨 640장)가 야간 맑음(공장 안) 편의 헛불을 줄이나.
+#   09-24 에 한 번 넣었지만 눈 합성과 같이 넣어서 어느 쪽 탓인지 못 갈랐다(그 판 73.68).
+#   눈 합성은 09-25 에 철회했다. 그래서 지금까지 최고인 f960_tier42_ir_20260923(88.89, 오검 0) 위에
+#   야간 하드네거티브 하나만 더한다. 변수는 하나다.
+#
+# 기준
+#   tier42_ir 와 base·extras·oversample·해상도·에폭·batch 가 전부 같고 fire_nightneg_20260924 만 추가.
+#   판정은 작업 PC(시험 PC 와 라이브러리 판이 같다)에서. 경계 편이 판에 따라 뒤집힌다.
+#
+# GPU
+#   vram_gate_mib 20000 = GPU 가 거의 빌 때만 시작한다. 지금 사람 두 판이 156GB 를 쓰고 있어
+#   기본값 90000 으로 두면 앞 판 하나만 끝나도 끼어들어 OOM 이 난다.
+name: queue_fire_nightneg_20260925
+defaults:
+  val_small: 600
+  vram_gate_mib: 20000
+  min_free_gb: 300
+  ram_cache_max: 0
+  stagger_sec: 0
+  train: { epochs: 60, batch: 300, imgsz: 960, multi_scale: 0.333, cache: False, workers: 8 }
+
+experiments:
+  - { name: f960_ir_nightneg_20260925, model: yolo11s, item: 방화, names: [fire, smoke],
+      base: aihub71751_48k,
+      extras: [fasdd_snowfog, fasdd_yolo, wildfire_pos_yolo, wildfire_fog_neg,
+               fire_snowbg_흑백불_20260923, fire_nightneg_20260924],
+      oversample: { handset_fire_hand_20260923: 4, handset_fire_prop_20260923: 2,
+                    fire_mask_hn_fog_20260923: 3 } }

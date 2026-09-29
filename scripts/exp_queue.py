@@ -13,7 +13,8 @@
 무인 운전(2026-09-18, 주말 큐)
   - 채점은 `_score` 로 떼어 돌린다. 채점은 영상 디코딩이 병목이라 GPU 가 거의 놀았다(잡 하나당 10~40분).
     학습(_one)이 끝나면 러너는 바로 다음 학습을 띄우고, 채점은 옆에서 따로 끝난다.
-  - rc=-9(OOM 의심) 이면 batch 를 20% 줄여 last.pt 에서 이어간다(최대 2번). 러너 재실행을 기다리지 않는다.
+  - rc=-9(OOM 의심) 이면 같은 batch 로 last.pt 에서 이어간다(최대 2번). 러너 재실행을 기다리지 않는다.
+    (2026-09-26 부터 batch 는 줄이지 않는다. batch 가 달라지면 결과가 달라져 비교가 깨진다)
   - 학습 시작 5분 뒤 GPU 사용량을 한 번 재서 로그·_exp/gpu_probe.json 에 남긴다. 자동으로 batch 를 바꾸지는 않는다.
     (도는 학습을 죽이고 다시 띄우는 방식은 러너가 다음 실험을 겹쳐 띄우는 사고를 냈다. 2026-09-18)
 """
@@ -129,6 +130,39 @@ def list_images(ds_dir):
     raise FileNotFoundError(f"이미지 없음: {ds_dir}")
 
 
+def domain_val(names, train_lines):
+    """큐가 쓰는 세트들의 val.txt 에서 우리 영상 프레임만 모은다. (목록, 세트별 개수)
+    원본 학습셋 폴더 기준이다. 공개셋 이미지는 거기서 심링크라 실파일만 고르면 우리 프레임이 남는다.
+    파생 세트(안개 합성 등)는 val.txt 가 없으니 meta.json 의 source 세트 것을 쓴다.
+    학습에 한 장이라도 들어간 클립은 통째로 뺀다. 같은 클립의 이웃 프레임도 누수라서다."""
+    import re
+    tail = re.compile(r"_fog[lmh]$|_snow[lmh]$")
+    frame = re.compile(r"^(.+)_\d{5}$")        # build_trainset 의 영상 프레임 이름: <클립>_<시각x10 다섯자리>
+
+    def clip(x):
+        st = tail.sub("", Path(x).stem)
+        m = frame.match(st)
+        return m.group(1) if m else st
+
+    used = {clip(x) for x in train_lines}
+    out, per = [], {}
+    for n in dict.fromkeys(names):
+        f = TRAIN_DS / n / "val.txt"
+        if not f.is_file():
+            try:
+                src = json.loads((TRAIN_DS / n / "meta.json").read_text(encoding="utf-8")).get("source")
+            except Exception:
+                src = None
+            if not src or not (TRAIN_DS / src / "val.txt").is_file():
+                continue
+            n, f = src + "(원본)", TRAIN_DS / src / "val.txt"
+        got = [x for x in f.read_text().split() if x and Path(x).is_file() and not Path(x).is_symlink()
+               and clip(x) not in used]
+        per[n] = len(got)
+        out += got
+    return list(dict.fromkeys(out)), per
+
+
 def build_lists(exp, defaults):
     """train.txt(오버샘플=반복) · val_small.txt · 000.jpg(캐시 분리) · data.yaml 을 _exp/<name>/ 에 만든다."""
     name = exp["name"]
@@ -166,10 +200,20 @@ def build_lists(exp, defaults):
     (d / "source.json").write_text(json.dumps(src, ensure_ascii=False, indent=1), encoding="utf-8")
     print(f"  [소스] 요구 긴변 {long_px}px · " + (" ".join(f"{k} {v}장" for k, v in used.items()) or "사본없음")
           + f" · 원본 {len(lines) - n960}장", flush=True)
-    rnd = random.Random(0)
-    val = rnd.sample(lines[1:], min(int(defaults.get("val_small", 600)), len(lines) - 1))
-    (d / "val_small.txt").write_text("\n".join([str(dummy)] + val) + "\n")
-    val_path = d / "val_small.txt"                         # 기본: 학습 목록에서 뽑은 600장(학습과 겹친다 → 외운 정도만 보인다)
+    # best.pt 를 고르는 val. 우리 CCTV 영상 프레임 중 학습에 안 쓴 클립만(2026-09-24).
+    # 전에는 학습 목록에서 무작위 600장이라 학습과 겹치고 대부분 COCO·공개셋이었다.
+    sets = [exp.get("base", defaults.get("base", "aihub71751_48k"))] + list(oversample) + list(exp.get("extras", []))
+    dom, per = domain_val(sets, lines[1:])
+    if len(dom) >= 100:
+        (d / "val_domain.txt").write_text("\n".join([str(dummy)] + dom) + "\n")
+        val_path = d / "val_domain.txt"
+        print(f"  [검증] 우리 영상 프레임 {len(dom)}장(학습과 안 겹침) · " + " ".join(f"{k} {v}" for k, v in per.items()), flush=True)
+    else:
+        rnd = random.Random(0)
+        val = rnd.sample(lines[1:], min(int(defaults.get("val_small", 600)), len(lines) - 1))
+        (d / "val_small.txt").write_text("\n".join([str(dummy)] + val) + "\n")
+        val_path = d / "val_small.txt"                     # 우리 프레임이 모자랄 때만: 학습 목록에서 뽑은 600장(겹침)
+        print(f"  [검증] 우리 영상 프레임이 {len(dom)}장뿐이라 학습 목록 600장으로 대신한다(학습과 겹침)", flush=True)
     vs = exp.get("val_set", defaults.get("val_set"))       # 권장: build_evalset.py 가 만든 검증 전용 val.txt(채점 전용 영상의 손라벨). 학습과 겹치지 않는다
     if vs and (V / vs).is_file():
         val_path = (V / vs).resolve()                      # 절대경로로: ultralytics 는 상대경로를 data.yaml 의 path 기준으로 푼다
@@ -239,6 +283,51 @@ def gpu_used_mib():
         return int(out.strip().splitlines()[0])
     except Exception:
         return 0
+
+
+def gpu_total_mib():
+    try:
+        out = subprocess.run(["nvidia-smi", "--query-gpu=memory.total", "--format=csv,noheader,nounits"],
+                             capture_output=True, text=True, timeout=20).stdout
+        return int(out.strip().splitlines()[0])
+    except Exception:
+        return 0
+
+
+def gpu_util_pct():
+    try:
+        out = subprocess.run(["nvidia-smi", "--query-gpu=utilization.gpu", "--format=csv,noheader,nounits"],
+                             capture_output=True, text=True, timeout=20).stdout
+        return float(out.strip().splitlines()[0])
+    except Exception:
+        return None
+
+
+def need_of(e, defaults):
+    """판이 쓸 GPU 메모리(MiB). 큐에 need_mib 를 적은 판만 메모리 여유로 띄운다(2026-09-28). 없으면 None = 옛 문턱(vram_gate)."""
+    n = e.get("need_mib", defaults.get("need_mib"))
+    return None if n is None else int(n)
+
+
+def pick_next(todo, defaults, used, total, util_avg, margin=4000):
+    """다음에 띄울 판의 todo 번호. 없으면 None (2026-09-28, 사용자 운영계획 4: 사용량 기반 자동 실행).
+    - need_mib 가 없는 판: 옛 규칙(GPU 사용량 < vram_gate_mib)
+    - 있는 판: 빈 메모리(total - used) 가 need + 여유 4GB 이상이면 띄운다. 차례는 큐 순서(앞 판이 안 들어가면 기다린다)
+    - util_gate_pct 를 적은 큐: 앞 판이 안 들어가도 GPU 사용률이 util_window_min 분 동안 평균 그 % 밑이면
+      뒤쪽에서 들어가는 판을 먼저 띄운다(GPU 가 노는 것을 막음)"""
+    head = todo[0]
+    n = need_of(head, defaults)
+    if n is None:
+        return 0 if used < int(defaults.get("vram_gate_mib", 120000)) else None
+    if total - used >= n + margin:
+        return 0
+    gate = defaults.get("util_gate_pct")
+    if gate is not None and util_avg is not None and util_avg < float(gate):
+        for i, e in enumerate(todo[1:], 1):
+            m = need_of(e, defaults)
+            if m is not None and total - used >= m + margin:
+                return i
+    return None
 
 
 def train_cmd(exp, defaults, data_yaml, n_train=0):
@@ -466,7 +555,8 @@ def run_one(exp, defaults, queue=None):
         d = EXP_DIR / name
         if unfinished_ckpt(last_pt, name) and (d / "data.yaml").is_file():
             pt = None                                     # 중간 best.pt 로 완료 처리하지 않는다
-        # OOM(rc=-9) 이면 batch 를 20% 줄여 last.pt 에서 이어간다. 최대 2번. 러너 재실행 없이 스스로 회복한다(주말 무인 운전).
+        # OOM(rc=-9) 이면 같은 batch 로 last.pt 에서 이어간다. 최대 2번. 러너 재실행 없이 스스로 회복한다(주말 무인 운전).
+        # batch 는 줄이지 않는다(2026-09-26 사용자 지시: batch 가 달라지면 결과가 달라져 비교가 안 된다).
         for attempt in range(3):
             if pt is not None:
                 break
@@ -494,9 +584,11 @@ def run_one(exp, defaults, queue=None):
             kill_orphan_trainers()   # 죽은 학습의 데이터로더 워커가 RAM·shm·GPU 를 쥔 채 남는다.
                                      # 두면 다음 잡이 그것 때문에 또 죽는다(2026-09-15 네 번 반복).
             if rc == -9 and attempt < 2:
-                batch = max(8, int(batch * 0.8))
+                # 09-26 21:04 에는 여기서 80 -> 64 로 줄여 night 시드 2 · full_night 비교가 깨졌다. 이제 batch 는 그대로 두고
+                # 일시 부하가 빠지도록 2분 쉰 뒤 같은 batch 로 다시 한다
                 how = "last.pt 에서 이어서" if last_pt.is_file() else "처음부터"
-                log(f"{name} rc=-9(SIGKILL: OOM 의심) → batch {batch} 로 줄여 {how} 다시 (재시도 {attempt + 1}/2)")
+                log(f"{name} rc=-9(SIGKILL: OOM 의심) → 같은 batch {batch} 로 {how} 다시 (재시도 {attempt + 1}/2, batch 안 줄임)")
+                time.sleep(120)
                 continue
             log(f"{name} 학습 실패 rc={rc} (logs/queue/{name}.log). 러너 재실행 시 자동 재시도")
             write_meta(exp, defaults, n_train, None, started, "train_failed"); return
@@ -530,6 +622,11 @@ def cmd_score(a):
     name = exp["name"]
     if is_done(exp):
         log(f"{name} 채점 건너뜀(score.txt 가 이미 있다)"); return
+    # 평가를 토르에서 할 실험은 여기서 채점하지 않는다(2026-09-25). 학습 GPU 를 채점이 같이 쓰면
+    # 다음 학습이 느려지고, 여러 개가 겹치면 OOM 으로 죽는다(09-25 오전에 실제로 그랬다).
+    # results/<실험>/SCORE_ON_THOR 파일이 있으면 건너뛴다. score.txt 는 만들지 않는다(토르 결과를 나중에 적는다).
+    if (V / "results" / name / "SCORE_ON_THOR").is_file():
+        log(f"{name} 채점 건너뜀 → 토르에서 평가(SCORE_ON_THOR)"); return
     pt = best_pt(exp)
     if pt is None:
         log(f"{name} 채점 불가(best.pt 없음)"); return
@@ -611,6 +708,7 @@ def cmd_run(a):
     vram_gate = int(defaults.get("vram_gate_mib", 120000))
     min_free = float(defaults.get("min_free_gb", 300))   # 컨테이너 메모리 한도를 안에서 못 읽으니 가용 RAM 으로 대신 막는다
     warned = 0
+    util_hist, launched, total_mib = [], {}, gpu_total_mib()
     while todo or running:
         running = [(p, e) for p, e in running if p.poll() is None]
         # 도는 중에 yaml 에 실험을 추가해도 집어 간다.
@@ -627,8 +725,21 @@ def cmd_run(a):
                 if not is_done(e):
                     todo.append(e); log(f"큐에 추가됨: {e['name']}")
         gb = free_gb()
-        if todo and len(running) < a.jobs and gpu_used_mib() < vram_gate and gb >= min_free:
-            e = todo.pop(0)
+        # 사용률 기록(최근 util_window_min 분). 창이 다 차야 평균을 쓴다
+        u = gpu_util_pct(); now = time.time()
+        if u is not None:
+            util_hist.append((now, u))
+        win = 60 * float(defaults.get("util_window_min", 10))
+        util_hist[:] = [(s, v) for s, v in util_hist if now - s <= win]
+        util_avg = (sum(v for _, v in util_hist) / len(util_hist)) if util_hist and now - util_hist[0][0] >= win - 60 else None
+        # 띄운 지 20분 안 된 판은 메모리를 아직 다 안 잡았을 수 있다. 그 몫을 미리 쓴 것으로 친다
+        recent = sum(need_of(x, defaults) or 0 for _, x in running if now - launched.get(x["name"], 0) < 1200)
+        pick = pick_next(todo, defaults, gpu_used_mib() + recent, total_mib, util_avg) if (todo and len(running) < a.jobs and gb >= min_free) else None
+        if pick is not None:
+            e = todo.pop(pick)
+            if pick:
+                log(f"GPU 사용률 {util_avg:.0f}% 가 낮아 뒤 판 먼저: {e['name']}")
+            launched[e["name"]] = now
             if e["name"] in running_elsewhere():   # 고르고 띄우는 사이에 다른 러너가 먼저 띄웠을 수 있다
                 log(f"{e['name']} 은 다른 프로세스가 이미 돌고 있다. 건너뛴다")
                 continue

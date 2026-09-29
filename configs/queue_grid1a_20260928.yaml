@@ -1,0 +1,247 @@
+# 재실험 그리드 1단계 · 절반 배치 5판 (2026-09-28). 만든 것 /NHNHOME/make_grid1_0928.py
+# 계획: 바탕 화면 '2026-09-28 KISA 재실험 그리드 계획.md'. 최대 배치 5판은 queue_grid1b(절반 판 GPU_mem 실측 뒤)
+# 판마다 need_mib 로 빈 메모리에 들어가면 띄움(pick_next). 서버 채점 끔(SCORE_ON_THOR), 채점 = 작업 PC eval_watch9
+name: queue_grid1a_20260928
+defaults:
+  val_small: 600
+  vram_gate_mib: 10000
+  min_free_gb: 150
+  ram_cache_max: 0
+  stagger_sec: 120
+  util_gate_pct: 30
+  util_window_min: 10
+experiments:
+- name: p1280_grid_b85_20260928
+  model: yolo11s
+  item: 사람
+  names:
+  - person
+  base: trainset_person_hnfix_full_20260927
+  extras: []
+  oversample: {}
+  val_set: data/학습데이터/trainset_person_hnfix_20260927/val_domain.txt
+  extra:
+    patience: 0
+    seed: 0
+  train:
+    multi_scale: 0.0
+    epochs: 60
+    cache: false
+    workers: 8
+    imgsz: 1280
+    batch: 85
+  need_mib: 84000
+- name: p960_grid_b160_20260928
+  model: yolo11s
+  item: 사람
+  names:
+  - person
+  base: trainset_person_hnfix_full_20260927
+  extras: []
+  oversample: {}
+  val_set: data/학습데이터/trainset_person_hnfix_20260927/val_domain.txt
+  extra:
+    patience: 0
+    seed: 0
+  train:
+    multi_scale: 0.0
+    epochs: 60
+    cache: false
+    workers: 8
+    imgsz: 960
+    batch: 160
+  need_mib: 88000
+- name: f960_grid_b160_20260928
+  model: yolo11s
+  item: 방화
+  names:
+  - fire
+  - smoke
+  base: aihub71751_48k
+  extras:
+  - fasdd_snowfog
+  - fasdd_yolo
+  - wildfire_pos_yolo
+  - wildfire_fog_neg
+  - fire_snowbg_흑백불_20260926
+  oversample:
+    handset_fire_hand_20260928: 4
+    fire_mask_hn_fog_20260926: 3
+  extra:
+    patience: 0
+    seed: 0
+  train:
+    multi_scale: 0.0
+    epochs: 60
+    cache: false
+    workers: 8
+    imgsz: 960
+    batch: 160
+  need_mib: 90000
+- name: p640_grid_b360_20260928
+  model: yolo11s
+  item: 사람
+  names:
+  - person
+  base: trainset_person_hnfix_full_20260927
+  extras: []
+  oversample: {}
+  val_set: data/학습데이터/trainset_person_hnfix_20260927/val_domain.txt
+  extra:
+    patience: 0
+    seed: 0
+  train:
+    multi_scale: 0.0
+    epochs: 60
+    cache: false
+    workers: 8
+    imgsz: 640
+    batch: 360
+  need_mib: 88000
+- name: f640_grid_b360_20260928
+  model: yolo11s
+  item: 방화
+  names:
+  - fire
+  - smoke
+  base: aihub71751_48k
+  extras:
+  - fasdd_snowfog
+  - fasdd_yolo
+  - wildfire_pos_yolo
+  - wildfire_fog_neg
+  - fire_snowbg_흑백불_20260926
+  oversample:
+    handset_fire_hand_20260928: 4
+    fire_mask_hn_fog_20260926: 3
+  extra:
+    patience: 0
+    seed: 0
+  train:
+    multi_scale: 0.0
+    epochs: 60
+    cache: false
+    workers: 8
+    imgsz: 640
+    batch: 360
+  need_mib: 90000
+# 2026-09-28 12시 덧붙임: 배경 비율 시험(/NHNHOME/make_bgtest_0928.py). 위 4판(P960h·F960h·P640h·F640h)은 보류 표시로 건너뜀
+- name: p1280_grid_b85_bg10_20260928
+  model: yolo11s
+  item: 사람
+  names:
+  - person
+  base: trainset_person_hnfix_full_bg10_20260928
+  extras: []
+  oversample: {}
+  val_set: data/학습데이터/trainset_person_hnfix_20260927/val_domain.txt
+  extra:
+    patience: 0
+    seed: 0
+  train:
+    multi_scale: 0.0
+    epochs: 60
+    cache: false
+    workers: 8
+    imgsz: 1280
+    batch: 85
+  need_mib: 84000
+- name: f960_bgtest_bg28_b160_20260928
+  model: yolo11s
+  item: 방화
+  names:
+  - fire
+  - smoke
+  base: aihub71751_48k
+  extras:
+  - fasdd_snowfog
+  - fasdd_yolo
+  - wildfire_pos_yolo
+  - wildfire_fog_neg
+  - fire_snowbg_흑백불_20260926
+  oversample:
+    handset_fire_hand_20260928: 4
+    fire_mask_hn_fog_20260926: 3
+  extra:
+    patience: 0
+    seed: 0
+  train:
+    multi_scale: 0.0
+    epochs: 60
+    cache: false
+    workers: 8
+    imgsz: 960
+    batch: 160
+  need_mib: 90000
+- name: f960_bgtest_bg10_b160_20260928
+  model: yolo11s
+  item: 방화
+  names:
+  - fire
+  - smoke
+  base: aihub71751_48k_pos_20260928
+  extras:
+  - fasdd_snowfog
+  - fasdd_yolo_pos_20260928
+  - wildfire_pos_yolo
+  - wildfire_fog_neg
+  - fire_snowbg_흑백불_20260926
+  oversample:
+    handset_fire_hand_20260928: 4
+    fire_mask_hn_fog_20260926: 3
+  extra:
+    patience: 0
+    seed: 0
+  train:
+    multi_scale: 0.0
+    epochs: 60
+    cache: false
+    workers: 8
+    imgsz: 960
+    batch: 160
+  need_mib: 90000
+# 2026-09-29 덧붙임: KISA 없는 기준선 두 판(/NHNHOME/make_kisafree_0929.py, 합성 방식 정리 문서 7절)
+- name: p1280_grid_b85_bg10_nokisa_20260929
+  model: yolo11s
+  item: 사람
+  names:
+  - person
+  base: trainset_person_hnfix_full_bg10_nokisa_20260929
+  extras: []
+  oversample: {}
+  val_set: data/학습데이터/trainset_person_hnfix_20260927/val_domain.txt
+  extra:
+    patience: 0
+    seed: 0
+  train:
+    multi_scale: 0.0
+    epochs: 60
+    cache: false
+    workers: 8
+    imgsz: 1280
+    batch: 85
+  need_mib: 84000
+- name: f960_bgtest_bg28_nokisa_b160_20260929
+  model: yolo11s
+  item: 방화
+  names:
+  - fire
+  - smoke
+  base: aihub71751_48k
+  extras:
+  - fasdd_snowfog
+  - fasdd_yolo
+  - wildfire_pos_yolo
+  - wildfire_fog_neg
+  oversample: {}
+  extra:
+    patience: 0
+    seed: 0
+  train:
+    multi_scale: 0.0
+    epochs: 60
+    cache: false
+    workers: 8
+    imgsz: 960
+    batch: 160
+  need_mib: 90000
