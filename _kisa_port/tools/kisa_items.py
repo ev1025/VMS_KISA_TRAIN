@@ -6,7 +6,7 @@
 
   사전점검 : python tools/kisa_items.py --selfcheck
   오프라인 : python tools/kisa_items.py --item intrusion --videos <mp4 폴더> --maps <map 폴더> --gt <xml 폴더> --out KISAresult
-  시험장   : python tools/kisa_items.py --item loitering --rtsp rtsp://192.168.0.2:8554/ \
+  시험장   : python tools/kisa_items.py --item loitering --rtsp rtsp://<영상전송서버>:8554/ \
                  --list c:/KISAlist/RTSP_streaming_list.xml --maps c:/KISAmap --out c:/KISAresult
 
 규칙·파라미터는 배포용 채점에서 확정된 값(dash_v2 core.js · results/ALL_RESULTS.md) 을 그대로 옮겼다.
@@ -71,9 +71,16 @@ ITEMS = {
     # 연기를 켜면 오검이 44 → 73~103 으로 늘어난다(안개편 C00_195_0001 은 연기가 0초부터 계속 높다).
     # smoke=1.1 은 "연기 조건을 절대 만족시키지 않는다"는 뜻이다(신뢰도는 1 을 넘을 수 없다).
     # 앙상블(2026-09-16): 가중치 하나로는 규칙을 다 훑어도 88.89 가 천장이었다.
-    #   fire_fog.pt   = fresh_48k_wildall_20260909 @640  안개편 C00_195_0001 을 본다(안개 네거티브 학습)
-    #   fire_small.pt = s2_s960_20260913 @960            눈편  C00_216_0003 을 본다(960 학습, 작은 불씨)
-    # 두 모델을 6뷰에 다 태우고 표본별 최고 신뢰도를 쓴다. 덤프 재계산 10편 전편 정검.
+    #
+    # 2026-09-23 교체. 전에 쓰던 fresh_48k_wildall_20260909 은 oversample {human_fire: 5} 로
+    # 학습했는데 human_fire 안에 채점 10편의 라벨된 프레임 2,520장이 들어 있었다.
+    # 자기가 학습한 영상으로 채점한 셈이라 그 점수는 못 믿는다.
+    #   fire_fog.pt   = f960_mask_hn_x2_fog3_20260920 @960  안개 합성 + 하드네거티브. 195(안개)를 본다
+    #   fire_small.pt = f960_best_s_20260915         @960  손라벨 x8. 216(눈)을 본다
+    # 둘 다 손라벨 기반이고 val_set 이 없다. 학습에도 에폭 선택에도 채점셋이 안 쓰였다.
+    # 덤프 재계산(scripts/fire_ens_try.py, 규칙 그대로):
+    #   옛 조합 84.21(못잡음 195·216) -> 새 조합 90.00(못잡음 272). last.pt 판도 90.00.
+    # 두 모델을 6뷰에 다 태우고 표본별 최고 신뢰도를 쓴다.
     # 규칙도 같이 바꿈: 불 0.45 창 10 -> 불 0.40 창 20(3회 유지). 44개 단일 덤프 평균 70.63 -> 72.74,
     # 오검 합계 44 -> 42 라 이 쌍에만 맞춘 값이 아니다. model2 를 지우면 예전 단일 경로로 돌아간다.
     "fire": dict(desc="FireDetection", model="fire_fog.pt", model2="fire_small.pt",
@@ -943,7 +950,7 @@ def main():
     ap = argparse.ArgumentParser(description="KISA 4항목 SA 생성기 (항목 하나만 선택)")
     ap.add_argument("--item", choices=list(ITEMS), help="시험 항목")
     ap.add_argument("--videos", help="오프라인: mp4 폴더")
-    ap.add_argument("--rtsp", help="시험장: RTSP 주소 (예 rtsp://192.168.0.2:8554/)")
+    ap.add_argument("--rtsp", help="시험장: RTSP 주소. 당일 안내받는다 (예 rtsp://<서버>:8554/)")
     ap.add_argument("--list", dest="vlist", help="RTSP_streaming_list.xml (영상 순서 = SA 파일명)")
     ap.add_argument("--maps", default="", help="영역파일(.map) 폴더 (침입·배회)")
     ap.add_argument("--gt", help="GT xml 폴더 (있으면 채점)")

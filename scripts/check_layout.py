@@ -25,7 +25,8 @@ V = KP.V
 ROOT_PY = {"model.py", "score_kisa.py", "config.py"}
 # results/ 바로 아래에 둘 수 있는 파일. 실험 하나에 매이지 않는 가로지르는 기록들이다.
 # BASELINE.json 은 4항목 실측의 단일 기준이라 일부러 루트에 둔다(check_repro 가 이것만 읽는다).
-RESULTS_FILES = {"MODELS.json", "loocv_results.json", "BASELINE.json"}
+# SUMMARY.md 는 exp_queue · build_summary 가 실험이 끝날 때마다 다시 쓰는 한 장 요약이다(2026-09-29 추가)
+RESULTS_FILES = {"MODELS.json", "loocv_results.json", "BASELINE.json", "SUMMARY.md"}
 # 학습 가중치가 아닌 산출물이 들어가는 runs 폴더(SeqNet 등). best.pt 가 없는 게 정상이다.
 RUNS_EXCEPT = {"fall_track", "fall_seq", "_eval", "_archive"}
 
