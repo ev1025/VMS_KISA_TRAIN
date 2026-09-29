@@ -223,8 +223,8 @@ async function buildResults() {
   try { q = await (await fetch("/api/queue")).json(); } catch (e) {}
   if (CUR.mode !== "results") return;
   if (D.error) { c.innerHTML = `<div class="empty">${nrEsc(D.error)}</div>`; return; }
-  c.innerHTML = `<div class="nr"><div class="nr-top"><div class="nr-queue" id="nrQ">${nrQueueHtml(q)}</div>` +   // 위에 고정: 큐(항상 펼침) · 용어 정리 · 항목별 최고 점수
-    nrTerms(D.terms || []) + nrScore(D.score || []) + `</div>` +
+  c.innerHTML = `<div class="nr"><div class="nr-top">${nrScore(D.score || [])}<div class="nr-queue" id="nrQ">${nrQueueHtml(q)}</div>` +   // 위에 고정: 항목별 최고 점수 · 큐(항상 펼침) · 용어 정리
+    nrTerms(D.terms || []) + `</div>` +
     D.blocks.map(b => nrBlock(b, D, q)).join("") + (D.others.length ? nrOthers(D, q) : "") + "</div>";
   c.scrollTop = y;
   const tm = c.querySelector(".nr-terms"); if (tm) tm.ontoggle = () => { nrTerms.open = tm.open; };   // 1분 갱신 때 펼친 상태 유지
