@@ -117,7 +117,7 @@ video{width:100%;aspect-ratio:16/9;object-fit:fill;display:block;background:#000
 .nr{padding:18px 22px 40px;max-width:1240px;margin:0 auto;width:100%;display:flex;flex-direction:column;gap:14px}
 .nr-mut{color:var(--mut)}.nr-ok{color:var(--ok)}.nr-warn{color:var(--miss);font-size:var(--fs-2xs);font-family:-apple-system,"Segoe UI",sans-serif}
 .nr-terms{background:var(--panel);border:1px solid var(--line);border-radius:var(--r-lg);padding:8px 12px;font-size:var(--fs-xs)}
-.nr-terms summary{cursor:pointer;font-weight:700}
+.nr-terms > summary{cursor:pointer;font-weight:700;font-size:var(--fs-lg)}
 .nr-terms table{border-collapse:collapse;width:100%;margin-top:8px}
 .nr-terms th,.nr-terms td{padding:4px 12px 4px 0;text-align:left;vertical-align:top;border-top:1px solid var(--line);line-height:1.6}
 .nr-terms th{font-family:ui-monospace,Menlo,monospace;white-space:nowrap;font-weight:700;color:var(--tx)}
@@ -156,6 +156,7 @@ video{width:100%;aspect-ratio:16/9;object-fit:fill;display:block;background:#000
 .nr-keys .ok{color:var(--ok);background:#3fb95018}.nr-keys .miss{color:var(--miss);background:#d2992222}.nr-keys .bad{color:var(--bad);background:#f8514922}
 .nr-note{font-size:var(--fs-xs);color:var(--mut);border-left:2px solid var(--line);padding-left:8px}.nr-note b{color:var(--tx)}.nr-note .nr-ul{margin-top:2px}
 .nr-queue{padding:10px 12px;border:1px solid var(--line);border-radius:var(--r-lg);background:var(--panel);font-size:var(--fs-xs);line-height:1.7}
+.nr-queue > summary{font-size:var(--fs-lg)}   /* 큐 제목만 블록 제목 크기, 안쪽 러너 로그는 그대로 */
 .nr-qtbl{overflow-x:auto}.nr-qlog{color:var(--mut);font-family:ui-monospace,Menlo,monospace;white-space:pre-wrap}
 </style></head><body>
 <div class="top">
