@@ -1,125 +1,172 @@
 // dash_v2/js/review.js — 영상 검수 탭(목록·플레이어·재생바·구역·우측 정보). app.js 에서 분리(2026-09-09). 로드 순서: core → review → data → editor → main (dashboard.html)
-// ---------- 좌: 원본 + 목록 ----------
-// 영상 검수 = KISA 배포 4항목만 (손라벨 labelset 은 데이터 확인 탭으로)
+// 2026-09-28 재설계
+//   모델 = '지금 데이터' 로 처음부터 학습해 끝난 판만. 고르는 기준과 계산은 서버 scripts/review_cache.py 한 곳(채점과 같은 판정 모듈로 영상 끝까지 돌려 저장)
+//   모델을 눌러도 추론하지 않는다. /api/review_models · review_summary · review_clip 로 저장된 값만 읽는다
+//   목록 판정 · 재생바 신호 · 예측 경보 · 박스가 모두 고른 모델 하나에서 나온다. 모델이 없으면 정답과 구역만 보인다
+//   예전 화면은 박스만 모델을 따르고 재생바 · 판정은 배포 모델 값(dash_meta.json)과 JS 로 옮겨 둔 옛 규칙이라 서로 맞지 않았다
+//   renderCenter(row) 를 인자 하나로 부르면(데이터 확인 탭) 예전 동작 그대로다
+
+// ---------- 영상 검수: 상태 ----------
 const REVIEW_ITEMS = ["fire", "intrusion", "loiter", "fall"];
+const RV = { models: {}, sel: {}, summ: null, clip: new Map() };   // 항목별 모델 목록 · 고른 모델 · 그 모델의 편별 판정 · 편 결과
+const RV_SHOW_MIN = 0.20;                                             // 이보다 낮은 박스는 안 그린다(방화는 0.05 부터 저장돼 화면이 덮인다)
+let _RV_SEQ = 0;                                                      // 늦게 온 응답이 새 화면을 덮지 않게
+
+const rvKey = () => RV.sel[CUR.item] || "";
+const rvModel = () => (RV.models[CUR.item] || []).find(m => m.key === rvKey()) || null;
+const rvClipInfo = name => (RV.summ && RV.summ.clips && RV.summ.clips[name]) || null;
+const rvVerdict = name => { const c = rvClipInfo(name); return c ? c.verdict : null; };
+const rvSec = v => v == null ? "-" : `${fmt(v)} (${v.toFixed(1)}초)`;
+function rvRows() {
+  return META.items[CUR.item].rows.filter(r => FILT === "all" || rvVerdict(r.name) === FILT);
+}
+async function rvLoadModels(item) {
+  try { RV.models[item] = (await (await fetch("/api/review_models?item=" + item)).json()).models || []; }   // 계산이 끝난 판이 늘어나므로 매번 받는다
+  catch (e) { RV.models[item] = RV.models[item] || []; }
+  const ready = RV.models[item].filter(m => m.done);
+  let want = RV.sel[item];
+  if (want == null) { try { want = localStorage.getItem("rv_sel_" + item); } catch (e) { want = null; } }
+  RV.sel[item] = want === "" ? "" : (ready.some(m => m.key === want) ? want : (ready[0] ? ready[0].key : ""));
+}
+async function rvLoadSummary() {
+  RV.summ = null;
+  const key = rvKey(); if (!key) return;
+  try {
+    const r = await fetch(`/api/review_summary?key=${encodeURIComponent(key)}&item=${CUR.item}`);
+    RV.summ = r.ok ? await r.json() : null;
+  } catch (e) { RV.summ = null; }
+}
+function rvClip(name) {
+  const key = rvKey(); if (!key) return Promise.resolve(null);
+  const k = key + "|" + CUR.item + "|" + name;
+  if (!RV.clip.has(k)) {
+    RV.clip.set(k, fetch(`/api/review_clip?key=${encodeURIComponent(key)}&item=${CUR.item}&clip=${encodeURIComponent(name)}`)
+      .then(r => r.ok ? r.json() : null).catch(() => null)
+      .then(j => { if (!j) RV.clip.delete(k); return j; }));   // 없던 편은 다음에 다시 묻는다(계산이 끝났을 수 있다)
+  }
+  return RV.clip.get(k);
+}
+// 검수 탭에 들어올 때 · 항목이나 모델을 바꿀 때
+async function enterReview() {
+  buildSrc();
+  await rvRefresh();
+}
+async function rvRefresh() {
+  const my = ++_RV_SEQ;
+  $("#list").innerHTML = '<div class="empty">불러오는 중…</div>';
+  await rvLoadModels(CUR.item);
+  await rvLoadSummary();
+  if (my !== _RV_SEQ) return;
+  buildFilt(); renderList();
+  const rows = rvRows();
+  const cur = rows.find(r => r.name === CUR.name) || rows[0];
+  if (cur) { CUR.name = cur.name; renderList(); openRow(cur); }
+  else { $("#center").innerHTML = '<div class="empty">영상을 선택하세요</div>'; $("#right").innerHTML = '<div class="empty">—</div>'; }
+}
+async function openRow(row) {
+  const my = ++_RV_SEQ;
+  let rv = null;
+  if (rvKey()) {
+    $("#center").innerHTML = '<div class="empty">저장된 결과를 읽는 중…</div>';
+    rv = await rvClip(row.name);
+    if (my !== _RV_SEQ) return;
+  }
+  renderCenter(row, { review: true, rv, missing: !!rvKey() && !rv });
+  renderRight(row, rv);
+}
+
+// ---------- 좌: 항목 · 모델 · 목록 ----------
+// 영상 검수 = KISA 배포 4항목만 (손라벨 labelset 은 데이터 확인 탭으로)
 function buildSrc() {
   const sel = $("#srcSel"); sel.innerHTML = "";
   $(".srcbox label").hidden = false; $(".srcbox label").textContent = "검수 항목";
-  { const _rb = document.getElementById("refreshBtn"); if (_rb) _rb.remove(); }   // 데이터 탭이 드롭다운 옆에 붙인 새로고침은 여기엔 안 쓴다   // 데이터 탭이 숨긴 것을 되살린다
-  $("#filtBox").hidden = false;
+  { const _rb = document.getElementById("refreshBtn"); if (_rb) _rb.remove(); }   // 데이터 탭이 드롭다운 옆에 붙인 새로고침은 여기엔 안 쓴다
+  $("#filtBox").hidden = false;                                                     // 데이터 탭이 숨긴 것을 되살린다
   for (const k of REVIEW_ITEMS) {
     const v = META.items[k]; if (!v) continue;
     const o = el("option"); o.value = k; o.textContent = `${v.title} (${v.rows.length}편)`; sel.appendChild(o);
   }
   if (!REVIEW_ITEMS.includes(CUR.item)) CUR.item = "fire";
   sel.value = CUR.item;
-  sel.onchange = () => {
-    CUR.item = sel.value; CUR.name = null; renderList();
-    $("#center").innerHTML = '<div class="empty">영상을 선택하세요</div>';
-    $("#right").innerHTML = '<div class="empty">—</div>';
-  };
+  sel.onchange = () => { CUR.item = sel.value; CUR.name = null; FILT = "all"; rvRefresh(); };
 }
+function rvLabel(m) {
+  const sc = m.official && m.official["점수"] != null ? ` · 작업PC ${m.official["점수"].toFixed(2)}`
+           : m.score && m.score["점수"] != null ? ` · ${m.score["점수"].toFixed(2)}` : "";
+  const wait = m.done ? "" : (m.progress ? ` (계산 중 ${m.progress.done}/${m.progress.total})` : " (계산 대기)");
+  return `${m.exp} · ${m.ckpt} · ${m.res}${sc}${wait}`;
+}
+// 모델 고르기 + 점수 한 줄 + 판정 필터. #filtBox 는 데이터 확인 탭에서 숨겨져 검수 탭에만 보인다
 function buildFilt() {
   const box = $("#filtBox"); box.innerHTML = "";
+  box.style.cssText = "display:flex;flex-direction:column;gap:6px";
+  const ms = RV.models[CUR.item] || [];
+  const lab = el("label", "", "모델 (지금 데이터로 학습한 판)"); box.appendChild(lab);
+  const msel = el("select");
+  const none = el("option", "", "모델 없음 (정답 · 구역만)"); none.value = ""; msel.appendChild(none);
+  ms.forEach(m => { const o = el("option", "", rvLabel(m)); o.value = m.key; o.disabled = !m.done; msel.appendChild(o); });
+  msel.value = rvKey();
+  msel.onchange = () => {
+    RV.sel[CUR.item] = msel.value;
+    try { localStorage.setItem("rv_sel_" + CUR.item, msel.value); } catch (e) {}
+    FILT = "all"; rvRefresh();
+  };
+  box.appendChild(msel);
+  const note = el("div"); note.style.cssText = "font-size:var(--fs-xs);color:var(--mut);line-height:1.5";
+  if (!ms.length) note.textContent = CUR.item === "fall" ? "쓰러짐은 이번 데이터로 새로 학습한 판이 없습니다" : "지금 데이터로 학습해 끝난 판이 아직 없습니다. 끝나면 서버가 미리 계산해 여기에 올립니다";
+  else if (!ms.some(m => m.done)) note.textContent = "미리 계산하는 중입니다. 끝난 판부터 고를 수 있습니다";
+  else if (RV.summ && RV.summ.score) {
+    const s = RV.summ.score, o = RV.summ.official;
+    note.innerHTML = `이 화면: 정검 <b>${s["정검"]}</b> · 미검 <b>${s["미검"]}</b> · 오검 <b>${s["오검"]}</b> → <b>${s["점수"].toFixed(2)}</b>` +
+      (o ? `<br>작업 PC 채점: ${o["점수"].toFixed(2)}${o["점수"] !== s["점수"] ? ' <span class="tag warn">다름</span>' : ""}` : "");
+  }
+  box.appendChild(note);
+  if (!rvKey()) return;                                   // 판정은 모델이 있어야 있다
+  const row = el("div"); row.style.cssText = "display:flex;gap:4px";
   [["all", "전체"], ["정검", "정검"], ["미검", "미검"], ["오검", "오검"]].forEach(([k, label]) => {
     const b = el("button", k === FILT ? "on" : "", label);
     b.onclick = () => { FILT = k; buildFilt(); renderList(); };
-    box.appendChild(b);
+    row.appendChild(b);
   });
+  box.appendChild(row);
 }
 function renderList() {
   const box = $("#list"); box.innerHTML = "";
-  const rows = META.items[CUR.item].rows;
-  if (CUR.item === "labelset") {
-    const clips = rows.length, boxes = rows.reduce((s, r) => s + (r.box_count || 0), 0);
-    const frames = rows.reduce((s, r) => s + (r.frame_count || 0), 0);
-  } else {
-    // KISA 집계: 창 밖 알람(오검)은 오검+미검 이중 감점. 오검이면 fp 와 fn 을 모두 올린다.
-    let tp = 0, fn = 0, fp = 0;
-    rows.forEach(r => {
-      const v = verdict(r, CUR.item);
-      if (v === "정검") tp++;
-      else if (v === "미검") fn++;
-      else if (v === "오검") { fp++; fn++; }
-      else if (v === "오탐") fp++;   // GT 없는 정상 영상에서의 헛알람은 fp 만
-    });
-    const rc = tp + fn ? tp / (tp + fn) : 0, pr = tp + fp ? tp / (tp + fp) : 0;
-    const f1 = rc + pr ? 2 * rc * pr / (rc + pr) * 100 : 0;
-  }
-  rows.forEach(r => {
-    const v = verdict(r, CUR.item);
+  const has = !!rvKey();
+  META.items[CUR.item].rows.forEach(r => {
+    const v = has ? (rvVerdict(r.name) || "없음") : null;
     if (FILT !== "all" && v !== FILT) return;
     const it = el("div", "item" + (r.name === CUR.name ? " on" : ""));
-    const vc = vClass(v);
-    const col = { ok: "#3fb950", bad: "#f85149", miss: "#d29922", none: "#8b949e" }[vc] || "#8b949e";
-    const vb = el("span", null, v);
-    vb.style.cssText = `flex:0 0 auto;display:inline-flex;align-items:center;justify-content:center;min-width:42px;height:20px;padding:0 8px;border-radius:6px;font:700 11px/1 -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;letter-spacing:.02em;color:${col};background:${col}22;border:1px solid ${col}55`;
-    it.appendChild(vb);
+    if (v) {
+      const col = { ok: "#3fb950", bad: "#f85149", miss: "#d29922", none: "#8b949e" }[vClass(v)] || "#8b949e";
+      const vb = el("span", null, v);
+      vb.style.cssText = `flex:0 0 auto;display:inline-flex;align-items:center;justify-content:center;min-width:42px;height:20px;padding:0 8px;border-radius:var(--r);font:700 var(--fs-xs)/1 -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;letter-spacing:.02em;color:${col};background:${col}22;border:1px solid ${col}55`;
+      it.appendChild(vb);
+    }
     it.appendChild(el("span", "nm", r.name));
-    it.onclick = () => {
-      CUR.name = r.name; renderList();
-      if (CUR.item === "labelset") renderLabelset(r); else { renderCenter(r); renderRight(r); }
-    };
+    it.onclick = () => { CUR.name = r.name; renderList(); openRow(r); };
     box.appendChild(it);
   });
 }
 
-// ---------- 손라벨 프레임 뷰어 (중앙에 큰 이미지 + 박스, 우측에 썸네일) ----------
-let LB_FRAME = 0;
-function renderLabelset(row) {
-  LB_FRAME = 0;
-  const c = $("#center"); c.innerHTML = "";
-  const r = $("#right"); r.innerHTML = "";
-  if (!row.frames || !row.frames.length) { c.innerHTML = '<div class="empty">프레임 없음</div>'; return; }
-  const wrap = el("div", "lblframe"); wrap.style.cssText = "margin:16px;max-width:900px";
-  const img = el("img"); img.style.cssText = "width:100%;border-radius:8px;display:block";
-  const ov = el("div"); ov.style.cssText = "position:absolute;inset:0";
-  wrap.appendChild(img); wrap.appendChild(ov); c.appendChild(wrap);
-  const cap = el("div"); cap.style.cssText = "margin:0 16px;color:var(--mut)"; c.appendChild(cap);
-  const show = i => {
-    const f = row.frames[i]; LB_FRAME = i;
-    img.dataset.file = f.file; img.src = "/frame/" + encodeURIComponent(f.file);
-    const drawBoxes = () => {
-      let s = `<svg viewBox="0 0 ${f.W} ${f.H}" style="position:absolute;inset:0;width:100%;height:100%">`;
-      (f.boxes || []).forEach(b => {
-        // 손라벨 툴은 x,y 를 박스 좌상단으로 저장한다 (중앙 아님)
-        const x = b[1] * f.W, y = b[2] * f.H;
-        s += `<rect x="${x}" y="${y}" width="${b[3] * f.W}" height="${b[4] * f.H}" fill="none" stroke="${b[0] ? "#a371f7" : "#f85149"}" stroke-width="3"/>`;
-      });
-      s += "</svg>"; ov.innerHTML = s;
-    };
-    img.onload = drawBoxes; if (img.complete) drawBoxes();
-    cap.innerHTML = `프레임 <b>${i + 1}/${row.frames.length}</b> · ${f.file} · 박스 ${(f.boxes || []).length}개` + (f.gt != null ? ` · GT ${fmt(f.gt)}` : "");
-    $("#right").querySelectorAll(".tw").forEach((z, j) => z.classList.toggle("on", j === i));
-  };
-  // 우측: 썸네일 격자
-  r.appendChild(el("div", "rtitle", `${row.name} <span class="tag">${row.frames.length}프레임 ${row.box_count}박스</span>`));
-  const th = el("div", "thumbs");
-  row.frames.forEach((f, i) => {
-    const tw = el("div", "tw" + (i === 0 ? " on" : "")); const ti = el("img"); ti.src = "/frame/" + encodeURIComponent(f.file); tw.appendChild(ti);
-    if ((f.boxes || []).length) { const badge = el("span"); badge.style.cssText = "position:absolute;top:2px;right:4px;font-size:10px;color:#f85149;font-weight:700"; badge.textContent = f.boxes.length; tw.appendChild(badge); }
-    tw.onclick = () => show(i);
-    th.appendChild(tw);
-  });
-  r.appendChild(th);
-  r.appendChild(el("div", "leg", '<span><i style="background:#f85149"></i>불</span><span><i style="background:#a371f7"></i>연기</span>'));
-  show(0);
-}
-
 // ---------- 중: 플레이어 + 재생바 ----------
 function estDur(row) {
-  const arr = row.signal_type === "fall" ? (row.curves[0] || []) : (row.signal || []);
+  const arr = row.signal_type === "fall" ? ((row.curves || [])[0] || []) : (row.signal || []);
   return arr.length ? arr[arr.length - 1][0] : 300;
 }
-function renderCenter(row) {
+// opt.review = 검수 탭(opt.rv = 고른 모델의 저장값, 없으면 null). opt 없이 부르면 데이터 확인 탭의 예전 동작
+function renderCenter(row, opt) {
+  const review = !!(opt && opt.review), rv = review ? opt.rv : null;
   const c = $("#center"); c.innerHTML = "";
-  const gt = row.gt, sa = alarmOf(row, CUR.item), gdur = row.gt_dur || 0;   // alarmOf 가 row.sa 를 먼저 본다
+  const gt = rv && rv.gt != null ? rv.gt : row.gt;
+  const sa = review ? (rv ? rv.alarm : null) : (row.sa != null ? row.sa : null);
   const stage = el("div", "stage");
   const v = el("video"); v.controls = false; v.preload = "metadata";
   v.src = "/vid/" + row.video.replace(/\\/g, "/").split("/").map(encodeURIComponent).join("/");
   const zoneov = el("div", "zoneov");
   v.onerror = () => { stage.innerHTML = '<div class="novid">⚠ 영상을 불러올 수 없습니다<br><small>' + row.video + "</small></div>"; };
   stage.appendChild(v); stage.appendChild(zoneov); c.appendChild(stage); VID = v;
+  const overlay = t => review ? drawZoneRv(zoneov, row, rv, t) : drawZone(zoneov, row, t);
 
   const ctrl = el("div", "ctrl");
   const pp = el("button", "", "▶"); pp.onclick = () => v.paused ? v.play() : v.pause();
@@ -142,72 +189,82 @@ function renderCenter(row) {
   v.addEventListener("ratechange", () => { if (Math.abs(v.playbackRate - wantRate) > 0.01) v.playbackRate = wantRate; });
   v.addEventListener("play", () => { v.playbackRate = wantRate; });
   ctrl.appendChild(rate);
-  // 모델을 바꾸면 박스와 재생바 곡선을 같이 다시 그린다(곡선도 그 모델 덤프에서 나온다)
-  const redrawAll = () => { drawZone(zoneov, row, v.currentTime); drawBar(bar, row, gt, sa, total || v.duration, v.currentTime); };
-  ctrl.appendChild(boxPicker(row, redrawAll));   // 모델 예측 박스
+  if (review) {                                          // 검수 탭: 모델은 왼쪽에서 고른다. 여기는 이름만
+    const m = rvModel(), tag = el("span", "", "");
+    tag.style.cssText = "margin-left:auto;font-size:var(--fs-xs);color:var(--mut);white-space:nowrap;overflow:hidden;text-overflow:ellipsis";
+    tag.textContent = m ? `${m.exp} · ${m.ckpt} · ${m.res}` + (opt.missing ? " · 이 편 저장값 없음" : "") : "모델 없음";
+    ctrl.appendChild(tag);
+  } else ctrl.appendChild(boxPicker(row, () => drawZone(zoneov, row, v.currentTime)));   // 데이터 확인 탭: 예전 모델 박스 고르기
   c.appendChild(ctrl);
 
   const tl = el("div", "tl");
   const bar = el("div", "tlbar"); tl.appendChild(bar);
   const leg = el("div", "leg");
-  leg.innerHTML = row.signal_type === "raw"
-    ? '<span><i style="background:#3fb95055"></i>정답 유효창</span>'
-    : row.signal_type === "fire_smoke"
-    ? '<span><i style="background:var(--fire)"></i>불</span><span><i style="background:var(--smoke)"></i>연기</span><span><i style="background:#3fb95055"></i>GT 유효창</span><span><i style="background:#e3b341"></i>예측알람</span>'
-    : '<span><i style="background:var(--blue)"></i>신호</span><span><i style="background:#3fb95055"></i>GT 유효창</span><span><i style="background:#e3b341"></i>예측알람</span>';
+  if (review) {
+    leg.innerHTML = '<span><i style="background:#3fb95055"></i>정답 유효창(-2~+10초)</span>' + (!rv ? "" :
+      (rv.item === "fire" ? '<span><i style="background:var(--fire)"></i>불 최고 확신도</span><span><i style="background:var(--smoke)"></i>연기</span>'
+                          : '<span><i style="background:var(--blue)"></i>구역 안 사람 최고 확신도</span>') +
+      `<span><i style="background:#c9d1d9"></i>규칙 문턱 ${rv.conf}</span><span><i style="background:var(--fire)"></i>예측 경보</span>`);
+  } else {
+    leg.innerHTML = row.signal_type === "raw"
+      ? '<span><i style="background:#3fb95055"></i>정답 유효창</span>'
+      : '<span><i style="background:var(--blue)"></i>신호</span><span><i style="background:#3fb95055"></i>GT 유효창</span><span><i style="background:var(--fire)"></i>예측알람</span>';
+  }
   tl.appendChild(leg); c.appendChild(tl);
-  // 정답/예측/판정/시간대/날씨는 우측 정보창(renderRight)에 있으므로 중앙 하단 중복 표시는 제거
 
-  let total = estDur(row);
-  v.onloadedmetadata = () => { total = v.duration || total; drawBar(bar, row, gt, sa, total, 0); };
-  v.ontimeupdate = () => { now.textContent = fmt(v.currentTime); drawBar(bar, row, gt, sa, total || v.duration, v.currentTime); drawZone(zoneov, row, v.currentTime); };
+  const sigEnd = rv && rv.signal && rv.signal.length ? rv.signal[rv.signal.length - 1][0] : 0;
+  let total = review ? (sigEnd || 300) : estDur(row);
+  const paint = cur => review ? drawBarRv(bar, rv, gt, sa, total || v.duration, cur) : drawBar(bar, row, gt, sa, total || v.duration, cur);
+  v.onloadedmetadata = () => { total = v.duration || total; paint(0); overlay(0); };
+  v.ontimeupdate = () => { now.textContent = fmt(v.currentTime); paint(v.currentTime); overlay(v.currentTime); };
   bar.onclick = e => { const r = bar.getBoundingClientRect(); const t = (e.clientX - r.left) / r.width * (total || v.duration || 1); if (v.duration) v.currentTime = t; };
-  drawBar(bar, row, gt, sa, total, 0);
+  paint(0); overlay(0);
 }
-// 고른 모델의 박스 덤프에서 곡선을 만든다. 표본마다 클래스별 최고 신뢰도.
-// 박스와 같은 자료를 쓰므로 그림과 곡선이 어긋날 수 없다.
-function signalFromTracks(tracks) {
-  if (!tracks || !tracks.length) return null;
-  return tracks.map(r => {
-    let f = 0, sm = 0;
-    for (const b of (r.boxes || [])) { if (b[0]) { if (b[1] > sm) sm = b[1]; } else if (b[1] > f) f = b[1]; }
-    return [r.t, f, sm];
+// 값이 거의 0 인 구간은 선을 그리지 않는다 (하단에 빨간 직선이 쭉 깔리는 것 방지)
+function plotPath(pts, idx, color, px, H) {
+  if (!pts || !pts.length) return "";
+  const MIN = 0.02;
+  let d = "", pen = false;
+  pts.forEach(p => {
+    const val = p[idx];
+    if (val < MIN) { pen = false; return; }
+    const x = px(p[0]), y = H - Math.min(1, val) * (H - 6) - 3;
+    d += (pen ? "L" : "M") + x.toFixed(1) + " " + y.toFixed(1) + " ";
+    pen = true;
   });
+  return d ? `<path d="${d}" fill="none" stroke="${color}" stroke-width="1.4"/>` : "";
 }
+function barFrame(gt, total, W, H, px) {
+  if (gt == null) return "";
+  const x0 = px(Math.max(0, gt - BEFORE)), x1 = px(Math.min(total, gt + AFTER));
+  return `<rect x="${x0}" y="0" width="${x1 - x0}" height="${H}" fill="#3fb95033"/>` +
+         `<line x1="${px(gt)}" y1="0" x2="${px(gt)}" y2="${H}" stroke="#3fb950" stroke-width="2"/>`;
+}
+// 데이터 확인 탭(예전 동작)
 function drawBar(bar, row, gt, sa, total, cur) {
   total = total || estDur(row) || 300;
   const W = 1000, H = 64, px = t => t / total * W;
-  let s = `<svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="none">`;
-  if (gt != null) {
-    const x0 = px(Math.max(0, gt - BEFORE)), x1 = px(Math.min(total, gt + AFTER));
-    s += `<rect x="${x0}" y="0" width="${x1 - x0}" height="${H}" fill="#3fb95033"/>`;
-    s += `<line x1="${px(gt)}" y1="0" x2="${px(gt)}" y2="${H}" stroke="#3fb950" stroke-width="2"/>`;
-  }
-  // 값이 거의 0 인 구간은 선을 그리지 않는다 (하단에 빨간 직선이 쭉 깔리는 것 방지).
-  // 0 이하 점은 건너뛰고, 신호가 살아있는 구간만 이어 그린다.
-  const plot = (pts, idx, color) => {
-    if (!pts || !pts.length) return "";
-    const MIN = 0.02;
-    let d = "", pen = false;
-    pts.forEach(p => {
-      const v = p[idx];
-      if (v < MIN) { pen = false; return; }               // 신호 없음 → 선 끊기
-      const x = px(p[0]), y = H - Math.min(1, v) * (H - 6) - 3;
-      d += (pen ? "L" : "M") + x.toFixed(1) + " " + y.toFixed(1) + " ";
-      pen = true;
-    });
-    return d ? `<path d="${d}" fill="none" stroke="${color}" stroke-width="1.4"/>` : "";
-  };
-  // 모델을 고르면 그 모델 곡선, 안 골랐으면 배포 구성 곡선
-  const sig = signalFromTracks(row.tracks) || row.signal;
-  if (row.signal_type === "fire_smoke") { s += plot(sig, 1, "#f85149"); s += plot(sig, 2, "#a371f7"); }
-  else if (row.signal_type === "fall") { (row.curves || []).forEach(c => s += plot(c, 1, "#58a6ff99")); }
-  else { s += plot(sig, 1, "#58a6ff"); }
-  // 예측알람은 노랑. 불 곡선(빨강)과 같은 색이면 어느 쪽인지 헷갈린다.
-  if (sa != null) s += `<line x1="${px(sa)}" y1="0" x2="${px(sa)}" y2="${H}" stroke="#e3b341" stroke-width="2" stroke-dasharray="4 3"/>`;
+  let s = `<svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="none">` + barFrame(gt, total, W, H, px);
+  if (row.signal_type === "fire_smoke") { s += plotPath(row.signal, 1, "#f85149", px, H); s += plotPath(row.signal, 2, "#a371f7", px, H); }
+  else if (row.signal_type === "fall") { (row.curves || []).forEach(c => s += plotPath(c, 1, "#58a6ff99", px, H)); }
+  else { s += plotPath(row.signal, 1, "#58a6ff", px, H); }
+  if (sa != null) s += `<line x1="${px(sa)}" y1="0" x2="${px(sa)}" y2="${H}" stroke="#f85149" stroke-width="2" stroke-dasharray="4 3"/>`;
   if (cur) s += `<line x1="${px(cur)}" y1="0" x2="${px(cur)}" y2="${H}" stroke="#58a6ff" stroke-width="1.5"/>`;
-  s += "</svg>";
-  bar.innerHTML = s;
+  bar.innerHTML = s + "</svg>";
+}
+// 검수 탭: 고른 모델의 신호 · 문턱 · 경보
+function drawBarRv(bar, rv, gt, sa, total, cur) {
+  total = total || 300;
+  const W = 1000, H = 64, px = t => t / total * W;
+  let s = `<svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="none">` + barFrame(gt, total, W, H, px);
+  if (rv) {
+    if (rv.item === "fire") { s += plotPath(rv.signal, 1, "#f85149", px, H); s += plotPath(rv.signal, 2, "#a371f7", px, H); }
+    else s += plotPath(rv.signal, 1, "#58a6ff", px, H);
+    if (rv.conf != null) { const y = H - Math.min(1, rv.conf) * (H - 6) - 3; s += `<line x1="0" y1="${y}" x2="${W}" y2="${y}" stroke="#c9d1d9" stroke-width="1" stroke-dasharray="3 4" opacity=".6"/>`; }
+  }
+  if (sa != null) s += `<line x1="${px(sa)}" y1="0" x2="${px(sa)}" y2="${H}" stroke="#f85149" stroke-width="2" stroke-dasharray="4 3"/>`;
+  if (cur) s += `<line x1="${px(cur)}" y1="0" x2="${px(cur)}" y2="${H}" stroke="#58a6ff" stroke-width="1.5"/>`;
+  bar.innerHTML = s + "</svg>";
 }
 // 박스 겹침 정도(IoU). 박스는 [식별, conf, x1,y1,x2,y2].
 function iouBox(a, b) {
@@ -216,34 +273,75 @@ function iouBox(a, b) {
   const A = (a[4] - a[2]) * (a[5] - a[3]), B = (b[4] - b[2]) * (b[5] - b[3]);
   return inter / (A + B - inter + 1e-6);
 }
-// 타일 추론이 같은 대상을 풀프레임+타일에서 여러 번 잡아 박스가 겹쳐 보이는 것 제거.
-// 제출 도구(_kisa_port/tools/kisa_items.py 의 nms)와 같은 규칙을 쓴다.
-//   겹침(IoU >= iouTh) 이거나 작은 박스가 큰 박스 안에 containTh 이상 들어가면 지운다.
-//   타일 경계에 걸려 잘린 박스는 IoU 가 낮아 겹침만으로는 안 지워진다. 그래서 포함도 같이 본다.
-// 클래스가 다르면 지우지 않는다(불 위의 연기는 둘 다 보여야 한다).
-function containedIn(a, b) {          // a 가 b 안에 얼마나 들어가 있나 (a 기준 넓이 비율)
-  const ix = Math.max(0, Math.min(a[4], b[4]) - Math.max(a[2], b[2]));
-  const iy = Math.max(0, Math.min(a[5], b[5]) - Math.max(a[3], b[3]));
-  const A = (a[4] - a[2]) * (a[5] - a[3]);
-  return A > 0 ? (ix * iy) / A : 0;
+// 작은 박스가 큰 박스 안에 든 정도(교집합 / 작은 쪽 넓이). 풀프레임 박스 안에 타일 박스가 들면 IoU 는 낮아 안 걸렸다(2026-09-26).
+function insideBox(a, b) {
+  const x1 = Math.max(a[2], b[2]), y1 = Math.max(a[3], b[3]), x2 = Math.min(a[4], b[4]), y2 = Math.min(a[5], b[5]);
+  const inter = Math.max(0, x2 - x1) * Math.max(0, y2 - y1);
+  const A = (a[4] - a[2]) * (a[5] - a[3]), B = (b[4] - b[2]) * (b[5] - b[3]);
+  return inter / (Math.min(A, B) + 1e-6);
 }
-function nmsBoxes(boxes, iouTh, containTh) {
-  const ct = containTh == null ? 0.75 : containTh;
+// 타일 추론이 같은 대상을 풀프레임+타일에서 여러 번 잡아 박스가 겹쳐 보이는 것 제거.
+// IoU 가 iouTh 를 넘거나, 같은 클래스끼리 포함률이 inTh 를 넘으면 conf 낮은 쪽을 뺀다(불 안의 불). 불·연기처럼 다른 클래스는 포함돼도 둔다.
+function nmsBoxes(boxes, iouTh, inTh = 0.7) {
   const keep = [];
   for (const b of boxes.slice().sort((p, q) => q[1] - p[1])) {
-    // 포함은 양쪽으로 본다. 연기는 같은 기둥을 작게도 크게도 잡아서
-    // '새 박스가 남은 박스 안' 만 보면 큰 박스가 살아남아 겹겹이 쌓인다(t=252 에서 5개 -> 2개 -> 1개).
-    const dup = keep.some(k => k[0] === b[0] &&
-      (iouBox(b, k) >= iouTh || containedIn(b, k) >= ct || containedIn(k, b) >= ct));
-    if (!dup) keep.push(b);
+    if (!keep.some(k => iouBox(b, k) > iouTh || (k[0] === b[0] && insideBox(b, k) > inTh))) keep.push(b);
   }
   return keep;
 }
-// ---------- 모델 예측 박스 오버레이 ----------
+// 저장된 표본 중 t 에 가장 가까운 것(표본 간격의 절반 안). 없으면 null
+function rvNear(rv, t) {
+  const s = rv && rv.samples; if (!s || !s.length) return null;
+  let lo = 0, hi = s.length - 1;
+  while (lo < hi) { const mid = (lo + hi) >> 1; if (s[mid][0] < t) lo = mid + 1; else hi = mid; }
+  let best = s[lo];
+  if (lo > 0 && Math.abs(s[lo - 1][0] - t) < Math.abs(best[0] - t)) best = s[lo - 1];
+  return Math.abs(best[0] - t) <= (rv.stride || 0.5) / 2 + 0.05 ? best : null;
+}
+// 검수 탭 겹쳐 그리기: 구역(판정기가 쓴 다각형) + 그 시각 박스. 문턱을 넘은 박스는 실선, 못 넘은 박스는 점선
+function drawZoneRv(ov, row, rv, t) {
+  const W = (rv && rv.wh ? rv.wh[0] : row.framew) || 1280, He = (rv && rv.wh ? rv.wh[1] : row.frameh) || 720;
+  const zone = (rv && rv.zone) || row.zone;
+  let s = `<svg viewBox="0 0 ${W} ${He}" preserveAspectRatio="none" style="width:100%;height:100%">`;
+  if (zone && zone.length) s += `<polygon points="${zone.map(p => p.join(",")).join(" ")}" fill="#3fb95022" stroke="#3fb950" stroke-width="3"/>`;
+  const near = rv ? rvNear(rv, t) : null;
+  if (near) {
+    const fire = rv.item === "fire";
+    let bx = near[1].filter(b => b[1] >= RV_SHOW_MIN);
+    if (fire) bx = nmsBoxes(bx, 0.5);                    // 6뷰가 같은 불을 여러 번 잡는다
+    for (const b of bx) {
+      const th = fire && b[0] === 1 ? (rv.smoke != null ? rv.smoke : rv.conf) : rv.conf;
+      const on = b[1] >= th, col = fire ? (b[0] === 1 ? "#a371f7" : "#f85149") : "#f85149";
+      s += `<rect x="${b[2]}" y="${b[3]}" width="${b[4] - b[2]}" height="${b[5] - b[3]}" fill="none" stroke="${on ? col : "#c9d1d9"}" stroke-width="${on ? 3 : 1.5}"${on ? "" : ' stroke-dasharray="6 4" opacity=".8"'}/>`;
+      s += `<text x="${b[2] + 2}" y="${Math.max(14, b[3] - 4)}" font-size="16" font-weight="700" fill="${on ? col : "#c9d1d9"}" stroke="#000" stroke-width="3" paint-order="stroke">${b[1].toFixed(2)}</text>`;
+    }
+  }
+  ov.innerHTML = s + "</svg>";
+}
+// 데이터 확인 탭(예전 동작): 고른 모델 박스를 row.tracks 로 받아 그린다
+function drawZone(ov, row, t) {
+  const hasZone = row.zone && row.zone.length, hasTracks = row.tracks && row.tracks.length;
+  if (!hasZone && !hasTracks) { ov.innerHTML = ""; return; }
+  const W = row.framew || 1280, He = row.frameh || 720;
+  let s = `<svg viewBox="0 0 ${W} ${He}" preserveAspectRatio="none" style="width:100%;height:100%">`;
+  if (hasZone) s += `<polygon points="${row.zone.map(p => p.join(",")).join(" ")}" fill="#3fb95022" stroke="#3fb950" stroke-width="3"/>`;
+  if (hasTracks) {
+    let near = null, best = 1e9;
+    for (const r of row.tracks) { const d = Math.abs(r.t - t); if (d < best) { best = d; near = r; } }
+    if (near && best < 1) {
+      const fire = row.signal_type === "fire_smoke";   // 방화면 클래스별 색(불=빨강, 연기=보라)
+      for (const b of nmsBoxes(near.boxes.filter(x => x[1] >= 0.25), 0.5)) {
+        const col = fire ? (b[0] ? "#a371f7" : "#f85149") : "#f85149";
+        s += `<rect x="${b[2]}" y="${b[3]}" width="${b[4] - b[2]}" height="${b[5] - b[3]}" fill="none" stroke="${col}" stroke-width="2"/>`;
+      }
+    }
+  }
+  ov.innerHTML = s + "</svg>";
+}
+// ---------- 데이터 확인 탭: 모델 예측 박스 오버레이(예전 동작) ----------
 // 학습한 실험을 고르면 그 모델이 이 클립에서 낸 박스를 영상 위에 겹쳐 본다.
-// 덤프가 없으면 서버가 그 자리에서 추론해 만든다(0.5초 간격·타일, 채점과 같은 조건).
+// 덤프가 없으면 서버가 그 자리에서 추론해 만든다(0.5초 간격·타일). 검수 탭은 이 경로를 안 쓴다(2026-09-28)
 let BOXEXP = { fire: "", person: "" };   // 고른 실험을 갈래별로 따로 기억한다
-let BOXCONF = 0.25;                      // 이 신뢰도 아래는 안 그린다(화면에서 조절한다)
 let BOXMODELS = null;     // 모델 목록은 한 번만 받는다
 function boxModels() {
   if (!BOXMODELS) BOXMODELS = fetch("/api/boxmodels").then(r => r.json()).catch(() => []);
@@ -252,33 +350,18 @@ function boxModels() {
 // 이 클립에 겹쳐 볼 모델의 갈래. 방화 클립에 사람 모델을 올리면 볼 의미가 없다.
 function rowKind(row) {
   if (row && (row.kind === "fire" || row.kind === "person")) return row.kind;   // 데이터 확인 탭이 넘겨준다
-  return CUR.item === "fire" ? "fire" : "person";   // 평가 검수 탭(침입·배회·쓰러짐은 전부 사람)
+  return CUR.item === "fire" ? "fire" : "person";
 }
 function boxPicker(row, redraw) {
   const kind = rowKind(row);
   const wrap = el("div", "", "");
   wrap.style.cssText = "display:flex;align-items:center;gap:6px;margin-left:auto";
   const sel = el("select");
-  sel.style.cssText = "background:#21262d;color:var(--tx);border:1px solid var(--line);border-radius:6px;padding:5px 8px;font-size:12px;max-width:260px";
+  sel.style.cssText = "background:#21262d;color:var(--tx);border:1px solid var(--line);border-radius:var(--r);padding:5px 8px;font-size:var(--fs-sm);max-width:260px";
   sel.innerHTML = '<option value="">예측 박스 없음</option>';
   const note = el("span", "", "");
-  note.style.cssText = "font-size:11px;color:var(--mut);white-space:nowrap";
-
-  // 신뢰도 문턱. 박스가 너무 많다/적다는 이 값 하나로 갈린다.
-  const conf = el("input");
-  conf.type = "range"; conf.min = "0.10"; conf.max = "0.90"; conf.step = "0.05";
-  conf.value = String(BOXCONF);
-  conf.title = "신뢰도 문턱";
-  conf.style.cssText = "width:90px;accent-color:var(--acc)";
-  const confTx = el("span", "", "conf " + BOXCONF.toFixed(2));
-  confTx.style.cssText = "font-size:11px;color:var(--mut);white-space:nowrap;min-width:62px";
-  conf.oninput = () => {
-    BOXCONF = parseFloat(conf.value);
-    confTx.textContent = "conf " + BOXCONF.toFixed(2);
-    redraw();
-  };
-
-  wrap.appendChild(sel); wrap.appendChild(conf); wrap.appendChild(confTx); wrap.appendChild(note);
+  note.style.cssText = "font-size:var(--fs-xs);color:var(--mut);white-space:nowrap";
+  wrap.appendChild(sel); wrap.appendChild(note);
 
   let timer = null;
   const stop = () => { if (timer) { clearTimeout(timer); timer = null; } };
@@ -298,24 +381,16 @@ function boxPicker(row, redraw) {
     }
     if (String(r.state).startsWith("err")) { note.textContent = "실패: " + String(r.state).slice(4, 60); return; }
     if (r.state === "none") {
-      note.textContent = "추론 시작…";
+      note.textContent = "추론 중…";
       await fetch(`/api/boxdump_start?exp=${encodeURIComponent(exp)}&clip=${encodeURIComponent(clip)}`).catch(() => {});
-    } else {
-      // 도는 중이어도 지금까지 나온 박스는 그린다(사건 구간부터 훑으므로 초반에 이미 쓸 만하다)
-      if (r.rows && r.rows.length) { row.tracks = r.rows; redraw(); }
-      const nb = (r.rows || []).reduce((a, x) => a + (x.boxes || []).length, 0);
-      note.textContent = `추론 중… ${r.pct != null ? r.pct + "%" : ""}`
-        + (r.rows && r.rows.length ? ` (표본 ${r.rows.length} · 박스 ${nb})` : "");
-    }
+    } else note.textContent = "추론 중…";
     timer = setTimeout(() => load(exp), 3000);           // 다 될 때까지 3초마다 확인
   }
 
   boxModels().then(all => {
     const list = (all || []).filter(m => m.kind === kind);   // 이 클립과 같은 갈래만
     list.forEach(m => {
-      // mAP 가 아니라 실제 KISA 점수를 보여준다(순위도 그것으로 매겨져 있다)
-      const tag = m.deploy ? ` · ${m.deploy}` : (m.why ? ` · ${m.why}` : "");
-      const o = el("option", "", `${m.exp}${tag}`);
+      const o = el("option", "", `${m.tag ? "[" + m.tag + "] " : ""}${m.exp}${m.why ? " · " + m.why : (m.map50 != null ? ` · mAP ${m.map50.toFixed(3)}` : "")}`);
       o.value = m.exp; sel.appendChild(o);
     });
     if (!list.length) { note.textContent = kind === "fire" ? "불 학습 모델 없음" : "사람 학습 모델 없음"; return; }
@@ -325,49 +400,47 @@ function boxPicker(row, redraw) {
   sel.onchange = () => { BOXEXP[kind] = sel.value; row.tracks = null; redraw(); load(sel.value); };
   return wrap;
 }
-function drawZone(ov, row, t) {
-  const hasZone = row.zone && row.zone.length, hasTracks = row.tracks && row.tracks.length;
-  if (!hasZone && !hasTracks) { ov.innerHTML = ""; return; }
-  const W = row.framew || 1280, He = row.frameh || 720;
-  let s = `<svg viewBox="0 0 ${W} ${He}" preserveAspectRatio="none" style="width:100%;height:100%">`;
-  if (hasZone) s += `<polygon points="${row.zone.map(p => p.join(",")).join(" ")}" fill="#3fb95022" stroke="#3fb950" stroke-width="3"/>`;
-  if (hasTracks) {
-    let near = null, best = 1e9;
-    for (const r of row.tracks) { const d = Math.abs(r.t - t); if (d < best) { best = d; near = r; } }
-    if (near && best < 1) {
-      const fire = row.signal_type === "fire_smoke";   // 방화면 클래스별 색(불=빨강, 연기=보라)
-      for (const b of nmsBoxes(near.boxes.filter(x => x[1] >= BOXCONF), 0.5, 0.75)) {
-        const col = fire ? (b[0] ? "#a371f7" : "#f85149") : "#f85149";
-        s += `<rect x="${b[2]}" y="${b[3]}" width="${b[4] - b[2]}" height="${b[5] - b[3]}" fill="none" stroke="${col}" stroke-width="2"/>`;
-      }
-    }
-  }
-  s += "</svg>"; ov.innerHTML = s;
-}
 
-// ---------- 우: 맵 / 손라벨 ----------
-function renderRight(row) {
+// ---------- 우: 영상 · 판정 · 모델 정보 ----------
+function renderRight(row, rv) {
   const r = $("#right"); r.innerHTML = "";
-  r.appendChild(el("div", "rtitle", "영상 정보"));
   const KV = (k, val) => { const d = el("div", "kv"); d.appendChild(el("span", "", k)); d.appendChild(el("b", "", val)); return d; };
+  const m = rvModel(), ci = rvClipInfo(row.name);
+  r.appendChild(el("div", "rtitle", "영상 정보"));
   r.appendChild(KV("이름", row.name));
-  r.appendChild(KV("정답 GT", fmt(row.gt)));
-  r.appendChild(KV("예측 알람", fmt(alarmOf(row, CUR.item))));
-  r.appendChild(KV("판정", verdict(row, CUR.item)));
+  r.appendChild(KV("정답 GT", rvSec(rv && rv.gt != null ? rv.gt : row.gt)));
+  if (m) {
+    r.appendChild(KV("예측 경보", rvSec(rv ? rv.alarm : (ci ? ci.alarm : null))));
+    const v = rv ? rv.verdict : (ci ? ci.verdict : "-");
+    const d = el("div", "kv"); d.appendChild(el("span", "", "판정"));
+    const b = el("b", "", v);
+    if (ci && ci.official && ci.official !== v) b.appendChild(el("span", "tag warn", "작업 PC: " + ci.official));   // 장비 차이로 갈린 편
+    d.appendChild(b); r.appendChild(d);
+  }
   r.appendChild(KV("시간대", row.tod || "-"));
   if ((row.weather || []).length) {
     const d = el("div", "kv"); d.appendChild(el("span", "", "특이날씨"));
     const b = el("b"); row.weather.forEach(w => b.appendChild(el("span", "tag warn", w))); d.appendChild(b); r.appendChild(d);
   }
-  if (row.zone && row.zone.length) {
-    r.appendChild(el("div", "rtitle", `구역맵 <span class="tag">${row.zone_tag}</span>`));
+  const zone = (rv && rv.zone) || row.zone;
+  if (zone && zone.length) {
+    r.appendChild(el("div", "rtitle", `구역맵 <span class="tag">${row.zone_tag || ""}</span>`));
     const wrap = el("div", "zonewrap");
-    const W = row.framew || 1280, He = row.frameh || 720;
+    const W = (rv && rv.wh ? rv.wh[0] : row.framew) || 1280, He = (rv && rv.wh ? rv.wh[1] : row.frameh) || 720;
     let s = `<svg viewBox="0 0 ${W} ${He}">`;
     if (row.detect && row.detect.length) s += `<polygon points="${row.detect.map(p => p.join(",")).join(" ")}" fill="none" stroke="#8b949e" stroke-width="2" stroke-dasharray="6 4"/>`;
-    s += `<polygon points="${row.zone.map(p => p.join(",")).join(" ")}" fill="#3fb95022" stroke="#3fb950" stroke-width="3"/></svg>`;
+    s += `<polygon points="${zone.map(p => p.join(",")).join(" ")}" fill="#3fb95022" stroke="#3fb950" stroke-width="3"/></svg>`;
     wrap.innerHTML = s; r.appendChild(wrap);
     r.appendChild(el("div", "leg", '<span><i style="background:#3fb950"></i>탐지구역</span><span><i style="background:#8b949e"></i>전체영역</span>'));
+  }
+  if (m) {
+    r.appendChild(el("div", "rtitle", "모델"));
+    r.appendChild(KV("실험", m.exp));
+    r.appendChild(KV("체크포인트 · 해상도", `${m.ckpt} · ${m.res}`));
+    r.appendChild(KV("학습 데이터", (m.data || []).join(" · ") || "-"));
+    const s = RV.summ && RV.summ.score, o = RV.summ && RV.summ.official;
+    if (s) r.appendChild(KV("이 항목 점수", `${s["점수"].toFixed(2)}` + (o ? ` · 작업 PC ${o["점수"].toFixed(2)}` : "")));
+    if (RV.summ && RV.summ.made) r.appendChild(KV("계산 시각", RV.summ.made));
   }
   if (CUR.item === "fire") renderLabels(r, row);
 }
@@ -377,16 +450,6 @@ function renderLabels(r, row) {
   if (!mine.length) return;   // 손라벨(사람이 그린 정답)이 없으면 섹션 자체를 숨김 — 배포 영상은 원래 없음
   r.appendChild(el("div", "rtitle", `손라벨(사람 정답) <span class="tag">${mine.length}박스</span>`));
   const frames = [...new Set(mine.map(l => l.file))];
-  // 그림은 미리 뽑아 둔 PNG 가 아니라 영상에서 그때 뽑는다(그 폴더는 만든 적이 없다).
-  // 손라벨 행에 src(영상 상대경로)와 t(초)가 들어 있다.
-  const srcOfFile = {};
-  mine.forEach(l => { if (l.src && !srcOfFile[l.file]) srcOfFile[l.file] = l; });
-  const frameUrl = (file, w) => {
-    const l = srcOfFile[file];
-    if (!l) return "/frame/" + encodeURIComponent(file);       // 옛 자료(src 없는 행) 대비
-    const clip = String(l.src).replace(/\.mp4$/i, "");
-    return "/frameat?clip=" + encodeURIComponent(clip) + "&t=" + l.t + (w ? "&w=" + w : "");
-  };
   const wrap = el("div", "lblframe");
   const img = el("img"); const ov = el("div"); ov.style.cssText = "position:absolute;inset:0";
   wrap.appendChild(img); wrap.appendChild(ov); r.appendChild(wrap);
@@ -400,16 +463,14 @@ function renderLabels(r, row) {
     s += "</svg>"; ov.innerHTML = s;
   };
   img.onload = () => draw(img.dataset.file);
-  img.dataset.file = frames[0]; img.src = frameUrl(frames[0]);
+  img.dataset.file = frames[0]; img.src = "/frame/" + encodeURIComponent(frames[0]);
   if (frames.length > 1) {
     const th = el("div", "thumbs");
     frames.slice(0, 12).forEach((f, i) => {
-      const tw = el("div", "tw" + (i === 0 ? " on" : "")); const ti = el("img");
-      ti.loading = "lazy"; ti.src = frameUrl(f, 180); tw.appendChild(ti);
-      tw.onclick = () => { img.dataset.file = f; img.src = frameUrl(f); th.querySelectorAll(".tw").forEach(z => z.classList.remove("on")); tw.classList.add("on"); };
+      const tw = el("div", "tw" + (i === 0 ? " on" : "")); const ti = el("img"); ti.src = "/frame/" + encodeURIComponent(f); tw.appendChild(ti);
+      tw.onclick = () => { img.dataset.file = f; img.src = "/frame/" + encodeURIComponent(f); th.querySelectorAll(".tw").forEach(z => z.classList.remove("on")); tw.classList.add("on"); };
       th.appendChild(tw);
     });
     r.appendChild(th);
   }
 }
-

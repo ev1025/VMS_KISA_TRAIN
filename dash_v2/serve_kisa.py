@@ -349,7 +349,32 @@ def json_spans(clip, fps=30.0):
 # ---------- 실험별 박스 덤프(영상 검수에서 모델 예측 박스를 영상 위에 겹쳐 보기) ----------
 _BOXJOBS = {}                      # (실험, 클립) → "run" | "done" | "err:사유"
 _BOXDIR = G / "dumps/fire_box"     # <실험>/<클립>.jsonl
-BOX_TOP = 10                      # 검수 탭 모델 목록에 올릴 개수(갈래별). 순위는 scripts/model_rank.py
+BOX_TOP_SCORE = 3                 # 검수 탭 모델 목록: 갈래별 점수 상위 몇 개(순위는 scripts/model_rank.py)
+BOX_TOP_RECENT = 5                # 〃 최근 학습 몇 개(meta.json 의 ended/started 순). 배포 가중치는 항상 (2026-09-26 사용자 요청)
+
+
+# 시험 판정(VMS_KISA tools/kisa_items.py ITEMS["fire"] model·model2)과 같은 두 벌. 표본마다 두 모델 중 높은 값을 쓰므로 박스도 합쳐 본다
+BOX_ENS = {"ens:fire": ("deploy:fire_fog.pt", "deploy:fire_small.pt")}
+
+
+def _merge_rows(parts):
+    """같은 영상·같은 간격 덤프 여러 개를 표본 시각별로 합친다(박스는 이어 붙임, 겹침은 화면 nms 가 지운다)."""
+    by = {}
+    for rows in parts:
+        for r in rows or []:
+            by.setdefault(r["t"], []).extend(r.get("boxes") or [])
+    return [{"t": t, "boxes": b} for t, b in sorted(by.items())]
+
+
+def box_state(exp, clip):
+    """덤프 작업 상태. 앙상블은 두 벌의 상태를 합친다(하나라도 실패면 실패, 하나라도 도는 중이면 도는 중)."""
+    if exp in BOX_ENS:
+        sts = [box_state(m, clip) for m in BOX_ENS[exp]]
+        for s in sts:
+            if str(s).startswith("err"):
+                return s
+        return "run" if "run" in sts else ("none" if "none" in sts else "done")
+    return _BOXJOBS.get((exp, clip), "none")
 
 
 def box_models():
@@ -361,8 +386,12 @@ def box_models():
             _s.path.insert(0, str(G / "scripts"))
         from model_rank import deployed as _dep
         for exp_, kind_, _key, _why in _dep():
+            if kind_ == "fire" and exp_ not in BOX_ENS["ens:fire"]:
+                continue                      # 지금 시험 설정에 없는 옛 방화 배포본(fire_snowfull 등)은 뺀다
             out.append({"exp": exp_, "model": "배포", "item": "방화" if kind_ == "fire" else "사람",
                         "kind": kind_, "map50": None, "f1": None})
+        out.append({"exp": "ens:fire", "model": "배포", "item": "방화", "kind": "fire", "map50": None, "f1": None,
+                    "why_fixed": "시험 판정 그대로: fire_fog + fire_small 박스 합침"})
     except Exception:
         pass
     rd = G / "results"
@@ -376,6 +405,8 @@ def box_models():
         pt = m.get("best_pt")
         if not pt or not Path(pt).is_file():
             continue
+        if any(k in json.dumps([m.get("base"), m.get("oversample"), m.get("extras")], ensure_ascii=False) for k in ("human_fire", "evalset_fire")):
+            continue                              # 누수 판(채점편 프레임으로 학습)은 목록에서 뺀다(2026-09-26)
         exp = md.parent.name
         em = {}
         ej = md.parent / "eval_map.json"          # 채점셋 mAP 는 별도 파일에 있다
@@ -401,7 +432,7 @@ def box_models():
         # item 은 방화 / 사람 / 침입 / 배회 / 쓰러짐 이 섞여 들어온다(큐 작성 시점마다 달랐다).
         out.append({"exp": exp, "model": m.get("model"), "item": item,
                     "kind": "fire" if item == "방화" else "person",
-                    "map50": em.get("map50"), "f1": f1})
+                    "map50": em.get("map50"), "f1": f1, "started": m.get("ended") or m.get("started")})
     # 순위는 scripts/model_rank.py 한 곳에서만 정한다(백필 순서와 화면 순서가 갈라지지 않게).
     try:
         import sys as _sys
@@ -413,18 +444,29 @@ def box_models():
             order[exp_] = i
             why[exp_] = why_
         for d in out:
-            d["why"] = why.get(d["exp"])
+            d["why"] = d.get("why_fixed") or why.get(d["exp"])
             d["deploy"] = _DEPLOY.get(d["exp"])
-        out.sort(key=lambda d: order.get(d["exp"], 10 ** 6))
+        out.sort(key=lambda d: (d["exp"] != "ens:fire", order.get(d["exp"], 10 ** 6)))   # 앙상블을 맨 위에
     except Exception:                    # 순위를 못 구하면 예전처럼 mAP 순
         out.sort(key=lambda d: (d["map50"] is None, -(d["map50"] or 0)))
 
-    top, seen = [], {}
-    for d in out:                        # 갈래별 상위 BOX_TOP 개만. 목록이 길면 고르기만 어렵다
-        k = d["kind"]
-        seen[k] = seen.get(k, 0) + 1
-        if seen[k] <= BOX_TOP:
-            top.append(d)
+    # 갈래별로 배포 가중치 + 점수 상위 BOX_TOP_SCORE + 최근 학습 BOX_TOP_RECENT 만. 목록이 길면 고르기만 어렵다(2026-09-26)
+    top = []
+    for k in ("fire", "person"):
+        ds = [d for d in out if d["kind"] == k]
+        dep = [d for d in ds if d["model"] == "배포"]
+        rest = [d for d in ds if d["model"] != "배포"]                       # 이미 model_rank 순
+        best = rest[:BOX_TOP_SCORE]
+        bestn = {d["exp"] for d in best}
+        recent = sorted((d for d in rest if d["exp"] not in bestn and d.get("started")),
+                        key=lambda d: d["started"], reverse=True)[:BOX_TOP_RECENT]
+        for d in dep:
+            d["tag"] = "배포 앙상블" if d["exp"] in BOX_ENS else "배포"
+        for i, d in enumerate(best):
+            d["tag"] = "점수 %d위" % (i + 1)
+        for d in recent:
+            d["tag"] = "최근"
+        top += dep + best + recent
     return top
 
 
@@ -446,6 +488,9 @@ def _read_jsonl(f):
 
 
 def box_dump_read(exp, clip):
+    if exp in BOX_ENS:                                # 두 벌 다 있어야 완성
+        parts = [box_dump_read(m, clip) for m in BOX_ENS[exp]]
+        return None if any(p is None for p in parts) else _merge_rows(parts)
     f = box_dump_path(exp, clip)
     return _read_jsonl(f) if f.is_file() else None
 
@@ -453,6 +498,16 @@ def box_dump_read(exp, clip):
 def box_dump_partial(exp, clip):
     """아직 도는 중인 덤프의 '지금까지' 와 진행률. 다 되기를 기다리지 않고 보여 주려는 것이다.
     exp_boxdump.py 가 사건 구간부터 훑으므로 초반 결과만으로도 검수가 된다."""
+    if exp in BOX_ENS:                                # 끝난 벌은 완성본, 도는 벌은 중간본을 합친다. 진행률은 느린 쪽
+        parts, pcts = [], []
+        for m in BOX_ENS[exp]:
+            full = box_dump_read(m, clip)
+            if full is not None:
+                parts.append(full); pcts.append(100)
+            else:
+                r_, p_ = box_dump_partial(m, clip)
+                parts.append(r_ or []); pcts.append(p_ or 0)
+        return (_merge_rows(parts) or None), min(pcts)
     d = box_dump_path(exp, clip).parent
     part = d / (clip + ".jsonl.part")
     prog = d / (clip + ".progress")
@@ -470,6 +525,10 @@ def box_dump_partial(exp, clip):
 
 def box_dump_start(exp, clip):
     """덤프를 백그라운드로 만든다. 학습이 도는 중에도 추론 몇 GB 라 큐를 막지 않는다."""
+    if exp in BOX_ENS:                                # 두 벌을 각각 만든다
+        for m in BOX_ENS[exp]:
+            box_dump_start(m, clip)
+        return box_state(exp, clip)
     key = (exp, clip)
     if box_dump_path(exp, clip).is_file():
         return "done"
@@ -491,6 +550,85 @@ def box_dump_start(exp, clip):
 
     threading.Thread(target=work, daemon=True).start()
     return "run"
+
+
+# ---------- 영상 검수: 미리 계산한 결과만 읽는다(2026-09-28) ----------
+# 검수 탭은 모델을 눌러도 추론하지 않는다. scripts/review_cache.py 가 '지금 데이터' 로 끝난 판을 채점과 같은 판정 모듈로
+# 영상 끝까지 돌려 dumps/review/<실험>/<best|last>/<항목>/ 에 둔 것을 그대로 내준다. 대상 판 고르기 · 작업 PC 채점 읽기도 그 파일 한 곳에 있다.
+RV_ITEM = {"fire": "fire", "intrusion": "intrusion", "loiter": "loitering"}   # 검수 탭 항목 → 저장 폴더(쓰러짐은 사람 검출 모델과 무관)
+_RV_NAME = re.compile(r"^[A-Za-z0-9_.\-]+$")
+
+
+def _rc():
+    import sys as _s
+    if str(G / "scripts") not in _s.path:
+        _s.path.insert(0, str(G / "scripts"))
+    import review_cache as RC
+    return RC
+
+
+def _rv_json(f):
+    try:
+        return json.loads(f.read_text(encoding="utf-8")) if f.is_file() else None
+    except Exception:
+        return None
+
+
+def _rv_key(key):
+    """'실험|best' → (실험, best). 경로에 쓰므로 모양을 먼저 본다."""
+    exp, _, ck = (key or "").partition("|")
+    if not _RV_NAME.match(exp) or ck not in ("best", "last"):
+        return None, None
+    return exp, ck
+
+
+def review_models(tab_item):
+    RC = _rc()
+    item = RV_ITEM.get(tab_item)
+    if not item:
+        return {"models": []}
+    ko = {v: k for k, v in RC.ITEM_OF.items()}[item]
+    out = []
+    for exp, m in RC.eligible():
+        if ko not in RC.items_of(m):
+            continue
+        off = RC.official(exp)
+        for ck in RC.CKPTS:
+            d = RC.cache_dir(exp, ck, item)
+            s = _rv_json(d / "summary.json")
+            o = (off.get(ck) or {}).get(item)
+            out.append({"key": exp + "|" + ck, "exp": exp, "ckpt": ck, "res": RC.res_of(m), "data": RC._datasets(m),
+                        "ended": m.get("ended"), "done": RC.is_done(exp, m, ck, ko),
+                        "progress": _rv_json(d / "_progress.json"), "score": s and s.get("score"),
+                        "official": o and {k: o[k] for k in ("점수", "정검", "미검", "오검")}})
+    return {"models": out}
+
+
+def review_summary(key, tab_item):
+    """편별 경보 · 판정 + 작업 PC 채점의 편별 판정(있으면)."""
+    exp, ck = _rv_key(key)
+    item = RV_ITEM.get(tab_item)
+    if not exp or not item:
+        return None
+    RC = _rc()
+    s = _rv_json(RC.cache_dir(exp, ck, item) / "summary.json")
+    if not s:
+        return None
+    o = (RC.official(exp).get(ck) or {}).get(item)
+    if o:
+        s["official"] = {k: o[k] for k in ("점수", "정검", "미검", "오검")}
+        for c, r in (s.get("clips") or {}).items():
+            r["official"] = o["bad"].get(c, "정검")       # 작업 PC 가 틀린 편만 적어 두므로 나머지는 정검
+    return s
+
+
+def review_clip_path(key, tab_item, clip):
+    exp, ck = _rv_key(key)
+    item = RV_ITEM.get(tab_item)
+    if not exp or not item or not _RV_NAME.match(clip or ""):
+        return None
+    f = _rc().cache_dir(exp, ck, item) / (clip + ".json")
+    return f if f.is_file() else None
 
 
 def clip_info(clip):
@@ -1439,6 +1577,13 @@ def push_labels(dry=True):
 class H(BaseHTTPRequestHandler):
     def log_message(self, *a): pass
 
+    def send_error(self, code, message=None, explain=None):
+        # 상태줄은 latin-1 이라 한글 사유를 넣으면 UnicodeEncodeError 로 응답 없이 끊긴다(2026-09-28, 검수 탭 404).
+        # 한글 사유는 본문(explain)으로 보낸다. 호출하는 곳은 그대로 둔다
+        if message and not message.isascii():
+            message, explain = None, (message if explain is None else message + " · " + explain)
+        super().send_error(code, message, explain)
+
     def handle_one_request(self):
         try:
             super().handle_one_request()
@@ -1756,6 +1901,21 @@ class H(BaseHTTPRequestHandler):
             f = G / "dumps/bench_all.json"
             self._bytes(f.read_bytes() if f.is_file() else b"{}",
                         "application/json; charset=utf-8"); return
+        if p in ("/api/review_models", "/api/review_summary", "/api/review_clip"):   # 영상 검수: 저장된 값만(추론 없음)
+            q = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
+            g = lambda k: (q.get(k) or [""])[0]
+            if p == "/api/review_models":
+                body = review_models(g("item"))
+            elif p == "/api/review_summary":
+                body = review_summary(g("key"), g("item"))
+            else:
+                f = review_clip_path(g("key"), g("item"), g("clip"))
+                if f is None:
+                    self.send_error(404, "저장된 결과 없음"); return
+                self._stream(f, "application/json; charset=utf-8"); return
+            if body is None:
+                self.send_error(404, "저장된 결과 없음"); return
+            self._bytes(json.dumps(body, ensure_ascii=False).encode(), "application/json; charset=utf-8"); return
         if p == "/api/boxmodels":           # 오버레이에 쓸 수 있는 학습 모델 목록(채점셋 mAP 순)
             self._bytes(json.dumps(box_models(), ensure_ascii=False).encode(),
                         "application/json; charset=utf-8"); return
@@ -1766,7 +1926,7 @@ class H(BaseHTTPRequestHandler):
             if rows is not None:
                 self._bytes(json.dumps({"state": "done", "rows": rows}).encode(),
                             "application/json; charset=utf-8"); return
-            st = _BOXJOBS.get((exp, clip), "none")
+            st = box_state(exp, clip)
             body = {"state": st}
             if st == "run":                      # 도는 중이면 지금까지 나온 것과 진행률을 같이 준다
                 prows, pct = box_dump_partial(exp, clip)

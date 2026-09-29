@@ -4,41 +4,47 @@
 <style>
 :root{--bg:#0d1117;--panel:#161b22;--panel2:#1c2230;--line:#30363d;--tx:#e6edf3;--mut:#8b949e;
  --blue:#58a6ff;--ok:#3fb950;--bad:#f85149;--miss:#d29922;--fire:#f85149;--smoke:#a371f7;--zone:#3fb950}
+:root{
+  /* 크기 규칙 한 곳. 여기만 고치면 화면 전체가 같이 바뀐다(2026-09-25) */
+  --fs-2xs:10px; --fs-xs:11px; --fs-sm:12px; --fs-md:13px; --fs-lg:14px; --fs-xl:17px;
+  --ctl-h:26px;                 /* 버튼·입력칸·드롭다운 높이 */
+  --r-sm:5px; --r:6px; --r-lg:8px;
+}
 *{box-sizing:border-box}html,body{height:100%;margin:0}
 /* 키보드 포커스 링(마우스 클릭엔 안 뜨고 Tab 이동 때만). 기본 1px 검정 링은 어두운 배경에서 안 보였다 */
 :focus{outline:none}
-button:focus-visible,select:focus-visible,input:focus-visible,a:focus-visible,[tabindex]:focus-visible{outline:2px solid var(--blue);outline-offset:2px;border-radius:5px}
+button:focus-visible,select:focus-visible,input:focus-visible,a:focus-visible,[tabindex]:focus-visible{outline:2px solid var(--blue);outline-offset:2px;border-radius:var(--r-sm)}
 .frbar input[type=range]:focus-visible::-webkit-slider-thumb{box-shadow:0 0 0 2px var(--bg),0 0 0 4px var(--blue)}
 /* 결과 표 헤더가 좁은 칸에서 글자씩 줄바꿈되던 것 방지(정검/미검/오검 등) */
 #center table th{white-space:nowrap}
-body{background:var(--bg);color:var(--tx);font:13px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
+body{background:var(--bg);color:var(--tx);font:var(--fs-md)/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
  display:flex;flex-direction:column;height:100vh;overflow:hidden}
 .top{flex:0 0 auto;padding:10px 16px;border-bottom:1px solid var(--line);display:flex;gap:14px;align-items:center}
-.top .brand{font-weight:700;font-size:15px}.top .brand small{color:var(--mut);font-weight:400;margin-left:8px;font-size:11px}
+.top .brand{font-weight:700;font-size:var(--fs-lg)}.top .brand small{color:var(--mut);font-weight:400;margin-left:8px;font-size:var(--fs-xs)}
 .mode{display:flex;gap:4px}
-.mode button{background:var(--panel);color:var(--mut);border:1px solid var(--line);border-radius:7px;padding:6px 13px;cursor:pointer;font-weight:600;font-size:12px}
+.mode button{background:var(--panel);color:var(--mut);border:1px solid var(--line);border-radius:var(--r);padding:6px 13px;cursor:pointer;font-weight:600;font-size:var(--fs-sm)}
 .mode button.on{background:var(--blue);border-color:var(--blue);color:#06090f}
 .spacer{flex:1}
-.stat{color:var(--mut);font-size:12px}.stat b{color:var(--tx);font-variant-numeric:tabular-nums}
+.stat{color:var(--mut);font-size:var(--fs-sm)}.stat b{color:var(--tx);font-variant-numeric:tabular-nums}
 .main{flex:1;display:flex;min-height:0}
 /* 좌 */
 .left{width:330px;   /* 칩 세 줄이 안 접히는 최소 폭(실측 2026-09-17, 3자리 편수 기준) */flex:0 0 auto;border-right:1px solid var(--line);display:flex;flex-direction:column;min-height:0}
 .srcbox{padding:8px 10px 10px;border-bottom:1px solid var(--line);display:flex;flex-direction:column;gap:6px}
 .srcbox .tools{display:flex;gap:6px;align-items:stretch;margin-bottom:2px}   /* 도구 줄: 보내기·새로고침. 맨 위에 둔다 */
 .srcbox label[hidden]{display:none}   /* .srcbox label 의 display:block 이 [hidden] 보다 우선순위가 높아 따로 적어야 먹는다 */
-.srcbox label{display:block;color:var(--mut);font-size:11px;font-weight:700;margin:0 0 -2px}   /* 바로 아래 드롭다운의 이름표 */
-.srcbox select{width:100%;background:var(--panel);color:var(--tx);border:1px solid var(--line);border-radius:7px;padding:7px 9px;font-size:13px;font-weight:600}
+.srcbox label{display:block;color:var(--mut);font-size:var(--fs-xs);font-weight:700;margin:0 0 -2px}   /* 바로 아래 드롭다운의 이름표 */
+.srcbox select{width:100%;background:var(--panel);color:var(--tx);border:1px solid var(--line);border-radius:var(--r);padding:7px 9px;font-size:var(--fs-md);font-weight:600}
 .filt{display:flex;gap:4px;margin-top:8px}
 .filt[hidden]{display:none}
-.filt button{flex:1;background:var(--panel);color:var(--mut);border:1px solid var(--line);border-radius:6px;padding:5px;cursor:pointer;font-size:11px}
+.filt button{flex:1;background:var(--panel);color:var(--mut);border:1px solid var(--line);border-radius:var(--r);padding:5px;cursor:pointer;font-size:var(--fs-xs)}
 .filt button.on{border-color:var(--blue);color:var(--tx);background:var(--panel2)}
 .list{flex:1;overflow-y:auto;padding:6px}
 .item[hidden]{display:none!important}
-.item{display:flex;align-items:center;gap:8px;padding:8px 9px;border-radius:7px;cursor:pointer;font-family:ui-monospace,Menlo,monospace;font-size:12px}
+.item{display:flex;align-items:center;gap:8px;padding:8px 9px;border-radius:var(--r);cursor:pointer;font-family:ui-monospace,Menlo,monospace;font-size:var(--fs-sm)}
 .item:hover{background:var(--panel)}.item.on{background:var(--panel2);outline:1px solid var(--blue)}
 .item .dot{width:8px;height:8px;border-radius:50%;flex:0 0 auto}
 .item .nm{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.item .vv{font-size:10px;font-weight:700;flex:0 0 auto}
+.item .vv{font-size:var(--fs-2xs);font-weight:700;flex:0 0 auto}
 .d-ok{background:var(--ok)}.d-bad{background:var(--bad)}.d-miss{background:var(--miss)}.d-none{background:var(--mut)}
 .v-ok{color:var(--ok)}.v-bad{color:var(--bad)}.v-miss{color:var(--miss)}.v-none{color:var(--mut)}
 /* 중 */
@@ -51,47 +57,51 @@ video{width:100%;aspect-ratio:16/9;object-fit:fill;display:block;background:#000
 .novid{display:flex;align-items:center;justify-content:center;height:300px;color:var(--mut);flex-direction:column;gap:8px}
 .zoneov{position:absolute;inset:0;pointer-events:none}
 .ctrl{display:flex;gap:10px;align-items:center;background:#0b0e13;padding:8px 12px;border-bottom:1px solid var(--line)}
-.ctrl button{background:var(--blue);color:#06090f;border:0;border-radius:6px;width:34px;height:30px;font-size:14px;cursor:pointer;font-weight:800}
-.ctrl .now{font-variant-numeric:tabular-nums;font-weight:700}
-.ctrl .jmp{width:auto;height:auto;background:#21262d;color:var(--tx);border:1px solid var(--line);border-radius:6px;padding:6px 12px;cursor:pointer;font-variant-numeric:tabular-nums;font-size:12px;font-weight:600;white-space:nowrap;line-height:1.2}
+.ctrl button{background:var(--blue);color:#06090f;border:0;border-radius:var(--r);width:34px;height:var(--ctl-h);font-size:var(--fs-lg);cursor:pointer;font-weight:800}
+.ctrl .now{font-variant-numeric:tabular-nums;font-weight:700;white-space:nowrap}
+.ctrl .jmp{width:auto;height:auto;background:#21262d;color:var(--tx);border:1px solid var(--line);border-radius:var(--r);padding:6px 12px;cursor:pointer;font-variant-numeric:tabular-nums;font-size:var(--fs-sm);font-weight:600;white-space:nowrap;line-height:1.2}
 .ctrl .jmp.gt{border-color:#3fb95088}.ctrl .jmp.sa{border-color:#f8514988}
 .ctrl.labbar{gap:6px;padding:6px 8px;background:var(--panel);border-bottom:0}
-.ctrl.labbar button{background:var(--panel);color:var(--tx);border:1px solid var(--line);border-radius:6px;height:28px;width:auto;padding:0 9px;font-size:12px;font-weight:700;white-space:nowrap}
-.ctrl.labbar input[type=text]{height:28px;font-size:14px}
-.ctrl.labbar .now{color:var(--mut);font-size:12px;font-weight:400}
+.ctrl.labbar button{background:var(--panel);color:var(--tx);border:1px solid var(--line);border-radius:var(--r);height:var(--ctl-h);width:auto;padding:0 9px;font-size:var(--fs-sm);font-weight:700;white-space:nowrap}
+.ctrl.labbar input[type=text]{height:var(--ctl-h);font-size:var(--fs-lg)}
+.ctrl.labbar .now{color:var(--mut);font-size:var(--fs-sm);font-weight:400}
 .ctrl .rate{margin-left:auto;display:flex;gap:3px}
-.ctrl .rate button{width:auto;padding:0 8px;height:26px;background:var(--panel);color:var(--mut);font-size:11px;font-weight:600}
+.ctrl .rate button{width:auto;padding:0 8px;height:var(--ctl-h);background:var(--panel);color:var(--mut);font-size:var(--fs-xs);font-weight:600}
 .ctrl .rate button.on{background:var(--panel2);color:var(--tx);border:1px solid var(--blue)}
 .tl{padding:12px}
-.tlbar{position:relative;height:64px;background:var(--panel);border:1px solid var(--line);border-radius:8px;cursor:pointer;overflow:hidden}
+.tlbar{position:relative;height:64px;background:var(--panel);border:1px solid var(--line);border-radius:var(--r-lg);cursor:pointer;overflow:hidden}
 .tlbar svg{position:absolute;inset:0;width:100%;height:100%}
-.leg{display:flex;gap:14px;flex-wrap:wrap;margin-top:8px;color:var(--mut);font-size:11px}
+.leg{display:flex;gap:14px;flex-wrap:wrap;margin-top:8px;color:var(--mut);font-size:var(--fs-xs)}
 .leg span{display:inline-flex;gap:5px;align-items:center}.leg i{width:14px;height:8px;border-radius:2px;display:inline-block}
 .facts{display:flex;gap:8px;flex-wrap:wrap;padding:0 12px 12px}
-.fact{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:7px 12px}
-.fact span{display:block;color:var(--mut);font-size:10px}.fact b{font-size:14px;font-variant-numeric:tabular-nums}
+.fact{background:var(--panel);border:1px solid var(--line);border-radius:var(--r-lg);padding:7px 12px}
+.fact span{display:block;color:var(--mut);font-size:var(--fs-2xs)}.fact b{font-size:var(--fs-lg);font-variant-numeric:tabular-nums}
 /* 우 */
 .right{width:340px;flex:0 0 auto;border-left:1px solid var(--line);overflow-y:auto;padding:12px}
-.rtitle{font-weight:700;font-size:13px;margin-bottom:8px;color:var(--mut)}
-.zonewrap{position:relative;width:100%;background:#0b0e13;border:1px solid var(--line);border-radius:8px;overflow:hidden}
+/* 좁은 창에서는 좌우를 줄여 가운데(그림)에 폭을 준다. 왼쪽 칩이 한 줄 더 접히는 대신 그림이 커진다 */
+@media (max-width:1600px){.left{width:290px}.right{width:300px}}
+@media (max-width:1400px){.left{width:270px}.right{width:280px}}
+.right{min-width:0}
+.rtitle{font-weight:700;font-size:var(--fs-md);margin-bottom:8px;color:var(--mut)}
+.zonewrap{position:relative;width:100%;background:#0b0e13;border:1px solid var(--line);border-radius:var(--r-lg);overflow:hidden}
 .zonewrap svg{display:block;width:100%;height:auto}
-.kv{display:flex;justify-content:space-between;padding:5px 0;border-bottom:1px solid var(--line);font-size:12px}
+.kv{display:flex;justify-content:space-between;padding:5px 0;border-bottom:1px solid var(--line);font-size:var(--fs-sm)}
 .kv span{color:var(--mut)}.kv b{font-variant-numeric:tabular-nums}
-.tag{display:inline-block;padding:2px 8px;border-radius:10px;font-size:11px;font-weight:600;background:var(--panel2);margin:2px 3px 2px 0}
+.tag{display:inline-block;padding:2px 8px;border-radius:10px;font-size:var(--fs-xs);font-weight:600;background:var(--panel2);margin:2px 3px 2px 0}
 .tag.warn{background:#d2992233;color:var(--miss)}
 .empty{color:var(--mut);text-align:center;padding:40px 10px}
 /* 라벨 생성 재생바: 슬라이더 트랙 자리에 정답(GT)·라벨 눈금을 직접 그린다 */
 .frbar{position:relative;flex:1;height:24px}
-.frbar .tk{position:absolute;left:0;right:0;top:2px;height:20px;background:var(--panel);border:1px solid var(--line);border-radius:5px;overflow:hidden;pointer-events:none}
+.frbar .tk{position:absolute;left:0;right:0;top:2px;height:20px;background:var(--panel);border:1px solid var(--line);border-radius:var(--r-sm);overflow:hidden;pointer-events:none}
 .frbar input[type=range]{position:absolute;inset:0;width:100%;height:24px;margin:0;background:transparent;-webkit-appearance:none;appearance:none}
 .frbar input[type=range]::-webkit-slider-runnable-track{background:transparent;height:24px}
 .frbar input[type=range]::-moz-range-track{background:transparent;height:24px}
-.frbar input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:9px;height:24px;border-radius:3px;background:var(--blue);border:1px solid #06090f;cursor:pointer}
-.frbar input[type=range]::-moz-range-thumb{width:9px;height:24px;border-radius:3px;background:var(--blue);border:1px solid #06090f;cursor:pointer}
-.lblframe{position:relative;margin-top:8px}.lblframe img{width:100%;border-radius:6px;display:block}
+.frbar input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:9px;height:24px;border-radius:var(--r-sm);background:var(--blue);border:1px solid #06090f;cursor:pointer}
+.frbar input[type=range]::-moz-range-thumb{width:9px;height:24px;border-radius:var(--r-sm);background:var(--blue);border:1px solid #06090f;cursor:pointer}
+.lblframe{position:relative;margin-top:8px}.lblframe img{width:100%;border-radius:var(--r);display:block}
 .lblframe svg{position:absolute;inset:0;width:100%;height:100%}
 .thumbs{display:grid;grid-template-columns:repeat(3,1fr);gap:4px;margin-top:8px}
-.thumbs .tw{position:relative;cursor:pointer;border-radius:4px;overflow:hidden;border:1px solid var(--line)}
+.thumbs .tw{position:relative;cursor:pointer;border-radius:var(--r-sm);overflow:hidden;border:1px solid var(--line)}
 .thumbs .tw.on{border-color:var(--blue)}.thumbs img{width:100%;display:block}
 
 /* 스크롤바: 평소 숨김, 호버 시 은은한 회색(테마 맞춤) */
@@ -99,15 +109,16 @@ video{width:100%;aspect-ratio:16/9;object-fit:fill;display:block;background:#000
 *:hover{scrollbar-color:#8b949e66 transparent}
 ::-webkit-scrollbar{width:10px;height:10px}
 ::-webkit-scrollbar-track{background:transparent}
-::-webkit-scrollbar-thumb{background:transparent;border-radius:8px;border:2px solid transparent;background-clip:content-box}
+::-webkit-scrollbar-thumb{background:transparent;border-radius:var(--r-lg);border:2px solid transparent;background-clip:content-box}
 :hover::-webkit-scrollbar-thumb{background:#8b949e55;background-clip:content-box}
 ::-webkit-scrollbar-thumb:hover{background:#8b949eaa;background-clip:content-box}
 ::-webkit-scrollbar-corner{background:transparent}
 </style></head><body>
 <div class="top">
  <div class="brand" title="처음 화면으로" style="cursor:pointer" onclick="try{localStorage.removeItem('kisa_last_view')}catch(e){};location.href='/'">KISA 검수</div>
+ <span id="host" title="이 화면을 띄우고 있는 서버" style="flex:0 0 auto;font:800 11px ui-monospace,Menlo,monospace;color:#0d1117;background:var(--blue);padding:2px 7px;border-radius:var(--r-sm)"></span>
  <div class="mode" id="modeBox"></div>
- <span id="jobStat" hidden style="margin-left:14px;font-size:12px;color:var(--tx);display:inline-flex;align-items:center;gap:8px;cursor:pointer"></span>
+ <span id="jobStat" hidden style="margin-left:14px;font-size:var(--fs-sm);color:var(--tx);display:inline-flex;align-items:center;gap:8px;cursor:pointer"></span>
 
  <span class="spacer"></span>
  <span class="stat" id="summary"></span>
@@ -124,4 +135,11 @@ video{width:100%;aspect-ratio:16/9;object-fit:fill;display:block;background:#000
  <div class="center" id="center"><div class="empty">항목을 선택하세요</div></div>
  <div class="right" id="right"><div class="empty">—</div></div>
 </div>
-<script src="js/core.js"></script><script src="js/review.js"></script><script src="js/data.js"></script><script src="js/editor.js"></script><script src="js/main.js"></script></body></html>
+<script src="js/host.js"></script><script src="js/core.js"></script><script src="js/review.js"></script><script src="js/data.js"></script><script src="js/editor.js"></script><script src="js/main.js"></script><script>
+// 창 크기 표시. 반응형이 걸렸는지 눈으로 확인하려고 둔다(2026-09-25).
+(function(){
+ // 어느 서버인지 이름표. 세 서버에서 같은 화면이 떠서 헷갈린다(2026-09-25).
+ var h=document.getElementById("host");
+ if(h) h.textContent = window.KISA_HOST || "?";     // js/host.js 가 서버마다 제 이름을 넣어 둔다
+ })();
+</script></body></html>

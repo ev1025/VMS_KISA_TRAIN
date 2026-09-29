@@ -35,11 +35,7 @@ function applyMode() {
   } else if (CUR.mode === "results") {
     $("#list").innerHTML = ""; buildResults();
   } else {
-    buildSrc(); buildFilt(); renderList();
-    // 첫 진입 시 첫 영상 자동 열기(현재 선택이 목록에 있으면 유지)
-    const _rows = META.items[CUR.item].rows.filter(r => FILT === "all" || verdict(r, CUR.item) === FILT);
-    const _cur = _rows.find(r => r.name === CUR.name) || _rows[0];
-    if (_cur) { CUR.name = _cur.name; renderList(); renderCenter(_cur); renderRight(_cur); }
+    enterReview();   // 모델 목록 · 판정을 서버에서 받아 첫 영상(또는 보던 영상)을 연다(review.js)
   }
 }
 // ---------- 부트 ----------
@@ -69,41 +65,12 @@ async function buildResults() {
   data = dedupResults(data);   // 같은 결과 여러 출처/재시도 → 한 줄로 접고, 요약 파일 제외
   const wrap = el("div"); wrap.style.cssText = "padding:18px 22px;max-width:1180px;margin:0 auto;width:100%";
   const head = el("div"); head.style.cssText = "display:flex;align-items:center;gap:10px;margin-bottom:2px";
-  head.appendChild(el("div", "rtitle", `실험 채점 비교 <span class="tag">${data.length}건</span> <span style="color:var(--mut);font-weight:400;font-size:11px">· KISA 검증영상 F1 (항목별)</span>`));
-  const rf = el("button", null, "↻ 새로고침"); rf.style.cssText = "margin-left:auto;background:var(--panel);color:var(--tx);border:1px solid var(--line);border-radius:6px;padding:5px 12px;font-size:11px;font-weight:700;cursor:pointer"; rf.onclick = buildResults;
+  head.appendChild(el("div", "rtitle", `실험 채점 비교 <span class="tag">${data.length}건</span> <span style="color:var(--mut);font-weight:400;font-size:var(--fs-xs)">· KISA 검증영상 F1 (항목별)</span>`));
+  const rf = el("button", null, "↻ 새로고침"); rf.style.cssText = "margin-left:auto;background:var(--panel);color:var(--tx);border:1px solid var(--line);border-radius:var(--r);padding:5px 12px;font-size:var(--fs-xs);font-weight:700;cursor:pointer"; rf.onclick = buildResults;
   head.appendChild(rf); wrap.appendChild(head);
 
   // ---- 큐 상태 (exp_queue.py): 실행 중 실험 + 러너 로그 끝 ----
-  const qb = el("div"); qb.style.cssText = "margin-top:10px;padding:10px 12px;border:1px solid var(--line);border-radius:8px;background:var(--panel);font-size:11px;line-height:1.7";
-  // GPU 한 줄. 자리가 많이 남는데 대기 실험이 있으면 눈에 띄게 적는다(놀리지 않으려고).
-  const gpuLine = q => {
-    const g = q.gpu;
-    if (!g) return "";
-    const freeGb = (g.free_mib / 1024).toFixed(0), totGb = (g.total_mib / 1024).toFixed(0);
-    const idle = g.free_mib > 30000 && (q.waiting || []).length > 0;   // 30GB 넘게 남는데 줄 선 것이 있다
-    const noRunner = q.runners === 0 && (q.waiting || []).length > 0;
-    const warn = idle || noRunner;
-    return `<div style="margin-top:6px;color:${warn ? "#f85149" : "var(--mut)"}">` +
-      `GPU 메모리 ${freeGb}GB 남음 / ${totGb}GB (${((g.used_mib / g.total_mib) * 100).toFixed(0)}% 사용)` +
-      ` · <span title="커널이 하나라도 돌던 시간 비율. 연산 여력이 아니다. 작은 작업 하나가 쉬지 않고 돌아도 높게 나온다">가동 ${g.util}%</span>` +
-      (noRunner ? " · <b>러너가 없습니다. 대기 실험이 안 돕니다</b>" :
-        idle ? ` · <b>메모리가 ${freeGb}GB 남는데 대기 실험 ${(q.waiting || []).length}건이 안 돕니다</b>` +
-               `<span title="러너는 'GPU 사용량 < vram_gate_mib' 일 때만 새 잡을 띄운다. 지금 한 잡이 문턱 가까이 쓰고 있어 막혀 있다."> (러너 문턱에 막힘)</span>` : "") + `</div>`;
-  };
-  // 대기 목록. 러너가 집는 순서 그대로.
-  const waitLine = q => {
-    const w = q.waiting || [];
-    if (!w.length) return `<div style="margin-top:4px;color:var(--mut)">대기 중인 실험 없음</div>`;
-    return `<div style="margin-top:6px"><span style="color:var(--mut)">대기 중 ${w.length}건</span>` +
-      `<table style="border-collapse:collapse;margin-top:4px;font-size:11px"><tbody>` +
-      w.map((e, i) => `<tr>` +
-        `<td style="padding:2px 8px 2px 0;color:var(--mut);font-variant-numeric:tabular-nums">${i + 1}</td>` +
-        `<td style="padding:2px 10px 2px 0;font-weight:700;white-space:nowrap">${e.name}</td>` +
-        `<td style="padding:2px 10px;color:var(--mut)">${e.item || ""}</td>` +
-        `<td style="padding:2px 10px;color:var(--mut);font-variant-numeric:tabular-nums">imgsz ${e.imgsz ?? "–"} · batch ${e.batch ?? "–"}</td>` +
-        `<td style="padding:2px 10px;color:var(--mut)">${e.queue}</td></tr>`).join("") +
-      `</tbody></table></div>`;
-  };
+  const qb = el("div"); qb.style.cssText = "margin-top:10px;padding:10px 12px;border:1px solid var(--line);border-radius:var(--r-lg);background:var(--panel);font-size:var(--fs-xs);line-height:1.7";
   const renderQueue = q => {                        // 큐 상자만 다시 그린다(30초 갱신 때 화면 전체를 다시 만들지 않게: 펼친 행·스크롤 유지)
   const Y = new Date().getFullYear();
   const kst = l => l.replace(/^\[(\d\d)-(\d\d) (\d\d):(\d\d)\]/, (_, mo, da, h, mi) => {   // 옛 러너 줄(UTC, KST 표기 없음) → +9시간. 새 줄은 러너가 KST 로 쓴다
@@ -114,16 +81,15 @@ async function buildResults() {
   const lastLog = (q.log || []).slice(-6).map(l => `<div style="color:var(--mut);font-family:ui-monospace,Menlo,monospace;white-space:pre-wrap">${kst(l).replace(/</g, "&lt;")}</div>`).join("");
   qb.innerHTML = `<div style="font-weight:800">큐 <span style="color:${q.running.length ? "#3fb950" : "var(--mut)"}">${q.running.length ? "실행 중 " + q.running.length + "잡" : "대기/없음"}</span>` +
     (q.running.length ? ` <span style="color:var(--tx);font-weight:600">${q.running.join(" · ")}</span>` : "") + `</div>` +
-    ((q.jobs || []).length ? `<table style="border-collapse:collapse;margin:8px 0 4px;font-size:11px"><thead><tr style="color:var(--mut);text-align:left"><th style="padding:2px 10px 2px 0">실험</th><th style="padding:2px 10px">에폭</th><th style="padding:2px 10px">이 에폭</th><th style="padding:2px 10px">속도</th><th style="padding:2px 10px">에폭당</th><th style="padding:2px 10px">남음 → 예상 종료(KST)</th><th style="padding:2px 10px" title="직전 에폭 검증(학습 목록에서 뽑은 600장)">최근 mAP50 / 50-95</th><th style="padding:2px 10px">GPU</th></tr></thead><tbody>` +
+    ((q.jobs || []).length ? `<table style="border-collapse:collapse;margin:8px 0 4px;font-size:var(--fs-xs)"><thead><tr style="color:var(--mut);text-align:left"><th style="padding:2px 10px 2px 0">실험</th><th style="padding:2px 10px">에폭</th><th style="padding:2px 10px">이 에폭</th><th style="padding:2px 10px">속도</th><th style="padding:2px 10px">에폭당</th><th style="padding:2px 10px">남음 → 예상 종료(KST)</th><th style="padding:2px 10px" title="직전 에폭 검증(학습 목록에서 뽑은 600장)">최근 mAP50 / 50-95</th><th style="padding:2px 10px">GPU</th></tr></thead><tbody>` +
       q.jobs.map(j => j.epoch == null ? `<tr><td style="padding:3px 10px 3px 0;font-weight:700">${j.name}</td><td colspan="7" style="color:var(--mut)">${j.state || ""}</td></tr>` :
         `<tr><td style="padding:3px 10px 3px 0;font-weight:700;white-space:nowrap">${j.name}</td>` +
-        `<td style="padding:3px 10px;font-variant-numeric:tabular-nums"><b>${j.epoch}</b>/${j.epochs} <span style="display:inline-block;width:70px;height:6px;background:var(--panel2);border-radius:3px;vertical-align:middle;margin-left:4px"><span style="display:block;width:${Math.round(j.epoch / j.epochs * 100)}%;height:100%;background:#3fb950;border-radius:3px"></span></span></td>` +
+        `<td style="padding:3px 10px;font-variant-numeric:tabular-nums"><b>${j.epoch}</b>/${j.epochs} <span style="display:inline-block;width:70px;height:6px;background:var(--panel2);border-radius:var(--r-sm);vertical-align:middle;margin-left:4px"><span style="display:block;width:${Math.round(j.epoch / j.epochs * 100)}%;height:100%;background:#3fb950;border-radius:var(--r-sm)"></span></span></td>` +
         `<td style="padding:3px 10px;font-variant-numeric:tabular-nums">${j.pct}% <span style="color:var(--mut)">(${j.it}/${j.its} · ${j.elapsed} 경과 · ${j.eta} 남음)</span></td>` +
         `<td style="padding:3px 10px;font-variant-numeric:tabular-nums">${j.it_s} it/s</td><td style="padding:3px 10px">${j.epoch_min != null ? j.epoch_min + "분" : "–"}</td>` +
         `<td style="padding:3px 10px;font-variant-numeric:tabular-nums">${j.remain_h}시간 → <b>${j.finish_kst || "–"}</b></td>` +
         `<td style="padding:3px 10px;font-variant-numeric:tabular-nums">${j.val ? `${j.val.map50.toFixed(3)} / ${j.val.map5095.toFixed(3)} <span style="color:var(--mut)">(P ${j.val.P.toFixed(2)} R ${j.val.R.toFixed(2)})</span>` : '<span style="color:var(--mut)">첫 검증 전</span>'}</td>` +
-        `<td style="padding:3px 10px">${j.mem ? j.mem : (j.phase && j.phase !== "학습 중" ? `<span style="color:#d29922">${j.phase}</span>` : "–")}</td></tr>`).join("") + `</tbody></table>` : "") +
-    gpuLine(q) + waitLine(q) +
+        `<td style="padding:3px 10px">${j.mem}</td></tr>`).join("") + `</tbody></table>` : "") +
     `<details><summary style="cursor:pointer;color:var(--mut)">러너 로그</summary>${lastLog || '<div style="color:var(--mut)">로그 없음</div>'}</details>`;
     if (open) qb.querySelector("details").open = true;
   };
@@ -162,7 +128,7 @@ async function buildResults() {
     if (!m.model) return '<span style="color:var(--mut)">–</span>';
     const tr = t.imgsz || null, ev = (m.eval_map || {}).imgsz || null;
     if (!tr && !ev) return '<span style="color:var(--mut)">–</span>';
-    if (tr && ev && tr !== ev) return `<b>${tr}</b><br><span style="color:#d29922;font-size:10px">측정 ${ev}</span>`;
+    if (tr && ev && tr !== ev) return `<b>${tr}</b><br><span style="color:#d29922;font-size:var(--fs-2xs)">측정 ${ev}</span>`;
     return `<b>${tr || ev}</b>`;
   };
   const dataOf = d => {                              // 입력 데이터: 베이스 + 추가 데이터셋
@@ -193,7 +159,7 @@ async function buildResults() {
     const a = [t.epochs ? `${t.epochs}에폭` : "", t.batch ? `배치 ${t.batch}` : "", t.imgsz ? `${t.imgsz}px` : ""].filter(Boolean).join(" · ");
     return a + (m.status && m.status !== "ok" ? `<br><span style="color:${/fail|kill|error/i.test(m.status) ? "#f85149" : "var(--mut)"}">${m.status}</span>` : "");
   };
-  const HEAD = '<thead><tr style="color:var(--mut);text-align:left;font-size:11px"><th style="padding:8px 6px;width:64px" title="학습 입력 크기. 다르면 채점 측정 크기도 같이 표시">해상도</th><th>입력데이터</th><th title="오버샘플·다중스케일 등 데이터 외 조작">기법</th><th style="width:60px" title="이 레시피가 낸 최고 F1">최고 F1</th><th style="width:74px" title="최고 F1 을 낸 실험의 한 표본 처리시간(GPU) · 괄호는 표본 주기 대비 여유">속도</th><th style="width:96px">시각</th><th style="width:20px"></th></tr></thead>';
+  const HEAD = '<thead><tr style="color:var(--mut);text-align:left;font-size:var(--fs-xs)"><th style="padding:8px 6px;width:64px" title="학습 입력 크기. 다르면 채점 측정 크기도 같이 표시">해상도</th><th>입력데이터</th><th title="오버샘플·다중스케일 등 데이터 외 조작">기법</th><th style="width:60px" title="이 레시피가 낸 최고 F1">최고 F1</th><th style="width:74px" title="최고 F1 을 낸 실험의 한 표본 처리시간(GPU) · 괄호는 표본 주기 대비 여유">속도</th><th style="width:96px">시각</th><th style="width:20px"></th></tr></thead>';
   const VC = { "정검": "#3fb950", "미검": "#f85149", "오검": "#d29922", "무GT": "#484f58" };
 
   ITEMS.forEach(item => {
@@ -214,26 +180,26 @@ async function buildResults() {
       const rep0 = list[0]; rep0._family = list; return rep0;
     }).sort((a, b) => b.score - a.score);
     const sec = el("div"); sec.style.cssText = "margin-top:18px";
-    const st = el("div", "rtitle", `${item} <span class="tag">${rows.length}건</span>`); st.style.cssText = "font-size:14px;margin-bottom:6px";
+    const st = el("div", "rtitle", `${item} <span class="tag">${rows.length}건</span>`); st.style.cssText = "font-size:var(--fs-lg);margin-bottom:6px";
     sec.appendChild(st);
-    if (!rows.length) { sec.appendChild(el("div", "", '<div style="color:var(--mut);font-size:11px;padding:4px 2px">채점 결과 없음 (실험 대기)</div>')); wrap.appendChild(sec); return; }
+    if (!rows.length) { sec.appendChild(el("div", "", '<div style="color:var(--mut);font-size:var(--fs-xs);padding:4px 2px">채점 결과 없음 (실험 대기)</div>')); wrap.appendChild(sec); return; }
     const best = Math.max.apply(null, rows.map(d => d.score));
-    const tbl = el("table"); tbl.style.cssText = "width:100%;border-collapse:collapse;font-size:12px"; tbl.innerHTML = HEAD;
+    const tbl = el("table"); tbl.style.cssText = "width:100%;border-collapse:collapse;font-size:var(--fs-sm)"; tbl.innerHTML = HEAD;
     const tb = el("tbody");
     rows.forEach(d => {
       const top = d.score === best, m = d.meta || {};
       const tr = el("tr"); tr.style.cssText = "border-top:1px solid var(--line);cursor:pointer" + (top ? ";background:#3fb95012" : "");
       tr.innerHTML =
         `<td style="padding:9px 6px;font-variant-numeric:tabular-nums;white-space:nowrap;font-weight:${top ? 800 : 600}">${top ? "★ " : ""}${resOf(d)}</td>` +
-        `<td style="font-size:11px;line-height:1.5">${(d.meta || {}).model ? dataOf(d) : ((d.meta || {}).kind ? confOf(d) : `<span style="color:var(--mut)" title="구성 기록이 없는 옛 실험(09-08 이전)">${d.name.replace(/_\d{8}$/, "")}</span>`)}</td>` +
-        `<td style="font-size:11px;line-height:1.5">${wayOf(d)}</td>` +
-        `<td style="font-weight:800;font-size:14px;color:${col(d.score)};font-variant-numeric:tabular-nums">${d.score.toFixed(2)}</td>` +
+        `<td style="font-size:var(--fs-xs);line-height:1.5">${(d.meta || {}).model ? dataOf(d) : ((d.meta || {}).kind ? confOf(d) : `<span style="color:var(--mut)" title="구성 기록이 없는 옛 실험(09-08 이전)">${d.name.replace(/_\d{8}$/, "")}</span>`)}</td>` +
+        `<td style="font-size:var(--fs-xs);line-height:1.5">${wayOf(d)}</td>` +
+        `<td style="font-weight:800;font-size:var(--fs-lg);color:${col(d.score)};font-variant-numeric:tabular-nums">${d.score.toFixed(2)}</td>` +
         (() => { const b = (d.meta || {}).bench || {};
           if (b.pt_gpu == null) return '<td style="color:var(--mut);text-align:center">–</td>';
           const h = b.headroom;
-          return `<td style="text-align:center;font-variant-numeric:tabular-nums;font-size:11px;white-space:nowrap">${b.pt_gpu.toFixed(0)}ms` +
+          return `<td style="text-align:center;font-variant-numeric:tabular-nums;font-size:var(--fs-xs);white-space:nowrap">${b.pt_gpu.toFixed(0)}ms` +
             (h == null ? "" : `<br><span style="color:${h < 1 ? "#f85149" : h < 2 ? "#d29922" : "var(--mut)"}">${h}배</span>`) + `</td>`; })() +
-        `<td style="color:var(--mut);font-variant-numeric:tabular-nums;white-space:nowrap;font-size:11px">${fmtT(d.mtime)}</td>` +
+        `<td style="color:var(--mut);font-variant-numeric:tabular-nums;white-space:nowrap;font-size:var(--fs-xs)">${fmtT(d.mtime)}</td>` +
         `<td style="color:var(--mut);user-select:none" title="구성 상세 · 규칙 스윕 전체">▸</td>`;
       tb.appendChild(tr);
       // 펼침: 구성 표(이름 → 뜻) + 규칙 스윕 표
@@ -294,7 +260,7 @@ async function buildResults() {
       };
 
       const sub = el("tr"); sub.hidden = true;
-      sub.innerHTML = `<td colspan="7" style="padding:6px 14px 14px;font-size:11px">` + famTbl + `<div id="det_${d.name}">${detailOf(d)}</div>` +
+      sub.innerHTML = `<td colspan="7" style="padding:6px 14px 14px;font-size:var(--fs-xs)">` + famTbl + `<div id="det_${d.name}">${detailOf(d)}</div>` +
         `</td>`;
       tb.appendChild(sub);
       sub.querySelectorAll("tr[data-pick]").forEach(rowEl => {          // 모델 행 클릭 → 그 모델 상세로 교체
@@ -312,13 +278,13 @@ async function buildResults() {
     tbl.appendChild(tb); sec.appendChild(tbl);
     if (item === "방화") {                              // 이 항목 표에 나온 학습셋 이름 풀이
       const used = [...new Set(rows.flatMap(d => [(d.meta || {}).base, ...((d.meta || {}).extras || []), ...Object.keys((d.meta || {}).oversample || {})]).filter(Boolean))];
-      if (used.length) sec.appendChild(el("div", "", `<div style="color:var(--mut);font-size:10px;margin-top:6px;line-height:1.6">학습셋: ${used.map(u => `<b style="color:var(--tx);font-weight:600">${u}</b> = ${dsName(u)}`).join(" · ")}</div>`));
+      if (used.length) sec.appendChild(el("div", "", `<div style="color:var(--mut);font-size:var(--fs-2xs);margin-top:6px;line-height:1.6">학습셋: ${used.map(u => `<b style="color:var(--tx);font-weight:600">${u}</b> = ${dsName(u)}`).join(" · ")}</div>`));
     }
     // ---- 클립 × 실험 히트맵: 어떤 클립을 늘 놓치는지 (score_kisa 클립별 판정이 있는 실험만) ----
     const withClips = rows.filter(d => d.clips && Object.keys(d.clips).length);
     if (withClips.length) {
       const clips = [...new Set(withClips.flatMap(d => Object.keys(d.clips)))].sort();
-      const hm = el("table"); hm.style.cssText = "border-collapse:collapse;font-size:11px;margin-top:10px";
+      const hm = el("table"); hm.style.cssText = "border-collapse:collapse;font-size:var(--fs-xs);margin-top:10px";
       hm.innerHTML = `<thead><tr style="color:var(--mut)"><th style="text-align:left;padding:4px 6px">클립별 판정(최고 규칙)</th>${clips.map(cn => `<th style="padding:4px 5px;font-weight:600;writing-mode:vertical-rl;transform:rotate(180deg);white-space:nowrap">${cn.replace(/^C00_/, "")}</th>`).join("")}<th style="padding:4px 6px;color:var(--mut)">미검</th></tr></thead>`;
       const hb = el("tbody");
       withClips.forEach(d => {
@@ -327,17 +293,17 @@ async function buildResults() {
         tr.innerHTML = `<td style="padding:4px 6px;font-weight:600;white-space:nowrap">${d.name.replace(/_\d{8}$/, "")}</td>` + clips.map(cn => {
           const v = d.clips[cn] || ""; const k = v.startsWith("정검") ? "정검" : v.startsWith("미검") ? "미검" : v.startsWith("오검") ? "오검" : v ? "무GT" : "";
           if (k === "미검") miss++;
-          return `<td title="${cn}: ${v || "없음"}" style="width:22px;height:20px;text-align:center;background:${k ? VC[k] + (k === "무GT" ? "" : "cc") : "transparent"};color:#06090f;font-weight:800;font-size:10px">${k === "정검" ? "○" : k === "미검" ? "✕" : k === "오검" ? "!" : k ? "·" : ""}</td>`;
+          return `<td title="${cn}: ${v || "없음"}" style="width:22px;height:20px;text-align:center;background:${k ? VC[k] + (k === "무GT" ? "" : "cc") : "transparent"};color:#06090f;font-weight:800;font-size:var(--fs-2xs)">${k === "정검" ? "○" : k === "미검" ? "✕" : k === "오검" ? "!" : k ? "·" : ""}</td>`;
         }).join("") + `<td style="padding:4px 6px;color:#f85149;font-weight:800">${miss}</td>`;
         hb.appendChild(tr);
       });
       hm.appendChild(hb);
       const hw = el("div"); hw.style.cssText = "overflow-x:auto"; hw.appendChild(hm); sec.appendChild(hw);
-      sec.appendChild(el("div", "", '<div style="color:var(--mut);font-size:10px;margin-top:4px">○ 정검 · ✕ 미검 · ! 오검(GT 없는 클립) · 열 전체가 ✕인 클립 = 데이터/규칙으로 풀어야 할 병목</div>'));
+      sec.appendChild(el("div", "", '<div style="color:var(--mut);font-size:var(--fs-2xs);margin-top:4px">○ 정검 · ✕ 미검 · ! 오검(GT 없는 클립) · 열 전체가 ✕인 클립 = 데이터/규칙으로 풀어야 할 병목</div>'));
     }
     wrap.appendChild(sec);
   });
-  wrap.appendChild(el("div", "", '<div style="color:var(--mut);font-size:11px;margin-top:16px;line-height:1.7">· 점수 = KISA 배포 검증영상 F1(규칙 스윕 중 최고). 초록 ≥90 · 노랑 ≥70 · 빨강 70미만 · 행을 누르면 구성 상세와 규칙 스윕 전체<br>· 방화 = 러너 실험(exp_queue.py) · 침입·배회·쓰러짐 = 라이브 SA 생성기 채점 로그(val_*.log) + 09-07 정리본(ALL_RESULTS.json)<br>· 시각은 전부 한국 시간(KST)</div>'));
+  wrap.appendChild(el("div", "", '<div style="color:var(--mut);font-size:var(--fs-xs);margin-top:16px;line-height:1.7">· 점수 = KISA 배포 검증영상 F1(규칙 스윕 중 최고). 초록 ≥90 · 노랑 ≥70 · 빨강 70미만 · 행을 누르면 구성 상세와 규칙 스윕 전체<br>· 방화 = 러너 실험(exp_queue.py) · 침입·배회·쓰러짐 = 라이브 SA 생성기 채점 로그(val_*.log) + 09-07 정리본(ALL_RESULTS.json)<br>· 시각은 전부 한국 시간(KST)</div>'));
   c.innerHTML = ""; c.appendChild(wrap);
 }
 

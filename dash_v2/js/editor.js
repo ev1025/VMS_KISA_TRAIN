@@ -74,9 +74,9 @@ function uiDialog(msg, { ok = "확인", cancel = "취소", danger = false } = {}
     wrap.style.cssText = "position:fixed;inset:0;z-index:200;background:#000a;display:flex;align-items:center;justify-content:center";
     const box = el("div");
     box.style.cssText = "background:var(--panel);border:1px solid var(--line);border-radius:12px;min-width:320px;max-width:480px;box-shadow:0 12px 40px #000c;padding:18px 20px 14px";
-    const body = el("div"); body.style.cssText = "color:var(--tx);font-size:13px;line-height:1.6;white-space:pre-line"; body.textContent = msg;
+    const body = el("div"); body.style.cssText = "color:var(--tx);font-size:var(--fs-md);line-height:1.6;white-space:pre-line"; body.textContent = msg;
     const row = el("div"); row.style.cssText = "display:flex;justify-content:flex-end;gap:8px;margin-top:16px";
-    const mk = (t, primary) => { const b = el("button", null, t); b.style.cssText = "width:auto;padding:6px 14px;border-radius:6px;font-weight:700;cursor:pointer;" +
+    const mk = (t, primary) => { const b = el("button", null, t); b.style.cssText = "width:auto;padding:6px 14px;border-radius:var(--r);font-weight:700;cursor:pointer;" +
       (primary ? (danger ? "background:#f85149;color:#fff;border:1px solid #f85149" : "background:var(--blue);color:#06090f;border:1px solid var(--blue)") : "background:var(--panel2);color:var(--tx);border:1px solid var(--line)"); return b; };
     const done = v => { wrap.remove(); document.removeEventListener("keydown", onKey, true); resolve(v); };
     const onKey = ev => { if (ev.key === "Escape") { ev.preventDefault(); ev.stopPropagation(); done(false); } else if (ev.key === "Enter") { ev.preventDefault(); ev.stopPropagation(); done(true); } else { ev.stopPropagation(); } };
@@ -170,7 +170,16 @@ async function openFrameAt(clip, sec, mode) {
   try { ci = await clipInfo(clip); }
   catch (e) { $("#center").innerHTML = '<div class="empty">이 영상 정보를 못 읽었습니다</div>'; return; }
   const last = Math.max(Math.floor(ci.dur), 0);
-  if (sec == null) sec = (ci.fire && ci.fire.length) ? ci.fire[0].start : 0;   // 초를 안 주면: 정답 시각 → 없으면 0초
+  if (sec == null) {                                        // 초를 안 주면: 라벨(박스) 있는 첫 프레임을 먼저 본다
+    let cand = shotSecs(stemOf(clip)).map(x => x[0]);        // 손라벨(박스 있는 것만)
+    try {                                                    // 전파 결과도 같이 본다
+      const sm = await samLabels(clip);
+      cand = cand.concat(Object.keys(sm || {}).filter(k => Object.keys(sm[k] || {}).length).map(Number));
+    } catch (e) {}
+    cand = cand.filter(v => isFinite(v));
+    if (cand.length) sec = Math.min.apply(null, cand);
+  }
+  if (sec == null) sec = (ci.fire && ci.fire.length) ? ci.fire[0].start : 0;   // 라벨이 없으면: 정답 시각 → 없으면 0초
   sec = Math.min(Math.max(quant(sec), 0), last);
   LB.clip = clip; LB.sec = sec;
   saveSession();                      // 새로고침 후 이 자리로 돌아오게
@@ -282,13 +291,13 @@ function renderEditor(f) {
   if (f.prefill && f.prefill.length && !hasHand(f.saved)) { LB.boxes = f.prefill.map(b => b.slice()); LB.src = "gt"; }   // 데이터셋 정답 박스 = 우리 라벨과 같은 것. 고치면 손라벨로 저장된다
   let SP = [], SMASK = null;                          // 현재 프레임·현재 객체의 점, 마스크
   const c = $("#center"); c.innerHTML = "";
-  const top = el("div"); top.style.cssText = "width:100%;align-self:flex-start";   // #center 가 세로 가운데 정렬이라 위로 붙인다
+  const top = el("div"); top.style.cssText = "width:100%;align-self:flex-start;padding:12px 8px 0";   // #center 가 세로 가운데 정렬이라 위로 붙인다
   c.appendChild(top);
   // 이미지 + 그리기 오버레이 (이미지 위에는 아무 글자도 얹지 않는다)
-  const pane = el("div"); pane.style.cssText = `width:100%;max-width:min(${f.W}px, calc((100vh - 400px) * 16 / 9));margin:0 auto;padding:12px 8px 0`;
+  const pane = el("div"); pane.style.cssText = "display:flex;gap:8px;align-items:stretch";   // 왼쪽 = 영상, 오른쪽 = 객체 칩
   top.appendChild(pane);
   const wrap = el("div"); wrap.style.cssText = "position:relative;overflow:hidden";
-  const img = el("img"); img.src = f.url; img.style.cssText = "width:100%;display:block;border-radius:6px;-webkit-user-drag:none";
+  const img = el("img"); img.src = f.url; img.style.cssText = "width:100%;display:block;border-radius:var(--r);-webkit-user-drag:none";
   const ov = el("div"); ov.style.cssText = "position:absolute;inset:0;cursor:crosshair";
   wrap.appendChild(img); wrap.appendChild(ov);
   img.addEventListener("load", () => { if (_zoom !== 1) _applyZoom(); }, { once: true });   // 이어받은 확대 반영(크기 확정 뒤)
@@ -323,33 +332,66 @@ function renderEditor(f) {
   const status = el("span", "now", "");            // 저장 상태(재생바 안)
   const bar = buildFrameBar(f, status);
   const rowAct = el("div"); rowAct.style.cssText = "display:flex;align-items:center;gap:8px;margin:0 0 10px;flex-wrap:wrap";
-  const mkBtn = (txt, title) => { const b = el("button", null, txt); b.title = title; b.style.cssText = "width:auto;padding:0 9px;height:28px;background:var(--panel);color:var(--tx);border:1px solid var(--line);border-radius:6px;font-weight:700;cursor:pointer"; return b; };
+  const mkBtn = (txt, title) => { const b = el("button", null, txt); b.title = title; b.style.cssText = "width:auto;padding:0 7px;height:var(--ctl-h);background:var(--panel);color:var(--tx);border:1px solid var(--line);border-radius:var(--r);font-size:var(--fs-sm);font-weight:700;white-space:nowrap;cursor:pointer"; return b; };
   const bUndo = mkBtn("↶", "되돌리기 (Ctrl+Z)"), bRedo = mkBtn("↷", "다시하기 (Ctrl+Shift+Z)"), bRev = mkBtn("라벨 검수", "이 클립의 SAM 전파 결과를 격자로 검수");
   const bGo = mkBtn("전파", "참조샷으로 전파 → SAM 저장소 자동 저장. 결과가 있는 클립에서 지금 프레임에 참조샷이 있으면 '이어서 전파' = 그 프레임부터 종료까지 뒤로만"); bGo.style.cssText += ";color:var(--blue);border-color:var(--blue);font-weight:800;padding:0 12px";
   const bClr = mkBtn("전파 지우기", "이 클립의 SAM 전파 결과를 저장소에서 전부 뺀다(손라벨은 그대로)"); bClr.hidden = true;
   const pstat = el("span", "now", ""); pstat.style.whiteSpace = "nowrap";
-  const tstat = el("span", "now", ""); tstat.style.cssText = "color:var(--mut);font-size:12px;white-space:nowrap";
-  const bReset = mkBtn("학습프레임 초기화", "이 클립의 손라벨·전파 결과·참조샷을 전부 지운다(손라벨은 백업됨)"); bReset.style.cssText += ";color:#f85149;border-color:#f8514966;margin-left:auto";
-  // 순서: 되돌리기 · 참조샷 만들기(손라벨) · 전파 · 검수 · 상태 · 초기화
-  [bUndo, bRedo, bGo, bClr, bRev, tstat, pstat, bReset].forEach(b => rowAct.appendChild(b));
-  const rowObj = el("div"); rowObj.style.cssText = "display:flex;flex-direction:column;gap:6px;margin-top:10px";
+  const tstat = el("span", "now", ""); tstat.style.cssText = "color:var(--mut);font-size:var(--fs-xs);white-space:nowrap";
+  const bReset = mkBtn("프레임 초기화", "이 클립의 손라벨·전파 결과·참조샷을 전부 지운다(손라벨은 백업됨)"); bReset.style.cssText += ";color:#f85149;border-color:#f8514966";
+  // 순서: 되돌리기 · 전파 · 검수 · 초기화 · 건수 · 상태
+  [bUndo, bRedo, bGo, bClr, bRev, bReset, tstat, pstat].forEach(b => rowAct.appendChild(b));
+  const rowObj = el("div"); rowObj.style.cssText = "display:flex;flex-direction:column;gap:6px";   // 스크롤은 바깥 칸(colR)이 맡는다
   const shots = el("div");
   const undoBar = el("div"); undoBar.style.cssText = "padding:2px 2px 8px";   // 삭제 직후 되돌리기 버튼이 잠깐 뜨는 자리
-  [rowAct, wrap, bar, shots, rowObj, undoBar].forEach(x => pane.appendChild(x));   // 순서: 도구 → 화면 → 프레임바 → 미리보기 → 객체
+  // 순서: 도구 → 화면 → 프레임바 → 미리보기 → 객체.
+  // 그림 칸(pane)에는 그림만 둔다. 다른 줄을 그림 칸 안에 두면, 칸이 좁아질 때 줄이 더 접혀 높이를 더 먹고
+  // 그래서 칸이 또 좁아지는 되먹임이 생긴다. 전체 폭에 두면 폭이 고정이라 높이가 안 변한다.
+  rowAct.style.cssText += ";margin-bottom:6px";
+  shots.style.cssText = "height:clamp(64px,10vh,106px)";                  // 미리보기가 늦게 채워져도 자리를 미리 잡는다
+  const colL = el("div"); colL.style.cssText = "flex:0 0 auto;min-width:0";              // 영상
+  const colR = el("div"); colR.style.cssText = "flex:1 1 0;min-width:0;position:relative";  // 객체 칩. 속을 절대배치로 띄워 바깥 높이를 안 늘린다
+  const colRin = el("div"); colRin.style.cssText = "position:absolute;inset:0;overflow-y:auto;padding-right:2px";
+  colRin.appendChild(rowObj); colR.appendChild(colRin);
+  colL.appendChild(wrap);
+  pane.appendChild(colL); pane.appendChild(colR);
+  top.insertBefore(rowAct, pane);                                         // 도구 줄은 전체 폭
+  [bar, shots, undoBar].forEach(x => top.appendChild(x));                 // 프레임바는 전체 폭(프레임을 짚어야 한다), 미리보기는 영상 폭
+  // 프레임 칸 크기를 창에 맞춘다. 아래 줄들(도구·프레임바·미리보기·객체)이 실제로 쓰는 높이를 재서
+  // 남는 높이에 그림 비율을 맞춘다. 400px 을 고정으로 빼두면 창이 낮을 때 그림만 작아지고 좌우가 텅 빈다.
+  const CHIP_W = 176;                                          // 객체 칸에 최소한 남겨 둘 폭
+  let _fitw = 0;
+  const fit = () => {
+    if (!colL.isConnected) return;
+    for (let i = 0; i < 3; i++) {                                // 폭을 바꾸면 아래 줄 수가 바뀐다. 붙을 때까지 다시 잰다
+      const rest = top.offsetHeight - wrap.offsetHeight;         // 그림을 뺀 나머지 줄들이 쓰는 높이(도구 줄 포함)
+      const room = c.clientHeight - rest - 8;                    // 그림에 줄 수 있는 높이
+      const wide = c.clientWidth - 16 - 8 - CHIP_W;              // 좌우 여백 · 두 칸 사이 · 객체 칸
+      const w = Math.round(Math.max(420, Math.min(f.W, room * f.W / f.H, wide)));
+      if (Math.abs(w - _fitw) <= 1) break;                       // 1px 안쪽이면 다 맞춘 것
+      _fitw = w;
+      colL.style.width = w + "px";
+      shots.style.maxWidth = w + "px";                           // 미리보기는 영상과 같은 폭
+    }
+  };
+  new ResizeObserver(fit).observe(c);      // 창 크기·좌우 패널이 바뀔 때
+  new ResizeObserver(fit).observe(pane);   // 미리보기·객체 줄이 늘고 줄 때
+  fit();
   if (f.image) {                                      // 정지 이미지: 프레임·전파·미리보기가 없다. 정답이 있으면 '정답 가져오기'로 한 번에 손라벨로
     bar.style.display = "none"; shots.style.display = "none";
     [bGo, bClr, bRev, bReset].forEach(b => { b.hidden = true; });
     tstat.style.display = "none";
   }
   const spin = pct => `<span style="display:inline-block;width:12px;height:12px;border:2px solid #58a6ff55;border-top-color:#58a6ff;border-radius:50%;animation:ed_sp .8s linear infinite;vertical-align:-2px;margin-right:6px"></span>${pct}%`;
-  if (!document.getElementById("ed_sp")) { const stl = document.createElement("style"); stl.id = "ed_sp"; stl.textContent = "@keyframes ed_sp{to{transform:rotate(360deg)}}"; document.head.appendChild(stl); }
+  if (!document.getElementById("ed_sp")) { const stl = document.createElement("style"); stl.id = "ed_sp"; stl.textContent = "@keyframes ed_sp{to{transform:rotate(360deg)}}"
+    + ".objcell:hover .objx{color:#f85149}"; document.head.appendChild(stl); }
   const flash = (html, ms) => { pstat.innerHTML = html; if (ms) setTimeout(() => { if (mine() && pstat.innerHTML === html) pstat.innerHTML = ""; }, ms); };
 
   const updateTStat = () => {
     const hs = shotSecs(f.stem), hset = new Set(hs.map(([t]) => t));
     const sam = samFramesOf(f.clip).filter(t => !hset.has(t)).length;
     const gt = GTMAP[f.clip]; const gtn = gt ? gtFramesOf(f.clip).length : 0, gtp = gt && gt.points ? Object.values(gt.points).reduce((a, o) => a + Object.keys(o).length, 0) : 0;
-    tstat.textContent = `훈련 데이터 ${hs.length + sam}건 (손라벨 ${hs.length} · 영상전파 ${sam}${gtn || gtp ? ` · 정답 ${gtn ? gtn + "박스프레임" : ""}${gtn && gtp ? " " : ""}${gtp ? gtp + "점" : ""}` : ""})`;
+    tstat.textContent = `${hs.length + sam}건`;          // 손라벨 + 영상전파. 내역은 미리보기 줄에서 색으로 구분된다
   };
   let drawRef = () => {};      // 아래에서 draw 로 채운다(선언 순서 때문에 참조로 둔다)
   const fillShots = () => (persistSam(f.clip), drawTrack(bar.tk, f), updateTStat(), renderShotRow(shots, f, {
@@ -363,7 +405,7 @@ function renderEditor(f) {
     clearTimeout(undoTimer); undoBar.innerHTML = "";
     if (!prev || !prev.length) return;
     const b = el("button", null, `↺ 되돌리기`);
-    b.style.cssText = "background:var(--panel2);color:var(--tx);border:1px solid var(--blue);border-radius:6px;padding:4px 10px;font-size:11px;font-weight:700;cursor:pointer";
+    b.style.cssText = "background:var(--panel2);color:var(--tx);border:1px solid var(--blue);border-radius:var(--r);padding:4px 10px;font-size:var(--fs-xs);font-weight:700;cursor:pointer";
     b.onclick = async () => {
       b.textContent = "…";
       try {
@@ -588,8 +630,12 @@ function renderEditor(f) {
   async function samRecompute() {                    // 점이 바뀐 뒤 현재 객체 마스크 다시 계산
     const t = f.t; const sd0 = SM.seeds.find(q => near(q.t, t) && q.obj === SM.cur);
     if (!SP.some(q => q[2] === 1)) {                   // 포함점이 없음(다 지웠거나 제외점만) → 이 객체의 참조샷·박스 제거
-      if (sd0 && sd0.i != null && LB.boxes[sd0.i]) { LB.boxes.splice(sd0.i, 1); SM.seeds.forEach(q => { if (near(q.t, t) && q.i != null && q.i > sd0.i) q.i -= 1; }); }
-      SM.seeds = SM.seeds.filter(q => q !== sd0); SMASK = null; drawObjs(); draw(); saveNow(); return;
+      let 지웠나 = false;
+      if (sd0 && sd0.i != null && LB.boxes[sd0.i]) { LB.boxes.splice(sd0.i, 1); SM.seeds.forEach(q => { if (near(q.t, t) && q.i != null && q.i > sd0.i) q.i -= 1; }); 지웠나 = true; }
+      if (sd0) { SM.seeds = SM.seeds.filter(q => q !== sd0); 지웠나 = true; }
+      SMASK = null; drawObjs(); draw();
+      if (지웠나) saveNow();                            // 지운 게 없으면 저장하지 않는다. 빈 저장은 프레임을 통째로 지운다
+      return;
     }
     draw();
     await applyMask(t, { clip: f.clip, t, pts: SP }, null);
@@ -609,6 +655,9 @@ function renderEditor(f) {
     draw(); saveNow();                                 // 탭한 프레임 → 손라벨
   }
   // ---------- SAM: 객체 줄 ----------
+  const _fold = new Set();                           // 접어 둔 객체 번호. 이 클립을 보는 동안만 기억한다
+  const _sel = new Set();                            // Shift 로 고른 프레임 시각
+  let _selObj = null, _selA = null;                  // 어느 객체를 고르는 중인가 · 기준점
   function drawObjs() {
     if (!isFire()) {                                 // 사람: 이 클립의 손라벨·전파·참조샷에 있는 객체 번호를 전부 목록에
       const S0 = _labelStore() || [], present = new Set([1, SM.cur, ...SM.seeds.map(q => q.obj), ...LB.boxes.map(b => b[5]).filter(v => v != null).map(Number),
@@ -623,13 +672,19 @@ function renderEditor(f) {
     styleGo();
     if (!SM.seeds.length && !LB.boxes.length && !shotSecs(f.stem).length && !samFramesOf(f.clip).length) return;   // 화면 박스(정답 프리필 포함)·라벨(손·전파)·참조샷이 모두 없으면 객체 줄을 비워 둔다(처음·전부 삭제 뒤). 객체 선택은 숫자키(화재는 1 불 · 2 연기)
     SM.objs.forEach(o => {
-      const row = el("div"); row.style.cssText = "display:flex;align-items:center;gap:6px;flex-wrap:wrap";
-      const tag = el("button", null, samName(o)); tag.title = PROP_OBJ(o) ? "이 객체를 선택하고 탭·드래그" : "연기: 드래그로 직접 그린다. 전파하지 않는다(마스크가 연기 기둥을 못 따라감)"; tag.style.cssText = `width:auto;height:auto;padding:2px 9px;font-size:11px;border-radius:6px;border:2px solid ${samCol(o)};color:${o === SM.cur ? "#06090f" : samCol(o)};background:${o === SM.cur ? samCol(o) : "transparent"};cursor:pointer`;
-      tag.onclick = () => { SM.cur = o; loadSam(); };
-      row.appendChild(tag);
+      const row = el("div"); row.style.cssText = `display:flex;flex-direction:column;gap:5px;padding:6px;border:1px solid ${o === SM.cur ? samCol(o) : "var(--line)"};border-radius:var(--r);background:var(--panel)`;
+      const folded = _fold.has(o);
+      const head = el("div"); head.style.cssText = "display:flex;align-items:center;gap:5px";
+      const tag = el("button", null, samName(o)); tag.title = PROP_OBJ(o) ? "누르면 이 객체를 고르고 접기·펴기" : "연기: 드래그로 직접 그린다. 전파하지 않는다(마스크가 연기 기둥을 못 따라감)"; tag.style.cssText = `flex:0 0 auto;width:auto;height:auto;padding:1px 8px;font-size:var(--fs-2xs);font-weight:700;border-radius:999px;border:1px solid ${samCol(o)};color:${o === SM.cur ? "#06090f" : samCol(o)};background:${o === SM.cur ? samCol(o) : "transparent"};cursor:pointer`;
+      tag.onclick = () => {                            // 고르기 + 접기 겸용
+        if (folded) _fold.delete(o); else _fold.add(o);
+        if (SM.cur !== o) { SM.cur = o; loadSam(); } else drawObjs();
+      };
+      head.appendChild(tag);
+      row.appendChild(head);
       if (f.image) {                                 // 이미지: 이 객체의 박스 수(정답 프리필 포함). 없으면 비워 둔다
         const n = LB.boxes.filter((b, i) => (b[5] != null ? +b[5] : (isFire() ? objOfCls(b[0]) : i + 1)) === o).length;
-        if (n) { const c = el("span", null, `${n}박스`); c.style.cssText = "font-size:11px;color:var(--mut)"; row.appendChild(c); }
+        if (n) { const c = el("span", null, `${n}박스`); c.style.cssText = "font-size:var(--fs-xs);color:var(--mut)"; row.appendChild(c); }
       }
       if (!f.image) {                                // 이 객체의 라벨 프레임을 칩으로(손라벨·전파 구분 없음). 참조샷 칩만 초록 점 + ×(참조샷 취소). 이미지엔 프레임이 없다
         const S = _labelStore() || [];
@@ -637,19 +692,55 @@ function renderEditor(f) {
         const sam = Object.entries(SAMMAP[f.clip] || {}).filter(([k, v]) => v && v[String(o)]).map(([k]) => +k);
         const seedAt = t => SM.seeds.find(sd => sd.obj === o && near(sd.t, t));
         const all = [...new Set([...hand, ...sam, ...SM.seeds.filter(sd => sd.obj === o).map(sd => sd.t)])].sort((x, y) => x - y);
+        if (!folded) {                                 // 접힘: 머리글만 남긴다
+        const grid = el("div"); grid.style.cssText = "display:grid;grid-template-columns:repeat(auto-fill,minmax(44px,1fr));gap:4px";
         all.forEach(t => {
-          const sd = seedAt(t);
-          const chip = el("span"); chip.style.cssText = `display:inline-flex;align-items:center;gap:5px;background:var(--panel2);border:1px solid ${sd ? samCol(o) : "var(--line)"};border-radius:14px;padding:1px 6px 1px 8px;font-size:11px;font-weight:700${near(t, f.t) ? ";outline:2px solid var(--blue)" : ""}`;
-          chip.innerHTML = (sd ? `<i style="width:7px;height:7px;border-radius:50%;background:#3fb950;display:inline-block" title="참조샷"></i>` : "") + `<b style="color:${samCol(o)};cursor:pointer" title="이 프레임으로 이동">${_disp(t)}</b>`;
-          chip.querySelector("b").onclick = () => { SM.cur = o; openFrameAt(f.clip, t, LB.mode); };
-          const x = el("span", null, "×"); x.style.cssText = "cursor:pointer;color:var(--mut);font-weight:800";   // 모든 칩에 × : 이 프레임에서 이 객체를 지운다(다른 객체 남으면 프레임 유지, 없으면 프레임 삭제)
+          const sd = seedAt(t), now = near(t, f.t);
+          const cell = el("div", "objcell", _disp(t));
+          cell.title = `${_disp(t)} 프레임으로 이동`;
+          const picked = _selObj === o && _sel.has(t);
+          cell.style.cssText = `position:relative;display:flex;align-items:center;justify-content:center;height:22px;cursor:pointer;user-select:none;`
+            + `font-size:var(--fs-xs);font-weight:700;border-radius:var(--r-sm);`
+            + "border:1px solid var(--line);"          // 참조샷은 초록 점으로 충분하다
+            + `background:${picked ? "#1f6feb66" : "var(--panel2)"};color:${picked ? "var(--tx)" : samCol(o)}`
+            + (now ? ";outline:2px solid var(--blue);outline-offset:-1px" : "");   // 지금 보는 프레임 = 파란 테두리(예전과 같게)
+          cell.onclick = ev => {
+            if (ev.shiftKey && _selObj === o && _selA != null) {   // 기준점부터 여기까지 한꺼번에 고른다(그 사이 라벨 있는 프레임만)
+              const lo = Math.min(_selA, t), hi = Math.max(_selA, t);
+              _sel.clear(); all.forEach(x => { if (x >= lo - 1e-6 && x <= hi + 1e-6) _sel.add(x); });
+              drawObjs(); return;
+            }
+            _selObj = o; _selA = t; _sel.clear();      // 그냥 누름 = 그 프레임으로 이동하며 기준점이 된다
+            SM.cur = o; openFrameAt(f.clip, t, LB.mode);
+          };
+          if (sd) { const d = el("i"); d.title = "참조샷(전파 기준)"; d.style.cssText = "position:absolute;left:4px;top:50%;transform:translateY(-50%);width:5px;height:5px;border-radius:50%;background:#3fb950"; cell.appendChild(d); }
+          const x = el("span", "objx", "×");                 // 이 프레임에서 이 객체를 지운다(다른 객체 남으면 프레임 유지)
           x.title = `${samName(o)} 삭제(이 프레임). 다른 객체가 남으면 프레임 유지, 없으면 프레임 삭제`;
+          x.style.cssText = "position:absolute;right:3px;top:50%;transform:translateY(-50%);line-height:1;font-size:var(--fs-2xs);font-weight:800;color:var(--mut);cursor:pointer";
           x.onclick = ev => { ev.stopPropagation(); deleteObjAt(o, t); };
-          chip.appendChild(x);
-          row.appendChild(chip);
+          cell.appendChild(x);
+          grid.appendChild(cell);
         });
+        row.appendChild(grid);
+        if (_selObj === o && _sel.size) {               // 고른 구간이 있을 때만 뜬다
+          const sb = el("div"); sb.style.cssText = "display:flex;gap:5px;align-items:center";
+          const ts = [..._sel].sort((x, y) => x - y);
+          const bDel = el("button", null, `선택 ${ts.length}개 삭제`);
+          bDel.style.cssText = "flex:1;height:22px;font-size:var(--fs-2xs);font-weight:800;border-radius:var(--r-sm);border:1px solid #f8514966;background:transparent;color:#f85149;cursor:pointer";
+          bDel.onclick = async () => {
+            if (!await uiConfirm(`${samName(o)} 의 ${ts.length}프레임(${_disp(ts[0])}~${_disp(ts[ts.length - 1])})을 지웁니다.\n다른 객체가 남는 프레임은 유지됩니다. 계속할까요?`, { ok: "삭제", danger: true })) return;
+            _sel.clear(); _selA = null; _selObj = null;
+            await deleteObjMany(o, ts);
+          };
+          const bOff = el("button", null, "해제");
+          bOff.style.cssText = "flex:0 0 auto;height:22px;padding:0 8px;font-size:var(--fs-2xs);border-radius:var(--r-sm);border:1px solid var(--line);background:transparent;color:var(--mut);cursor:pointer";
+          bOff.onclick = () => { _sel.clear(); _selA = null; _selObj = null; drawObjs(); };
+          sb.appendChild(bDel); sb.appendChild(bOff);
+          row.appendChild(sb);
+        }
+        }
       }
-      if (SM.objs.length > 1 && !isFire()) { const del = el("span", null, "객체 삭제"); del.style.cssText = "cursor:pointer;color:var(--mut);font-size:11px"; del.onclick = async () => {
+      if (!folded && SM.objs.length > 1 && !isFire()) { const del = el("span", null, "객체 삭제"); del.style.cssText = "align-self:flex-end;cursor:pointer;color:var(--mut);font-size:var(--fs-2xs);text-decoration:underline"; del.onclick = async () => {
         const mine0 = SM.seeds.filter(q => q.obj === o);
         const nProp = Object.values(SAMMAP[f.clip] || {}).filter(v => v && v[String(o)]).length;
         if (!await uiConfirm(`객체 ${o}를 지웁니다: 참조샷 ${mine0.length}개 · 그 박스 · 전파 결과 ${nProp}프레임.\n박스가 하나도 남지 않는 프레임은 프레임 기록도 지워지고, 다른 객체가 남는 프레임은 유지됩니다. 계속할까요?`, { ok: "삭제", danger: true })) return;
@@ -717,6 +808,24 @@ function renderEditor(f) {
       else { await clearLabel(f.stem, t); await dropSam(f.clip, t); }                // 아무 객체도 없음 → 프레임 기록·전파 결과 삭제
     } catch (e) {}
     if (isCur) { LB.boxes = remain; LB.src = remain.length ? "hand" : "none"; f.saved = remain.length ? remain.map(b => b.slice()) : null; SP = []; SMASK = null; if (!remain.length) samForget(f.clip, t); }
+    await refreshSam(); loadSam(); fillShots(); draw();
+  };
+
+  const deleteObjMany = async (o, ts) => {           // 여러 프레임에서 한 객체를 한꺼번에. 되돌리기 한 번 · 화면 갱신 한 번
+    if (!ts.length) return;
+    const objOf = b => (b[5] != null ? b[5] : (isFire() ? objOfCls(b[0]) : null));
+    snap();
+    for (const t of ts) {
+      const isCur = near(f.t, t);
+      const boxes = (isCur ? LB.boxes : (existingBoxes(f.stem, t) || samBoxesAt(SAMMAP[f.clip] || {}, t) || [])).map(b => b.slice());
+      const remain = boxes.filter(b => objOf(b) !== o);
+      SM.seeds = SM.seeds.filter(q => !(q.obj === o && near(q.t, t)));
+      try {
+        if (remain.length) { await postLabel(f.stem, t, f.W, f.H, remain, f.src); }
+        else { await clearLabel(f.stem, t); await dropSam(f.clip, t); }
+      } catch (e) {}
+      if (isCur) { LB.boxes = remain; LB.src = remain.length ? "hand" : "none"; f.saved = remain.length ? remain.map(b => b.slice()) : null; SP = []; SMASK = null; if (!remain.length) samForget(f.clip, t); }
+    }
     await refreshSam(); loadSam(); fillShots(); draw();
   };
 
@@ -872,6 +981,7 @@ function renderEditor(f) {
         if (owner && owner.obj === SM.cur) { SP = []; SMASK = null; }
         drawObjs(); draw(); saveNow(); return;
       }
+      if (!SP.length && !SM.seeds.some(q => near(q.t, f.t) && q.obj === SM.cur)) return;   // 지울 박스도 점도 참조샷도 없다 → 아무 것도 하지 않는다
       SP = []; samRecompute(); return;
     }
     if (f.image) return;                                                                 // 정지 이미지: 프레임 이동 없음
@@ -942,24 +1052,24 @@ async function openAutoReview(f) {
   const box = el("div");
   box.style.cssText = "background:var(--panel);border:1px solid var(--line);border-radius:12px;width:min(1150px,95vw);max-height:90vh;display:flex;flex-direction:column;box-shadow:0 12px 40px #000c";
   const nHand = items.filter(d => d.src === "hand").length, nSam = items.filter(d => d.src === "sam").length, nGt = items.filter(d => d.gt.length || d.gtp.length).length;
-  const head = el("div", null, `<b>라벨 검수</b> <span style="color:var(--mut);font-size:12px;margin-left:8px">손라벨 ${nHand} · SAM ${nSam}${nGt ? ` · 정답 있는 프레임 ${nGt}(점선·마름모)` : ""}</span>`); head.style.cssText = "padding:12px 16px;border-bottom:1px solid var(--line);font-size:14px";
+  const head = el("div", null, `<b>라벨 검수</b> <span style="color:var(--mut);font-size:var(--fs-sm);margin-left:8px">손라벨 ${nHand} · SAM ${nSam}${nGt ? ` · 정답 있는 프레임 ${nGt}(점선·마름모)` : ""}</span>`); head.style.cssText = "padding:12px 16px;border-bottom:1px solid var(--line);font-size:var(--fs-lg)";
   const grid = el("div"); grid.style.cssText = "padding:14px 16px;overflow:auto;display:grid;grid-template-columns:repeat(auto-fill,minmax(190px,1fr));gap:12px";
   const fill = () => {
     grid.innerHTML = "";
     items.forEach(d => {
       const col = d.src === "hand" ? SRC_COLOR.hand : d.src === "sam" ? SRC_COLOR.sam : SRC_COLOR.gt;
       const cell = el("div"); cell.style.cssText = "position:relative";
-      const holder = el("div"); holder.style.cssText = `position:relative;border:1px solid ${col}88;border-radius:8px;overflow:hidden;background:#000;cursor:pointer`;
+      const holder = el("div"); holder.style.cssText = `position:relative;border:1px solid ${col}88;border-radius:var(--r-lg);overflow:hidden;background:#000;cursor:pointer`;
       holder.innerHTML = `<img loading="lazy" src="/frameat?clip=${encodeURIComponent(f.clip)}&t=${d.t}&w=320" style="display:block;width:100%;height:auto">` +
         `<svg viewBox="0 0 ${f.W} ${f.H}" preserveAspectRatio="none" style="position:absolute;inset:0;width:100%;height:100%;pointer-events:none">` + gtSvg(d, f.W, f.H) +
         d.boxes.map(b => `<rect x="${b[1] * f.W}" y="${b[2] * f.H}" width="${b[3] * f.W}" height="${b[4] * f.H}" fill="none" stroke="${boxCol(d, b)}" stroke-width="3"/>`).join("") + `</svg>`;
       holder.onclick = () => openShot(f, items, items.indexOf(d));
       holder.oncontextmenu = ev => { ev.preventDefault(); wrap.remove(); openFrameAt(f.clip, d.t, LB.mode); };
       const cap = el("div", null, capOf(d));
-      cap.style.cssText = "font-size:11px;color:var(--tx);margin-top:5px";
+      cap.style.cssText = "font-size:var(--fs-xs);color:var(--tx);margin-top:5px";
       if (d.src !== "none") {
         const x = el("button", null, "×"); x.title = d.src === "hand" ? "이 프레임 손라벨 삭제(빈 라벨로 남음)" : "이 프레임의 SAM 결과 제외";
-        x.style.cssText = "position:absolute;top:6px;right:6px;width:24px;height:24px;padding:0;border-radius:50%;border:none;background:#000b;color:#fff;font-size:15px;line-height:1;cursor:pointer";
+        x.style.cssText = "position:absolute;top:6px;right:6px;width:24px;height:24px;padding:0;border-radius:50%;border:none;background:#000b;color:#fff;font-size:var(--fs-lg);line-height:1;cursor:pointer";
         x.onclick = async ev => { ev.stopPropagation(); x.textContent = "…"; try { if (d.src === "hand") await postLabel(f.stem, d.t, f.W, f.H, [], f.src); else await dropSam(f.clip, d.t); d.boxes = []; d.src = "none"; cell.style.opacity = "0.35"; holder.style.filter = "grayscale(1)"; x.remove(); if (ED && ED.clip === f.clip && ED.frameDeleted) ED.frameDeleted(d.t); else if (ED && ED.fillShots) ED.fillShots(); } catch (e) { x.textContent = "×"; } };
         cell.appendChild(x);
       }
@@ -968,7 +1078,7 @@ async function openAutoReview(f) {
   };
   fill(); window.refillGrid = fill;
   const foot = el("div"); foot.style.cssText = "padding:10px 16px;border-top:1px solid var(--line);display:flex;justify-content:flex-end";
-  const close = el("button", null, "닫기"); close.style.cssText = "width:auto;background:var(--panel2);color:var(--tx);border:1px solid var(--line);border-radius:6px;padding:5px 14px;cursor:pointer"; close.onclick = () => wrap.remove();
+  const close = el("button", null, "닫기"); close.style.cssText = "width:auto;background:var(--panel2);color:var(--tx);border:1px solid var(--line);border-radius:var(--r);padding:5px 14px;cursor:pointer"; close.onclick = () => wrap.remove();
   foot.appendChild(close); box.appendChild(head); box.appendChild(grid); box.appendChild(foot); wrap.appendChild(box);
   wrap.onclick = ev => { if (ev.target === wrap) wrap.remove(); };
   document.body.appendChild(wrap);
@@ -983,13 +1093,13 @@ function openShot(f, items, idx) {
   const im = el("img"); im.style.cssText = "display:block;max-width:94vw;max-height:80vh;width:auto;height:auto;-webkit-user-drag:none;user-select:none";
   const ovl = el("div"); ovl.style.cssText = "position:absolute;inset:0;cursor:default";
   holder.appendChild(im); holder.appendChild(ovl);
-  const cap = el("div"); cap.style.cssText = "color:var(--tx);font-size:12px;font-weight:700";
+  const cap = el("div"); cap.style.cssText = "color:var(--tx);font-size:var(--fs-sm);font-weight:700";
   const row = el("div"); row.style.cssText = "display:flex;gap:8px;align-items:center";
-  const mk = (t, danger) => { const b = el("button", null, t); b.style.cssText = "width:auto;padding:5px 12px;border-radius:6px;font-weight:700;cursor:pointer;background:var(--panel2);color:" + (danger ? "#f85149" : "var(--tx)") + ";border:1px solid " + (danger ? "#f8514966" : "var(--line)"); return b; };
+  const mk = (t, danger) => { const b = el("button", null, t); b.style.cssText = "width:auto;padding:5px 12px;border-radius:var(--r);font-weight:700;cursor:pointer;background:var(--panel2);color:" + (danger ? "#f85149" : "var(--tx)") + ";border:1px solid " + (danger ? "#f8514966" : "var(--line)"); return b; };
   const bGoto = mk("프레임 보기", false), bDel = mk("프레임 삭제", true), bClose = mk("닫기", false);
   bGoto.title = "이 프레임을 라벨 편집기에서 연다(같은 프레임 번호)";
   bGoto.style.cssText += ";color:var(--blue);border-color:var(--blue)";
-  const hint = el("span", null, "박스 변 드래그 = 크기 · 안쪽 드래그 = 이동 · Del = 박스 삭제 · ←/→ 이동 · 우클릭 = 편집기로"); hint.style.cssText = "color:var(--mut);font-size:11px;margin-left:8px";
+  const hint = el("span", null, "박스 변 드래그 = 크기 · 안쪽 드래그 = 이동 · Del = 박스 삭제 · ←/→ 이동 · 우클릭 = 편집기로"); hint.style.cssText = "color:var(--mut);font-size:var(--fs-xs);margin-left:8px";
   row.appendChild(bGoto); row.appendChild(bDel); row.appendChild(bClose); row.appendChild(hint);
   let boxes = [], busy = false, lastP = null;
   const cur = () => items[idx];
@@ -1103,7 +1213,7 @@ function openShot(f, items, idx) {
 function buildFrameBar(f, status) {
   const bar = el("div", "ctrl labbar");
   autoStop();                           // 다른 클립으로 넘어왔으면 돌던 자동 넘기기를 멈춘다
-  bar.style.cssText = "margin-top:8px;border:1px solid var(--line);border-radius:8px";
+  bar.style.cssText = "margin-top:8px;border:1px solid var(--line);border-radius:var(--r-lg)";
   const btn = (txt, d, title) => {
     const b = el("button", null, txt);
     b.title = title; b.style.width = "auto"; b.style.padding = "0 9px";
@@ -1114,10 +1224,10 @@ function buildFrameBar(f, status) {
     const SMb = samState(f.clip);
     const mkIn = (label, key) => {
       const lab = el("button", null, label); lab.title = `지금 프레임을 ${label} 프레임으로`;   // 글자를 누르면 지금 프레임이 시작/종료가 된다
-      lab.style.cssText = "width:auto;height:auto;padding:2px 6px;margin-left:2px;font-size:11px;font-weight:700;color:var(--mut);background:transparent;border:1px solid var(--line);border-radius:6px;cursor:pointer";
+      lab.style.cssText = "width:auto;height:auto;padding:2px 6px;margin-left:2px;font-size:var(--fs-xs);font-weight:700;color:var(--mut);background:transparent;border:1px solid var(--line);border-radius:var(--r);cursor:pointer";
       lab.onclick = () => { SMb[key] = f.t; if (SMb.a != null && SMb.b != null && SMb.a > SMb.b) { const t = SMb.a; SMb.a = SMb.b; SMb.b = t; } if (ED && ED.fillShots) ED.fillShots(); };
       const inp = el("input"); inp.type = "text"; inp.inputMode = "numeric"; inp.placeholder = "자동";
-      inp.style.cssText = "width:48px;align-self:stretch;box-sizing:border-box;background:var(--panel);color:var(--tx);border:1px solid var(--line);border-radius:6px;text-align:center;font:700 12px ui-monospace,Menlo,monospace;padding:0 4px";
+      inp.style.cssText = "width:48px;align-self:stretch;box-sizing:border-box;background:var(--panel);color:var(--tx);border:1px solid var(--line);border-radius:var(--r);text-align:center;font:700 12px ui-monospace,Menlo,monospace;padding:0 4px";
       inp.value = SMb[key] == null ? "" : _disp(SMb[key]);
       inp.onchange = () => { const v = inp.value.trim(); SMb[key] = v === "" ? null : _undisp(+v); if (SMb.a != null && SMb.b != null && SMb.a > SMb.b) { const t = SMb.a; SMb.a = SMb.b; SMb.b = t; } inp.blur(); if (ED && ED.fillShots) ED.fillShots(); };
       inp.onkeydown = ev => { if (ev.key === "Enter") { ev.preventDefault(); inp.onchange(); } ev.stopPropagation(); };
@@ -1125,8 +1235,8 @@ function buildFrameBar(f, status) {
     };
     bar.rangeIn = { a: mkIn("시작", "a"), b: mkIn("종료", "b") };
     const bAuto = el("button", null, "재생");     // 종료 칸 오른쪽: 자동 넘기기 / 도는 동안은 중단
-    bAuto.style.cssText = "width:auto;height:auto;padding:3px 8px;margin:0 6px 0 4px;font-size:12px;font-weight:800;" +
-      "border-radius:6px;cursor:pointer;background:var(--panel);color:var(--tx);border:1px solid var(--line)";
+    bAuto.style.cssText = "width:auto;height:auto;padding:3px 8px;margin:0 6px 0 4px;font-size:var(--fs-sm);font-weight:800;" +
+      "border-radius:var(--r);cursor:pointer;background:var(--panel);color:var(--tx);border:1px solid var(--line)";
     const paintAuto = () => {
       const on = !!_AUTO;
       bAuto.textContent = on ? "중단" : "재생";
@@ -1154,7 +1264,7 @@ function buildFrameBar(f, status) {
   bar.appendChild(btn("◀", -1, "1칸 뒤로"));
   const num = el("input");
   num.type = "text"; num.inputMode = "numeric"; num.value = _disp(f.t);   // type=number 는 브라우저가 위아래 화살표를 붙인다 → text + 숫자 키패드
-  num.style.cssText = "width:56px;align-self:stretch;box-sizing:border-box;background:var(--panel);color:var(--tx);border:1px solid var(--line);border-radius:6px;padding:2px 8px;font-size:15px;font-weight:400;line-height:1;font-variant-numeric:tabular-nums;text-align:center";
+  num.style.cssText = "width:56px;align-self:stretch;box-sizing:border-box;background:var(--panel);color:var(--tx);border:1px solid var(--line);border-radius:var(--r);padding:2px 8px;font-size:var(--fs-lg);font-weight:400;line-height:1;font-variant-numeric:tabular-nums;text-align:center";
   num.onchange = () => { num.blur(); openFrameAt(f.clip, _undisp(+num.value)); };   // 사람은 정수 프레임번호 입력 → 초로 환산. 포커스를 풀어 숫자키가 객체 전환으로 가게
   const slWrap = el("div", "frbar");
   const tk = el("div", "tk");          // 정답 구간·라벨 눈금이 그려지는 슬라이더 트랙
@@ -1237,7 +1347,9 @@ function drawTrack(track, f) {
   if (tkr && tkr.rangeIn) { ["a", "b"].forEach(k => { const inp = tkr.rangeIn[k]; if (document.activeElement !== inp) inp.value = SMt[k] == null ? "" : _disp(SMt[k]); }); }
   samFramesOf(f.clip).forEach(sec => { g += `<line x1="${px(sec)}" y1="${H - 12}" x2="${px(sec)}" y2="${H - 7}" stroke="#e8913a" stroke-width="1.4"/>`; });
   const kinds = shotKinds(f.stem);
+  const samK = new Set(samFramesOf(f.clip).map(s => String(gridKey(s))));   // '객체 없음'은 손라벨·전파 박스가 합쳐 0개일 때만(2026-09-27 사용자 규칙, 학습셋 빌더와 같음)
   Object.keys(kinds).forEach(k => {
+    if (kinds[k] === "empty" && samK.has(k)) return;                          // 전파 박스가 있는 프레임엔 '객체 없음' 눈금을 안 그린다
     const sec = +k, col = kinds[k] === "box" ? "#e6edf3cc" : "#58a6ff";
     g += `<line x1="${px(sec)}" y1="${H - 7}" x2="${px(sec)}" y2="${H}" stroke="${col}" stroke-width="1.4"/>`;
   });
@@ -1259,26 +1371,26 @@ function renderShotRow(row, f, hooks) {
   }
   row.dataset.key = key;
   row.innerHTML = "";
-  row.style.cssText = "display:flex;gap:8px;overflow-x:auto;padding:12px 2px;align-items:center;min-height:114px";   // 빈 상태도 높이 예약(박스 그릴 때 안 튀게)
+  row.style.cssText = "display:flex;gap:8px;overflow-x:auto;padding:8px 2px;align-items:center;height:clamp(64px,10vh,106px)";   // 빈 상태도 높이 예약(박스 그릴 때 안 튀게). 낮은 화면에서는 줄어든다
   row.onwheel = ev => { if (ev.deltaY) { ev.preventDefault(); row.scrollLeft += ev.deltaY; } };   // 휠 상하 → 프레임줄 좌우 스크롤
   if (!shots.length) return;
   shots.forEach(([s, n, src]) => {
     const on = s === f.t;
     const b = el("button");
     b.title = _disp(s);
-    b.style.cssText = "position:relative;flex:0 0 auto;padding:0;line-height:0;border-radius:6px;overflow:hidden;cursor:pointer;background:var(--panel);" +
+    b.style.cssText = "position:relative;flex:0 0 auto;padding:0;line-height:0;border-radius:var(--r);overflow:hidden;cursor:pointer;background:var(--panel);" +
       (on ? "outline:2px solid var(--blue);border:0" : `border:1px solid ${src === "sam" ? "#e8913a88" : "var(--line)"}`);
     const im = el("img");
     im.src = `/frameat?clip=${encodeURIComponent(f.clip)}&t=${s}&w=180`;   // 작게 줄여 받는다
     im.loading = "lazy";
-    im.style.cssText = "width:160px;height:90px;object-fit:cover;display:block";
+    im.style.cssText = "height:clamp(46px,8vh,90px);aspect-ratio:16/9;width:auto;object-fit:cover;display:block";
     const cap = el("span", null, _disp(s));
-    cap.style.cssText = "position:absolute;left:0;bottom:0;background:#0b0e13cc;color:var(--tx);font-size:10px;font-weight:700;padding:1px 5px;border-top-right-radius:5px;line-height:1.4";
+    cap.style.cssText = "position:absolute;left:0;bottom:0;background:#0b0e13cc;color:var(--tx);font-size:var(--fs-2xs);font-weight:700;padding:1px 5px;border-top-right-radius:5px;line-height:1.4";
     b.appendChild(im); b.appendChild(cap);
     b.onclick = () => openFrameAt(f.clip, s);
     const x = el("span", null, "×");
     x.title = src === "hand" ? "이 프레임 손라벨 삭제" : "이 프레임 SAM 결과 삭제";
-    x.style.cssText = "position:absolute;right:0;top:0;background:#0b0e13cc;color:var(--tx);font-size:12px;font-weight:800;line-height:1;padding:2px 5px;border-bottom-left-radius:5px;cursor:pointer";
+    x.style.cssText = "position:absolute;right:0;top:0;background:#0b0e13cc;color:var(--tx);font-size:var(--fs-sm);font-weight:800;line-height:1;padding:2px 5px;border-bottom-left-radius:5px;cursor:pointer";
     x.onclick = async ev => {
       ev.stopPropagation();                       // 썸네일 클릭(이동)과 겹치지 않게
       x.textContent = "…";
@@ -1300,7 +1412,7 @@ function renderShotRow(row, f, hooks) {
     nb.title = dir < 0 ? "첫 프레임" : "마지막 프레임";
     nb.style.cssText = "position:sticky;" + (dir < 0 ? "left:0;margin-right:-34px" : "right:0;margin-left:-34px") +   // 음수 여백(칸 26 + 사이 8) 으로 줄에서 자리를 안 차지한다 → 썸네일 위에 겹쳐 뜬다
       ";z-index:2;flex:0 0 auto;width:26px;padding:5px 0;line-height:1;text-align:center;cursor:pointer;" +
-      "border:1px solid var(--line);border-radius:6px;background:#0b0e1399;color:var(--tx);font-size:17px;font-weight:800";   // 줄이 align-items:center 라 화살표 크기만 두면 세로 가운데에 놓인다
+      "border:1px solid var(--line);border-radius:var(--r);background:#0b0e1399;color:var(--tx);font-size:var(--fs-xl);font-weight:800";   // 줄이 align-items:center 라 화살표 크기만 두면 세로 가운데에 놓인다
     nb.onclick = () => openFrameAt(f.clip, shots[dir < 0 ? 0 : shots.length - 1][0]);
     return nb;
   };
@@ -1314,13 +1426,13 @@ function toggleHelp() {
   let h = document.getElementById("kbdHelp");
   if (h) { h.remove(); return; }
   h = document.createElement("div"); h.id = "kbdHelp";
-  h.style.cssText = "position:fixed;right:18px;bottom:18px;z-index:50;background:var(--panel);color:var(--tx);border:1px solid var(--line);border-radius:10px;padding:12px 16px;font-size:12px;line-height:1.9;box-shadow:0 8px 24px #0008;min-width:260px";
+  h.style.cssText = "position:fixed;right:18px;bottom:18px;z-index:50;background:var(--panel);color:var(--tx);border:1px solid var(--line);border-radius:10px;padding:12px 16px;font-size:var(--fs-sm);line-height:1.9;box-shadow:0 8px 24px #0008;min-width:260px";
   h.innerHTML = '<div style="font-weight:800;margin-bottom:4px">단축키 <span style="color:var(--mut);font-weight:400">(? 닫기)</span></div>' +
     [["클릭", "SAM 점(현재 객체) · 박스 안이면 그 박스로 프롬프트"], ["우클릭", "제외점"], ["드래그", "현재 객체 박스(빈 곳=새로, 박스 안=이동, 변=크기)"],
      ["1 ~ 9, 0", "객체 선택 (0 = 객체 10 · 화재: 1 불 · 2 연기)"], ["Del", "마우스 아래 박스 삭제(+그 참조샷). 마지막 박스면 '검토완료·객체 없음'으로 남음"], ["C", "이전 프레임 박스 복사"],
      ["Ctrl+Z / Ctrl+Shift+Z", "되돌리기 / 다시"], ["W / E, ← / →", "이전 / 다음 프레임"], ["R (누르고 있기)", "라벨을 아주 연하게 — 원본 확인"], ["Shift+← / →", "10칸"], ["[ / ]", "전파 시작 / 종료 프레임"],
      ["휠", "확대·축소"], ["Space+드래그", "확대 화면 이동"],
      ["미리보기 ×", "프레임 라벨 삭제 = 박스 전부 + 그 프레임 참조샷 전부(검토완료로 남음)"], ["객체 삭제", "참조샷·박스·전파 결과 전부. 박스가 안 남는 프레임은 기록째 삭제, 다른 객체 남으면 유지"], ["객체 칩 ×", "이 프레임에서 그 객체 삭제. 다른 객체 남으면 프레임 유지, 없으면 프레임 삭제"]]
-      .map(([k, v]) => `<div><kbd style="background:var(--panel2);border:1px solid var(--line);border-radius:4px;padding:0 6px;font-family:ui-monospace,Menlo,monospace">${k}</kbd> <span style="color:var(--mut)">${v}</span></div>`).join("");
+      .map(([k, v]) => `<div><kbd style="background:var(--panel2);border:1px solid var(--line);border-radius:var(--r-sm);padding:0 6px;font-family:ui-monospace,Menlo,monospace">${k}</kbd> <span style="color:var(--mut)">${v}</span></div>`).join("");
   document.body.appendChild(h);
 }

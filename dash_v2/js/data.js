@@ -34,7 +34,7 @@ async function buildDatasetSrc() {
   { const _old = document.getElementById("refreshBtn"); if (_old) _old.remove(); }
   const cb = el("button", null, "\u21bb"); cb.id = "refreshBtn";
   cb.title = "서버 폴더 캐시 새로고침(데이터 폴더를 옮기거나 이름 바꾼 뒤)";
-  cb.style.cssText = "flex:0 0 34px;border-radius:7px;padding:0;cursor:pointer;font-size:13px;background:var(--panel);color:var(--mut);border:1px solid var(--line)";
+  cb.style.cssText = "flex:0 0 34px;border-radius:var(--r);padding:0;cursor:pointer;font-size:var(--fs-md);background:var(--panel);color:var(--mut);border:1px solid var(--line)";
   cb.onclick = async () => { cb.textContent = "\u2026"; try { await fetch("/api/refresh_cache", { method: "POST" }); } catch (e) {} SOURCES = null; DSMETA = null; buildDatasetSrc(); };
   sr.appendChild(cb);
   initPushButton();                               // 보내기 버튼은 이 줄(새로고침 왼쪽)에 붙는다
@@ -198,7 +198,7 @@ async function showRawImage(rel) {
   const wrap = el("div", "lblframe");
   wrap.style.cssText = "position:relative;display:inline-block;align-self:center;margin:auto;max-width:calc(100% - 32px)";
   const img = el("img");
-  img.style.cssText = "display:block;max-width:100%;max-height:calc(100vh - 150px);width:auto;height:auto;border-radius:8px";
+  img.style.cssText = "display:block;max-width:100%;max-height:calc(100vh - 150px);width:auto;height:auto;border-radius:var(--r-lg)";
   const ov = el("div"); ov.style.cssText = "position:absolute;inset:0";
   img.src = "/dsimg/" + enc;
   wrap.appendChild(img); wrap.appendChild(ov); c.appendChild(wrap);
@@ -223,9 +223,9 @@ async function showRawImage(rel) {
   // 긴 파일명·경로는 한 줄에 안 들어간다 → 제목 아래에 쌓아서 줄바꿈으로 보여준다
   const KVstack = (k, val) => {
     const d = el("div"); d.style.cssText = "padding:6px 0;border-bottom:1px solid var(--line)";
-    const t = el("div", "", k); t.style.cssText = "color:var(--mut);font-size:11px;margin-bottom:2px";
+    const t = el("div", "", k); t.style.cssText = "color:var(--mut);font-size:var(--fs-xs);margin-bottom:2px";
     const v = el("div", "", val);
-    v.style.cssText = "font-family:ui-monospace,Menlo,monospace;font-size:11px;word-break:break-all;line-height:1.45";
+    v.style.cssText = "font-family:ui-monospace,Menlo,monospace;font-size:var(--fs-xs);word-break:break-all;line-height:1.45";
     d.appendChild(t); d.appendChild(v); return d;
   };
   imageRightPanel(rel, false, boxes.length);
@@ -241,7 +241,7 @@ function imageRightPanel(rel, editing, nGT) {
   const r = $("#right"); r.innerHTML = "";
   r.appendChild(el("div", "rtitle", "이미지 정보"));
   const KV = (k, val) => { const dv = el("div", "kv"); dv.appendChild(el("span", "", k)); dv.appendChild(el("b", "", val)); return dv; };
-  const KVstack = (k, val) => { const d = el("div"); d.style.cssText = "padding:6px 0;border-bottom:1px solid var(--line)"; const t = el("div", "", k); t.style.cssText = "color:var(--mut);font-size:11px;margin-bottom:2px"; const v = el("div", "", val); v.style.cssText = "font-family:ui-monospace,Menlo,monospace;font-size:11px;word-break:break-all;line-height:1.45"; d.appendChild(t); d.appendChild(v); return d; };
+  const KVstack = (k, val) => { const d = el("div"); d.style.cssText = "padding:6px 0;border-bottom:1px solid var(--line)"; const t = el("div", "", k); t.style.cssText = "color:var(--mut);font-size:var(--fs-xs);margin-bottom:2px"; const v = el("div", "", val); v.style.cssText = "font-family:ui-monospace,Menlo,monospace;font-size:var(--fs-xs);word-break:break-all;line-height:1.45"; d.appendChild(t); d.appendChild(v); return d; };
   r.appendChild(KVstack("파일", rel.split("/").pop()));
   r.appendChild(KVstack("경로", rel.replace(/\/[^/]+$/, "")));
   r.appendChild(KV("정답(원본)", nGT ? nGT + "박스" : "없음"));
@@ -249,7 +249,7 @@ function imageRightPanel(rel, editing, nGT) {
   r.appendChild(KV("손라벨", _n ? _n + "박스" : "없음"));
   if (isScoringCat(catOf(rel))) r.appendChild(KV("주의", "채점 전용 · 라벨해도 학습셋 제외"));
   const eb = el("button", null, editing ? "\u25B6 사진 보기" : "라벨 편집");
-  eb.style.cssText = "width:100%;margin-top:10px;padding:8px;border-radius:6px;cursor:pointer;font-weight:700;font-size:12px;" +
+  eb.style.cssText = "width:100%;margin-top:10px;padding:8px;border-radius:var(--r);cursor:pointer;font-weight:700;font-size:var(--fs-sm);" +
     (editing ? "background:var(--panel2);color:var(--tx);border:1px solid var(--blue)" : "background:var(--blue);color:#06090f;border:1px solid var(--blue)");
   eb.onclick = () => { if (editing) { LB.img = null; ED = null; showRawImage(rel); } else openImageEdit(rel); };
   r.appendChild(eb);
@@ -285,13 +285,13 @@ async function setCatMode(cat, mode) {             // datasets.yaml 의 mode 를
 function catModeRow(rel, onApply) {
   const cat = catOf(rel);
   const row = el("div"); row.style.cssText = "display:flex;gap:6px;align-items:center;margin-top:10px";
-  const lab = el("span", null, "라벨 모드"); lab.style.cssText = "color:var(--mut);font-size:11px;flex:0 0 auto";
+  const lab = el("span", null, "라벨 모드"); lab.style.cssText = "color:var(--mut);font-size:var(--fs-xs);flex:0 0 auto";
   const sel = el("select");
-  sel.style.cssText = "flex:1;height:28px;background:var(--panel);color:var(--tx);border:1px solid var(--line);border-radius:6px;font-size:12px;padding:0 6px";
+  sel.style.cssText = "flex:1;height:var(--ctl-h);background:var(--panel);color:var(--tx);border:1px solid var(--line);border-radius:var(--r);font-size:var(--fs-sm);padding:0 6px";
   [["fire", "불·연기"], ["person", "사람"], ["none", "편집 안 함"]].forEach(([k, t]) => { const o = el("option"); o.value = k; o.textContent = t; sel.appendChild(o); });
   sel.value = catMode(rel);
   const ap = el("button", null, "적용");
-  ap.style.cssText = "flex:0 0 auto;width:auto;padding:0 10px;height:28px;background:var(--blue);color:#06090f;border:1px solid var(--blue);border-radius:6px;font-weight:700;font-size:12px;cursor:pointer";
+  ap.style.cssText = "flex:0 0 auto;width:auto;padding:0 10px;height:var(--ctl-h);background:var(--blue);color:#06090f;border:1px solid var(--blue);border-radius:var(--r);font-weight:700;font-size:var(--fs-sm);cursor:pointer";
   ap.onclick = async () => { ap.textContent = "..."; await setCatMode(cat, sel.value); ap.textContent = "적용"; if (onApply) onApply(); };
   row.appendChild(lab); row.appendChild(sel); row.appendChild(ap);
   return row;
@@ -321,7 +321,7 @@ function passMark(stem) {
 }
 function filterChip(label, n, on, onclick) {           // 필터 줄에 쓰는 칩. 모양을 한 곳에서 만든다
   const b = el("button", null, n == null ? label : `${label} ${n}`);
-  b.style.cssText = "flex:0 0 auto;width:auto;padding:3px 9px;font-size:11px;font-weight:700;border-radius:6px;cursor:pointer;font-variant-numeric:tabular-nums;white-space:nowrap;" +   // 고정폭 숫자: 825 -> 100 이 돼도 칩 폭이 안 흔들린다
+  b.style.cssText = "flex:0 0 auto;width:auto;padding:3px 9px;font-size:var(--fs-xs);font-weight:700;border-radius:var(--r);cursor:pointer;font-variant-numeric:tabular-nums;white-space:nowrap;" +   // 고정폭 숫자: 825 -> 100 이 돼도 칩 폭이 안 흔들린다
     (on ? "background:#58a6ff22;color:#cfe4ff;border:1px solid #58a6ff55" : "background:var(--panel);color:var(--mut);border:1px solid var(--line)");
   b.onclick = onclick;
   return b;
@@ -330,7 +330,7 @@ function filterRow(title) {                            // [이름표][칩 …] �
   const row = el("div");
   row.style.cssText = "display:flex;align-items:flex-start;gap:6px";
   const t = el("span", null, title);
-  t.style.cssText = "flex:0 0 26px;padding-top:4px;font-size:11px;font-weight:700;color:var(--mut)";
+  t.style.cssText = "flex:0 0 26px;padding-top:4px;font-size:var(--fs-xs);font-weight:700;color:var(--mut)";
   const wrap = el("div");
   wrap.style.cssText = "flex:1 1 auto;display:flex;flex-wrap:wrap;gap:4px";
   row.appendChild(t); row.appendChild(wrap); row.wrap = wrap;
@@ -360,13 +360,13 @@ function updateListBadge(key) {        // 라디오를 누르거나 프레임이
 }
 function markRadioRow(stem) {          // 기본/전파/손 라디오. 고르면 바로 서버에 저장하고 목록도 고친다
   const row = el("div");
-  row.style.cssText = "display:flex;align-items:center;gap:10px;margin-top:10px;padding-top:10px;border-top:1px solid var(--line)";
+  row.style.cssText = "display:flex;flex-wrap:wrap;align-items:center;gap:6px 10px;margin-top:10px;padding-top:10px;border-top:1px solid var(--line)";
   const lab = el("span", null, "표시");
-  lab.style.cssText = "flex:0 0 auto;font-size:11px;font-weight:700;color:var(--mut)";
+  lab.style.cssText = "flex:0 0 auto;font-size:var(--fs-xs);font-weight:700;color:var(--mut)";
   row.appendChild(lab);
   const cur = (CLIPST[stem] || {}).mark || "base";
   [["base", "기본"], ["prop", "전파"], ["hand", "완료"]].forEach(([v, t]) => {
-    const w = el("label"); w.style.cssText = "display:inline-flex;align-items:center;gap:4px;cursor:pointer;font-size:12px;font-weight:700;color:"
+    const w = el("label"); w.style.cssText = "display:inline-flex;align-items:center;gap:4px;white-space:nowrap;cursor:pointer;font-size:var(--fs-sm);font-weight:700;color:"
       + (MARK_COL[v] || "var(--tx)");
     const rb = el("input"); rb.type = "radio"; rb.name = "clipmark_" + stem; rb.value = v; rb.checked = (v === cur);
     rb.style.cssText = "margin:0;cursor:pointer";
@@ -375,7 +375,7 @@ function markRadioRow(stem) {          // 기본/전파/손 라디오. 고르면
   });
   // 연기 미완: 불만 치고 연기를 아직 안 친 편. 표시를 '완료' 로 올려도 남은 일이 사라지지 않게 따로 적는다.
   const sw = el("label");
-  sw.style.cssText = "display:inline-flex;align-items:center;gap:4px;cursor:pointer;font-size:12px;font-weight:700;"
+  sw.style.cssText = "display:inline-flex;align-items:center;gap:4px;white-space:nowrap;cursor:pointer;font-size:var(--fs-sm);font-weight:700;"
     + "color:#d29922;margin-left:4px;padding-left:10px;border-left:1px solid var(--line)";
   const cb = el("input"); cb.type = "checkbox"; cb.checked = ((CLIPST[stem] || {}).smoke === "todo");
   cb.style.cssText = "margin:0;cursor:pointer";
@@ -384,7 +384,7 @@ function markRadioRow(stem) {          // 기본/전파/손 라디오. 고르면
   row.appendChild(sw);
   return row;
 }
-const BADGE_CSS = "flex:0 0 auto;display:inline-flex;align-items:center;gap:4px;justify-content:center;min-width:26px;height:18px;padding:0 6px;border-radius:6px;font:700 11px/1 ui-monospace,Menlo,monospace;color:#cfe4ff;background:#58a6ff22;border:1px solid #58a6ff55;margin-right:6px";   // 목록 배지(영상·이미지 공통)
+const BADGE_CSS = "flex:0 0 auto;display:inline-flex;align-items:center;gap:4px;justify-content:center;min-width:26px;height:18px;padding:0 6px;border-radius:var(--r);font:700 var(--fs-xs)/1 ui-monospace,Menlo,monospace;color:#cfe4ff;background:#58a6ff22;border:1px solid #58a6ff55;margin-right:6px";   // 목록 배지(영상·이미지 공통)
 const labelKeyOf = rel => /\.mp4$/i.test(rel) ? rel.split("/").pop().replace(/\.mp4$/, "") : "img:" + rel;   // 목록 항목 → 라벨 저장소 키(영상=stem · 이미지=img:<rel>)
 // 지금 보는 항목을 목록에서 강조(영상·이미지 공통)
 function markListItem(rel) {
@@ -427,8 +427,8 @@ async function showRawVideo(rel) {
   const KV = (k, val) => { const dv = el("div", "kv"); dv.appendChild(el("span", "", k)); dv.appendChild(el("b", "", val)); return dv; };
   const KVstack = (k, val) => {
     const d = el("div"); d.style.cssText = "padding:6px 0;border-bottom:1px solid var(--line)";
-    const t = el("div", "", k); t.style.cssText = "color:var(--mut);font-size:11px;margin-bottom:2px";
-    const vv = el("div", "", val); vv.style.cssText = "font-family:ui-monospace,Menlo,monospace;font-size:11px;word-break:break-all;line-height:1.45";
+    const t = el("div", "", k); t.style.cssText = "color:var(--mut);font-size:var(--fs-xs);margin-bottom:2px";
+    const vv = el("div", "", val); vv.style.cssText = "font-family:ui-monospace,Menlo,monospace;font-size:var(--fs-xs);word-break:break-all;line-height:1.45";
     d.appendChild(t); d.appendChild(vv); return d;
   };
   r.appendChild(KVstack("파일", rel.split("/").pop()));
@@ -441,7 +441,7 @@ async function showRawVideo(rel) {
   } else r.appendChild(KV("정답", "정보 없음"));
   // 라벨 대상 클립이면 버튼: 편집중=영상보기 / 아니면 라벨편집 (영상정보는 그대로). 정답이 있든 없든 편집할 수 있다(정답 원본은 읽기만).
   const _stem = stemOf(clip);
-  const _btn = (txt, primary) => { const b = el("button", null, txt); b.style.cssText = "width:100%;margin-top:10px;padding:8px;border-radius:6px;cursor:pointer;font-weight:700;font-size:12px;" + (primary ? "background:var(--blue);color:#06090f;border:1px solid var(--blue)" : "background:var(--panel2);color:var(--tx);border:1px solid var(--blue)"); return b; };
+  const _btn = (txt, primary) => { const b = el("button", null, txt); b.style.cssText = "width:100%;margin-top:10px;padding:8px;border-radius:var(--r);cursor:pointer;font-weight:700;font-size:var(--fs-sm);" + (primary ? "background:var(--blue);color:#06090f;border:1px solid var(--blue)" : "background:var(--panel2);color:var(--tx);border:1px solid var(--blue)"); return b; };
   if (isScoringCat(catOf(rel))) r.appendChild(KV("주의", "채점 전용 · 라벨해도 학습셋 제외"));
   if (_mode0 !== "none") {
     { const _n = labeledCount(_stem, clipMode(rel)); r.appendChild(KV("학습 라벨", _n ? _n + "프레임" : "없음")); }   // 손라벨 ∪ SAM
@@ -459,14 +459,14 @@ function renderDatasetList() {
   // 필터 대신 라벨만 보기 토글
   const bar = el("div"); bar.style.cssText = "padding:6px 3px;display:flex;gap:6px";
   const tog = el("button", DS_ONLY_LABELED ? "on" : "", "라벨 있는 것만");
-  tog.style.cssText = "flex:1;background:var(--panel);color:" + (DS_ONLY_LABELED ? "var(--tx)" : "var(--mut)") + ";border:1px solid " + (DS_ONLY_LABELED ? "var(--blue)" : "var(--line)") + ";border-radius:6px;padding:5px;cursor:pointer;font-size:11px";
+  tog.style.cssText = "flex:1;background:var(--panel);color:" + (DS_ONLY_LABELED ? "var(--tx)" : "var(--mut)") + ";border:1px solid " + (DS_ONLY_LABELED ? "var(--blue)" : "var(--line)") + ";border-radius:var(--r);padding:5px;cursor:pointer;font-size:var(--fs-xs)";
   tog.onclick = () => { DS_ONLY_LABELED = !DS_ONLY_LABELED; renderDatasetList(); };
   bar.appendChild(tog); box.appendChild(bar);
   // 좌측은 이미지가 많아 격자 썸네일로
   const grid = el("div"); grid.style.cssText = "display:grid;grid-template-columns:1fr 1fr;gap:4px";
   let imgs = d.images; if (DS_ONLY_LABELED) imgs = imgs.filter(x => x.labeled);
   imgs.slice(0, 300).forEach(im => {
-    const tw = el("div"); tw.style.cssText = "position:relative;cursor:pointer;border-radius:5px;overflow:hidden;border:1px solid var(--line);aspect-ratio:16/10;background:#000";
+    const tw = el("div"); tw.style.cssText = "position:relative;cursor:pointer;border-radius:var(--r-sm);overflow:hidden;border:1px solid var(--line);aspect-ratio:16/10;background:#000";
     const t = el("img"); t.loading = "lazy"; t.style.cssText = "width:100%;height:100%;object-fit:cover"; t.src = "/dsimg/" + (im.rel || d.rel) + "/images/train/" + encodeURIComponent(im.file);
     tw.appendChild(t);
     if (im.labeled) { const dot = el("span"); dot.style.cssText = "position:absolute;top:3px;right:3px;width:7px;height:7px;border-radius:50%;background:#3fb950"; tw.appendChild(dot); }
@@ -481,7 +481,7 @@ async function showDatasetImage(d, im) {
   const wrap = el("div", "lblframe");
   wrap.style.cssText = "position:relative;display:inline-block;align-self:center;margin:auto;max-width:calc(100% - 32px)";
   const img = el("img");
-  img.style.cssText = "display:block;max-width:100%;max-height:calc(100vh - 150px);width:auto;height:auto;border-radius:8px";
+  img.style.cssText = "display:block;max-width:100%;max-height:calc(100vh - 150px);width:auto;height:auto;border-radius:var(--r-lg)";
   const ov = el("div"); ov.style.cssText = "position:absolute;inset:0";
   img.src = "/dsimg/" + (im.rel || d.rel) + "/images/train/" + encodeURIComponent(im.file);
   wrap.appendChild(img); wrap.appendChild(ov); c.appendChild(wrap);
@@ -517,7 +517,7 @@ async function showDatasetImage(d, im) {
   d.classes.forEach((cl, i) => r.appendChild(KV(cl, String(cnt[i] || 0) + "박스")));
   if (boxes.length) {
     r.appendChild(el("div", "rtitle", "YOLO 라벨 (원문)"));
-    const pre = el("div"); pre.style.cssText = "font-family:ui-monospace,monospace;font-size:11px;color:var(--mut);white-space:pre-wrap;word-break:break-all";
+    const pre = el("div"); pre.style.cssText = "font-family:ui-monospace,monospace;font-size:var(--fs-xs);color:var(--mut);white-space:pre-wrap;word-break:break-all";
     pre.textContent = boxes.map(b => b.map((x, i) => i ? x.toFixed(4) : d.classes[x] || x).join(" ")).join("\n");
     r.appendChild(pre);
   }
@@ -533,9 +533,9 @@ async function initPushButton() {
   const box = document.querySelector(".srcbox");
   if (!box) return;
   const row = document.getElementById("dsKind");     // 새로고침(↻) 이 있는 줄
-  const CSS_ROW = "flex:1 1 auto;padding:6px 9px;font-size:11px;font-weight:700;border-radius:6px;" +
+  const CSS_ROW = "flex:1 1 auto;padding:6px 9px;font-size:var(--fs-xs);font-weight:700;border-radius:var(--r);" +
                   "background:var(--panel);color:var(--tx);border:1px solid var(--line);cursor:pointer";
-  const CSS_BOX = "width:100%;margin-top:8px;padding:7px 9px;font-size:12px;font-weight:700;border-radius:7px;" +
+  const CSS_BOX = "width:100%;margin-top:8px;padding:7px 9px;font-size:var(--fs-sm);font-weight:700;border-radius:var(--r);" +
                   "background:var(--panel);color:var(--tx);border:1px solid var(--line);cursor:pointer";
   const had = document.getElementById("pushBtn");
   if (had) {                                        // 화면이 만들어지기 전에 먼저 붙었던 버튼은 줄이 생기면 옮긴다
@@ -551,7 +551,7 @@ async function initPushButton() {
   if (!note) {
     note = el("div", null, "");
     note.id = "pushNote";
-    note.style.cssText = "margin-top:4px;font-size:11px;color:var(--mut);white-space:pre-wrap;line-height:1.5";
+    note.style.cssText = "margin-top:4px;font-size:var(--fs-xs);color:var(--mut);white-space:pre-wrap;line-height:1.5";
     box.appendChild(note);
   }
   let staged = false;                               // 미리보기를 본 뒤인가

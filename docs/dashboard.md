@@ -70,3 +70,21 @@
 ## 5. 서버 운영 및 주의사항
 * **서버 재시작:** 큐가 메모리 상에 존재하므로, 진행 중인 전파 작업이 없을 때(`/api/sam2_jobs` 확인) 재시작해야 합니다.
 * **프로세스 종료:** `kill`과 `start`는 분리된 SSH 세션/명령으로 실행하세요. (`pkill -f` 사용 시 자기 자신을 종료할 위험이 있습니다.)
+---
+
+## 6. 영상 검수 탭 (2026-09-28 재설계)
+검수 탭은 **미리 계산한 결과만 읽는다**. 모델을 눌러도 추론하지 않는다.
+
+| 무엇 | 어디 | 규칙 |
+| :--- | :--- | :--- |
+| 대상 판 고르기 | `scripts/review_cache.py` `eligible()` | '지금 데이터'로 COCO 사전학습부터 학습해 끝난 판만. 사람 = 학습 데이터 이름이 전부 `hnfix` 계열, 방화 = KISA 쪽 데이터가 전부 09-26 방화 라벨 이후. 이어 학습·배포 가중치·도는 판 제외 |
+| 계산 | `scripts/review_cache.py` (tmux `reviewcache`, 로그 `logs/review_cache.log`) | `_kisa_port/tools/kisa_items.py` 의 검출기·추적기·규칙을 그대로 불러 영상 끝까지. 규칙에는 경보 확정 전까지만 먹인다(채점과 같은 경보). best 를 모든 판에서 먼저, 배회를 침입보다 먼저 |
+| 저장 | `dumps/review/<실험>/<best\|last>/<fire\|intrusion\|loitering>/` | 편마다 `<클립>.json`(표본별 박스·신호·구역·경보·판정), 다 끝나면 `summary.json`. 계산 중엔 `_progress.json` |
+| 화면 API | `/api/review_models?item=` · `/api/review_summary?key=&item=` · `/api/review_clip?key=&item=&clip=` | 읽기 전용. `key` = `<실험>\|<best\|last>` |
+| 작업 PC 채점 대조 | `review_cache.official()` 이 `results/<실험>/score.txt` 를 읽는다 | 목록 점수 옆에 작업 PC 점수, 편 판정이 다르면 오른쪽에 '작업 PC: …' 표시 |
+
+* 목록 판정·재생바 신호·예측 경보·박스가 모두 고른 모델 하나에서 나온다. 모델이 없으면 정답과 구역만 보인다.
+* 예전 검수 탭이 쓰던 `dash_meta.json` 의 `signal`·`sa`·`tracks`(배포 모델 값)와 `js/core.js` 의 JS 판정 함수(옛 규칙 상수)는 검수 탭에서 더 쓰지 않는다. JS 판정 함수는 지웠다.
+* 데이터 확인 탭의 '예측 박스' 고르기(`/api/boxmodels` · `/api/boxdump*`, 누르면 추론)는 예전 그대로다.
+
+* 2026-09-29 바뀜: 새 판의 검수 저장은 작업 PC 채점 감시가 **채점과 한 번에** 만든다(영상 끝까지 한 번 돌려 그 결과로 채점 로그 · SA 와 `dumps/review` 를 같이 씀. 작업 PC `pc_review.py`). 대조: 작업 PC 로 낸 편별 판정 = 채점기 판정. 서버 A 루프(tmux `reviewcache`)는 껐다. 서버 A 가 만들었던 배회(장비 차이 2편)는 작업 PC 가 다시 만들어 덮는다. `summary.json` 의 `where` 가 계산 장비다.
