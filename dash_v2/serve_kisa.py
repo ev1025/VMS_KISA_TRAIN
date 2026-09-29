@@ -555,7 +555,7 @@ def box_dump_start(exp, clip):
 # ---------- 영상 검수: 미리 계산한 결과만 읽는다(2026-09-28) ----------
 # 검수 탭은 모델을 눌러도 추론하지 않는다. scripts/review_cache.py 가 '지금 데이터' 로 끝난 판을 채점과 같은 판정 모듈로
 # 영상 끝까지 돌려 dumps/review/<실험>/<best|last>/<항목>/ 에 둔 것을 그대로 내준다. 대상 판 고르기 · 작업 PC 채점 읽기도 그 파일 한 곳에 있다.
-RV_ITEM = {"fire": "fire", "intrusion": "intrusion", "loiter": "loitering"}   # 검수 탭 항목 → 저장 폴더(쓰러짐은 사람 검출 모델과 무관)
+RV_ITEM = {"fire": "fire", "intrusion": "intrusion", "loiter": "loitering", "fall": "falldown"}   # 검수 탭 항목 → 저장 폴더(쓰러짐은 사람 검출 모델과 무관)
 _RV_NAME = re.compile(r"^[A-Za-z0-9_.\-]+$")
 
 
@@ -577,9 +577,19 @@ def _rv_json(f):
 def _rv_key(key):
     """'실험|best' → (실험, best). 경로에 쓰므로 모양을 먼저 본다."""
     exp, _, ck = (key or "").partition("|")
-    if not _RV_NAME.match(exp) or ck not in ("best", "last"):
+    if not _RV_NAME.match(exp) or ck not in ("best", "last", "배포"):
         return None, None
     return exp, ck
+
+
+def _fall_official():
+    """쓰러짐 공식 채점 = 결과 탭 점수 카드와 같은 기준값(configs/result_blocks.yaml fall_ref)."""
+    try:
+        import yaml
+        r = (yaml.safe_load((G / "configs/result_blocks.yaml").read_text(encoding="utf-8")) or {}).get("fall_ref") or {}
+        return {"점수": r["f1"], "정검": r["tp"], "미검": r["fn"], "오검": r["fp"]}
+    except Exception:
+        return None
 
 
 def review_models(tab_item):
@@ -587,6 +597,14 @@ def review_models(tab_item):
     item = RV_ITEM.get(tab_item)
     if not item:
         return {"models": []}
+    if item == "falldown":                                   # 쓰러짐 = 배포 모델 하나(새로 학습하지 않는다, 09-29 사용자)
+        d = RC.cache_dir(RC.FALL_EXP, RC.FALL_CK, item)
+        s, pg = _rv_json(d / "summary.json"), _rv_json(d / "_progress.json")
+        if not (s or pg):
+            return {"models": []}
+        return {"models": [{"key": RC.FALL_EXP + "|" + RC.FALL_CK, "exp": RC.FALL_EXP, "ckpt": RC.FALL_CK, "res": 1280,
+                            "data": ["yolo11x-pose(사전학습) + 판정망 3벌"], "ended": s and s.get("made"), "done": bool(s),
+                            "progress": pg, "score": s and s.get("score"), "official": _fall_official()}]}
     ko = {v: k for k, v in RC.ITEM_OF.items()}[item]
     out = []
     for exp, m in RC.eligible():
@@ -614,6 +632,8 @@ def review_summary(key, tab_item):
     s = _rv_json(RC.cache_dir(exp, ck, item) / "summary.json")
     if not s:
         return None
+    if item == "falldown":
+        s["official"] = _fall_official()
     o = (RC.official(exp).get(ck) or {}).get(item)
     if o:
         s["official"] = {k: o[k] for k in ("점수", "정검", "미검", "오검")}

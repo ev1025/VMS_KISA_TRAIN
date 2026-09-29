@@ -23,6 +23,7 @@
 """
 import argparse
 import json
+import math
 import re
 import sys
 import time
@@ -34,7 +35,8 @@ sys.path.insert(0, str(HERE))
 import kisa_paths as KP                                    # noqa: E402
 
 OUT = KP.V / "dumps/review"
-ITEM_OF = {"방화": "fire", "침입": "intrusion", "배회": "loitering"}   # kisa_items.py 항목명 = 저장 폴더명
+ITEM_OF = {"방화": "fire", "침입": "intrusion", "배회": "loitering", "쓰러짐": "falldown"}   # kisa_items.py 항목명 = 저장 폴더명
+FALL_EXP, FALL_CK = "falldown_deploy", "배포"            # 쓰러짐은 새로 학습하지 않고 배포 모델 그대로(09-29 사용자). 판 목록(eligible)에는 안 들어간다
 EXTERNAL = ("aihub", "fasdd", "wildfire", "azimjaan")      # 방화 외부 공개셋(우리 라벨과 무관)
 FIRE_FROM = 20260926                                       # 방화 '지금 데이터' = 09-26 방화 라벨부터
 CKPTS = ("best", "last")
@@ -103,8 +105,16 @@ def items_of(m):
     return ["방화"] if m.get("item") == "방화" else sorted(KP.PERSON_ITEMS, key=lambda i: i != "배회")
 
 
+def fall_meta(K):
+    """쓰러짐 배포 모델을 판처럼 적은 것. 가중치 = 자세 모델(바뀌면 캐시를 다시 만든다), 해상도 = 자세 입력."""
+    c = K.ITEMS["falldown"]
+    return {"best_pt": str(K.WEIGHTS / c["model"]), "train": {"imgsz": c["pose_imgsz"]}, "item": "쓰러짐"}
+
+
 def weights(m, ckpt):
     best = local_path(m["best_pt"])
+    if ckpt == FALL_CK:
+        return best
     return best if ckpt == "best" else best.with_name("last.pt")
 
 
@@ -166,6 +176,20 @@ class _Rec:
         return res
 
 
+class _PoseRec:
+    """FallJudge 가 부르는 자세 모델 predict 를 그대로 통과시키며 사람 박스를 모은다(화면용, 판정에는 손대지 않는다)."""
+
+    def __init__(self, model):
+        self.m, self.boxes = model, []
+
+    def predict(self, img, **kw):
+        res = self.m.predict(img, **kw)
+        for b in res[0].boxes:
+            x1, y1, x2, y2 = (float(v) for v in b.xyxy[0])
+            self.boxes.append([0, _r(b.conf[0], 3), _r(x1), _r(y1), _r(x2), _r(y2)])
+        return res
+
+
 def run_clip(K, item, mp4, pt, res, device=None, maps=None):
     """영상 한 편. 반환 = 화면에 줄 dict. 영상을 끝까지 못 읽었으면 RuntimeError(가짜 판정을 남기지 않는다)."""
     maps = maps or KP.ZONE_MAPS
@@ -185,6 +209,13 @@ def run_clip(K, item, mp4, pt, res, device=None, maps=None):
                 judge = K.FireJudge([(pt, res)], cfg, device)
                 rec = _Rec(judge.models[0][0])
                 judge.models = [(rec, judge.models[0][1])]
+            elif item == "falldown":                        # 판정기 process() 와 같은 준비(자세 모델 · 판정망 3벌 · 문턱 · 연속 수)
+                nets = [K.WEIGHTS / n for n in cfg.get("net", ["fall_track.pt"])]
+                judge = K.FallJudge(K.WEIGHTS / cfg["model"], nets, cfg["th"], cfg["need"], device,
+                                    cfg.get("pose_imgsz", 640), pose_conf=cfg.get("pose_conf", 0.10),
+                                    pre_median=cfg.get("pre_median", 0))
+                rec = _PoseRec(judge.pose)
+                judge.pose = rec
             elif item == "loitering":
                 tracker = K.BotSortPersons(pt, device=device, imgsz=res)
                 judge = K.make_judge(item, cfg, stem, maps, wh, None)
@@ -206,6 +237,15 @@ def run_clip(K, item, mp4, pt, res, device=None, maps=None):
             samples.append([_r(t, 2), rec.boxes])
             signal.append([_r(t, 2), _r(fmax, 3), _r(smax, 3)])
             continue
+        if item == "falldown":
+            rec.boxes = []
+            if onset is not None:
+                judge.decided = None                        # 경보 뒤에도 화면용으로 계속(경보 시각은 처음 것)
+            d = judge.feed(t, f.bgr)
+            if onset is None and d is not None:
+                onset = d
+            samples.append([_r(t, 2), rec.boxes])
+            continue
         if item == "loitering":
             boxes = tracker.update(f.bgr)
         else:
@@ -222,6 +262,12 @@ def run_clip(K, item, mp4, pt, res, device=None, maps=None):
                 inside.append(conf)
         samples.append([_r(t, 2), [[int(pid), _r(c, 3), _r(a), _r(b_), _r(x), _r(y)] for pid, c, a, b_, x, y in boxes]])
         signal.append([_r(t, 2), _r(max(inside), 3) if inside else 0.0])
+    if item == "falldown":                                   # 신호 = 0.5초 창마다 사람(트랙)별 판정망 확률 중 최고
+        best = {}
+        for tr in judge.tracks:
+            for tt, z in tr.get("curve", []):
+                best[tt] = max(best.get(tt, 0.0), 1.0 / (1.0 + math.exp(-z)))
+        signal = [[_r(tt, 2), _r(p, 3)] for tt, p in sorted(best.items())]
     import cv2                                               # 끝까지 읽었나: 외장 드라이브가 빠지면 조용히 짧게 끝나 가짜 판정이 된다(2026-09-28)
     cap = cv2.VideoCapture(str(mp4)); n = cap.get(cv2.CAP_PROP_FRAME_COUNT) or 0; fps = cap.get(cv2.CAP_PROP_FPS) or 30.0; cap.release()
     want = int(-(-n // max(1, int(round(fps * cfg["stride"]))))) if n else 0
@@ -234,7 +280,7 @@ def run_clip(K, item, mp4, pt, res, device=None, maps=None):
     gt0 = gts[0]["start_s"] if gts else None
     return {"clip": stem, "item": item, "res": res, "stride": cfg["stride"], "wh": wh,
             "zone": [list(p) for p in poly] if poly else None,
-            "conf": cfg.get("conf", cfg.get("fire")), "smoke": cfg.get("smoke"),
+            "conf": cfg.get("conf", cfg.get("fire", cfg.get("th"))), "smoke": cfg.get("smoke"),
             "samples": samples, "signal": signal, "alarm": sa, "gt": gt0, "verdict": _verdict(K, gt0, sa),
             "_pair": (gts, [{"start_s": sa, "desc": cfg["desc"]}] if sa is not None else [])}
 
@@ -358,7 +404,13 @@ def main():
     ap.add_argument("--limit", type=int, default=None, help="앞 N편만(시험 실행. summary 를 안 남긴다)")
     ap.add_argument("--verify", action="store_true", help="끝난 것마다 작업 PC 채점과 편별 대조")
     ap.add_argument("--device", default=None)
+    ap.add_argument("--fall", action="store_true", help="쓰러짐 배포 모델 캐시만 만든다(자세 + 판정망 3벌, 새로 학습 안 함)")
+    ap.add_argument("--where", default="서버 A", help="캐시를 만든 장비(화면에 적힌다)")
     a = ap.parse_args()
+    if a.fall:
+        K = _K()
+        build(K, FALL_EXP, fall_meta(K), FALL_CK, "쓰러짐", a.limit, a.device, where=a.where)
+        return
     K = None
     while True:
         todo = []
