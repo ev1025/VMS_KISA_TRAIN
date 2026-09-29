@@ -78,6 +78,22 @@ blocks:
     p1280_grid_b85_bg10_20260928: 포함
     p1280_grid_b85_bg10_nokisa_20260929: 제외
   same_data: 사람 배경 10% 셋
+- id: fitness_fire
+  date: 09-30
+  title: 방화 탐지 모델 best 기준 실험 (mAP50-95 vs mAP50)
+  question: best.pt 를 mAP50 으로 고르면 덜 학습된 초반 에폭(5 ~ 8)을 피하는지 확인
+  iv:
+  - best.pt 고르는 기준 (mAP50-95, mAP50)
+  vary:
+  - fitness
+  control: f960_bgtest_bg28_b160_20260928
+  runs:
+    f960_bgtest_bg28_b160_20260928: best 기준 mAP50-95
+    f960_bgtest_bg28_map50_b160_20260930: best 기준 mAP50
+  same_data: 배경 약 28% 셋(헛불 억제 셋, KISA 손라벨 및 합성 셋)
+  note:
+  - last 는 기준과 무관해 두 판이 같아야 한다(시드 · 설정 같음). 차이는 best 쪽에서만 본다
+  - 기존 기록으로 미리 보면 mAP50 기준 best = 17에폭(지금 5에폭). 에폭별 영상 평가(서버 B)와 같이 본다
 - id: nokisa_fire
   date: 09-29
   title: 방화 탐지 모델 KISA 영상 제외 실험
