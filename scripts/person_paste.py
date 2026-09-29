@@ -23,6 +23,7 @@ import argparse
 import json
 import random
 import sys
+import collections
 import time
 from pathlib import Path
 
@@ -49,7 +50,37 @@ def find_video(stem):
     return _MP4.get(stem)
 
 
-def cutouts(max_n, rnd, min_h=90):
+def drift_and_partial(d, anchor, partial):
+    """(객체, 초) 중 뺄 것. 학습셋 빌더(build_trainset --sam-anchor)와 같은 기준 (2026-09-28 재실험).
+    표류: 객체별 SAM 구간(3초 넘게 끊기면 새 구간)이 씨앗에서 anchor 초 넘게 떨어졌다.
+    부분: 박스 높이가 그 객체의 앞뒤 3초 중앙값 x partial 보다 작다(상반신·우산만 찍힌 조각)."""
+    bad = set()
+    per = collections.defaultdict(list)
+    for k, objs in (d.get("frames") or {}).items():
+        for o, b in (objs or {}).items():
+            per[str(o)].append((float(k), float(b[3])))
+    seeds = collections.defaultdict(list)
+    for sd in d.get("seeds") or []:
+        seeds[str(sd.get("obj"))].append(float(sd.get("t", -1)))
+    for o, th in per.items():
+        th.sort()
+        if anchor > 0:
+            segs = [[th[0][0]]]
+            for t, _h in th[1:]:
+                (segs[-1].append(t) if t - segs[-1][-1] <= 3.0 else segs.append([t]))
+            for g in segs:
+                near = min([0.0 if g[0] <= sd <= g[-1] else min(abs(sd - g[0]), abs(sd - g[-1])) for sd in seeds.get(o, [])] or [1e9])
+                if near > anchor:
+                    bad.update((o, t) for t in g)
+        if partial > 0:
+            for t, h in th:
+                near_h = sorted(hh for tt, hh in th if abs(tt - t) <= 3.0)
+                if near_h and h < partial * near_h[len(near_h) // 2]:
+                    bad.add((o, t))
+    return bad
+
+
+def cutouts(max_n, rnd, min_h=90, anchor=0.0, partial=0.0):
     """(BGR 조각, 알파 0~1, 출처) 목록. 편마다 폴리곤 프레임을 골고루 뽑는다."""
     out = []
     files = sorted(p for p in SAM.glob("*.json") if not p.stem.startswith("C00_"))     # 채점셋 제외
@@ -60,6 +91,7 @@ def cutouts(max_n, rnd, min_h=90):
         polys = d.get("polys") or {}
         if not polys:
             continue
+        bad = drift_and_partial(d, anchor, partial) if (anchor > 0 or partial > 0) else set()
         mp4 = find_video(d.get("clip", f.stem))
         if mp4 is None:
             continue
@@ -72,7 +104,7 @@ def cutouts(max_n, rnd, min_h=90):
                 continue
             H, W = fr.shape[:2]
             for oid, pts in polys[t].items():
-                if not pts or len(pts) < 3:
+                if not pts or len(pts) < 3 or (str(oid), float(t)) in bad:
                     continue
                 P = np.array([[x * W, y * H] for x, y in pts], dtype=np.int32)
                 x1, y1 = P.min(axis=0); x2, y2 = P.max(axis=0)
@@ -144,10 +176,12 @@ def main():
     ap.add_argument("--n-out", type=int, default=5000)
     ap.add_argument("--n-cut", type=int, default=2500)
     ap.add_argument("--seed", type=int, default=0)
+    ap.add_argument("--sam-anchor", type=float, default=0.0, help="씨앗에서 이 초보다 먼 SAM 구간 조각은 뺀다(0=끔). 학습셋 빌더와 같은 값 10")
+    ap.add_argument("--partial", type=float, default=0.0, help="앞뒤 3초 중앙값 높이 x 이 값보다 작은 조각은 뺀다(0=끔). 학습셋 정리와 같은 값 0.55")
     a = ap.parse_args()
     rnd = random.Random(a.seed)
     t0 = time.time()
-    cuts = cutouts(a.n_cut, rnd)
+    cuts = cutouts(a.n_cut, rnd, anchor=a.sam_anchor, partial=a.partial)
     print("사람 조각 %d개 (%.0f초)" % (len(cuts), time.time() - t0), flush=True)
     if len(cuts) < 50:
         sys.exit("조각이 너무 적다")
@@ -197,7 +231,7 @@ def main():
     (out / "train.txt").write_text("\n".join(made) + "\n", encoding="utf-8")
     (out / "data.yaml").write_text("path: %s\ntrain: %s\nval: %s\nnc: 1\nnames: ['person']\n" % (out, out / "train.txt", out / "train.txt"), encoding="utf-8")
     sizes.sort()
-    meta = dict(name=a.name, mode="person", built=time.strftime("%Y-%m-%d %H:%M:%S"), background=a.bg,
+    meta = dict(name=a.name, mode="person", built=time.strftime("%Y-%m-%d %H:%M:%S"), background=a.bg, sam_anchor=a.sam_anchor, partial=a.partial,
                 what="SAM 전파 폴리곤 사람 조각을 28~60px 로 줄여 CCTV 배경 위쪽(먼 곳)에 붙임. 채점셋 편 조각 제외",
                 n_cutouts=len(cuts), n_out=len(made), n_pasted=n_paste,
                 pasted_height_px=dict(p10=sizes[len(sizes) // 10], p50=sizes[len(sizes) // 2], p90=sizes[9 * len(sizes) // 10]) if sizes else None,

@@ -1,3 +1,6 @@
+KISA_악천후_사람: {gt: kisa_xml, media: video, mode: person, note: 배포 견본 중 사람 모델로 채점하지
+    않는 항목(싸움10·유기10·마케팅15·쓰러짐10 = 45편). 눈7·안개3·비13. 연구개발 영상에 눈·안개가 0편이라 이것으로 채운다.
+    침입30·배회30·방화10 은 넣지 않았다. 라벨 20편, use: train}
 aihub171_이상행동: {gt: aihub171_xml, media: video, mode: person, note: 객체별 키프레임 점(박스
     없음) + 행동 구간, use: train}
 aihub71330_산불:
@@ -16,9 +19,6 @@ aihub71751_48k:
   use: train
 aihub71953_다각도: {gt: aihub71953_json, media: video, mode: person, note: 이벤트 폴더 JSON
     의 evidence 키프레임 박스 + 설명문. 배회 2·침입 2 시나리오만 받음, use: train}
-KISA_악천후_사람: {gt: kisa_xml, media: video, mode: person, note: '배포 견본 중 사람 모델로
-    채점하지 않는 항목(싸움10·유기10·마케팅15·쓰러짐10 = 45편). 눈7·안개3·비13. 연구개발
-    영상에 눈·안개가 0편이라 이것으로 채운다. 침입30·배회30·방화10 은 넣지 않았다', use: train}
 aihub_침입쓰러짐영상: {gt: aihub_json, media: video, mode: person, note: event_frame 구간만(박스
     없음), use: train}
 kisa_배포_검증영상: {gt: kisa_xml, media: video, mode: fire, note: '채점 전용(4항목 배포 표본). 라벨은
@@ -35,7 +35,8 @@ open_azimjaan_fire:
   gt: yolo_txt
   media: image
   mode: fire
-  note: 원본 0=구름(버림) 1=불 2=연기. 라이선스 CDLA-Permissive-1.0 (Kaggle azimjaan21, 2026-09-19 확인) = 상업 이용 가능
+  note: 원본 0=구름(버림) 1=불 2=연기. 라이선스 CDLA-Permissive-1.0 (Kaggle azimjaan21, 2026-09-19
+    확인) = 상업 이용 가능
   use: train
 open_coco:
   classes: {0: 0}
@@ -50,23 +51,26 @@ open_datacluster_fire:
   gt: voc_xml
   media: image
   mode: fire
-  note: VOC xml, Annotations/ 트리. 라이선스 'copyright-authors' (Kaggle dataclusterlabs 샘플, 2026-09-19 확인) = 상업 이용 허락 없음
-    → use none 으로 내림. 지금 방화 레시피(aihub71751_48k + FASDD + 산불 + 손라벨)에는 안 들어가 있어 점수 영향 없음
+  note: VOC xml, Annotations/ 트리. 라이선스 'copyright-authors' (Kaggle dataclusterlabs
+    샘플, 2026-09-19 확인) = 상업 이용 허락 없음 → use none 으로 내림. 지금 방화 레시피(aihub71751_48k +
+    FASDD + 산불 + 손라벨)에는 안 들어가 있어 점수 영향 없음
   use: none
 open_dfire:
   classes: {0: 1, 1: 0}
   gt: yolo_txt
   media: image
   mode: fire
-  note: 원본 0=smoke 1=fire → 뒤집는다. 라이선스 CC BY 4.0 (gaiasd/DFireDataset GitHub, 2026-09-19 확인) = 상업 이용 가능·출처 표기
+  note: 원본 0=smoke 1=fire → 뒤집는다. 라이선스 CC BY 4.0 (gaiasd/DFireDataset GitHub, 2026-09-19
+    확인) = 상업 이용 가능·출처 표기
   use: train
 open_fasdd:
   classes: {fire: 0, smoke: 1}
   gt: coco_json
   media: image
   mode: fire
-  note: annotations/<split>.json (COCO). 라이선스 CC BY-SA 4.0 (DataCite 등록 rightsList, DOI 10.57760/sciencedb.j00104.00103,
-    2026-09-19 확인) = 상업 이용 가능 · 출처 표기 필요 · 데이터셋을 고쳐서 배포하면 같은 라이선스로. Kaggle 미러(yuulind/fasdd-cv-coco)는 'other' 로만 표기
+  note: annotations/<split>.json (COCO). 라이선스 CC BY-SA 4.0 (DataCite 등록 rightsList,
+    DOI 10.57760/sciencedb.j00104.00103, 2026-09-19 확인) = 상업 이용 가능 · 출처 표기 필요 · 데이터셋을
+    고쳐서 배포하면 같은 라이선스로. Kaggle 미러(yuulind/fasdd-cv-coco)는 'other' 로만 표기
   use: train
 open_flir: {gt: coco_json, media: image, mode: person, note: 'FLIR ADAS v2, 라이선스 불명
     → 학습 사용 안 함', use: none}
@@ -77,4 +81,10 @@ open_llvip:
   mode: person
   note: 비상업 라이선스 → 인증 제품 학습 금지. 진단용만
   use: none
-# 2026-09-20: 학습데이터/person_mask_hn_paste_20260919 (소형 잘라붙이기 합성 5,000장) 은 사용 안 함. 철회 이유는 docs/EXPERIMENTS.md 4.18.
+aihub71751_night_20260928:
+  classes: {0: 0, 1: 1}
+  gt: yolo_txt
+  media: image
+  mode: fire
+  note: AI허브 71751 야간(condition ni) 불꽃 클립 중 aihub71751_48k 에 없는 128클립 x 12프레임(1·31…331) = 1,536장. 규칙은 48k 와 같음. 그리드 2단계 방화 데이터 5(2026-09-28)
+  use: train

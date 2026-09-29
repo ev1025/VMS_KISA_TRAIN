@@ -24,6 +24,9 @@ ap.add_argument("--name", default=None)
 ap.add_argument("--val", type=float, default=0.1)
 ap.add_argument("--max-gt", type=int, default=0, help="카테고리당 원본 정답 이미지 상한(0=전부)")
 ap.add_argument("--neg", type=int, default=5, help="손라벨 클립당 앞/뒤 각 하드 네거티브 장수(0=끔). 상한=그 클립 양성 프레임 수")
+ap.add_argument("--neg-from", choices=["head", "near"], default=None,
+                help="하드 네거티브 위치. head=영상 앞쪽(1초 ~ 첫 양성 10초 전, 60초 안)에서 고르게(사람 기본), "
+                     "near=라벨 구간 바로 앞뒤(방화 기본). 2026-09-26: 사람 영상은 시작 직후에 사람이 거의 없다")
 ap.add_argument("--no-gt", action="store_true", help="원본 정답 이미지는 넣지 않는다(우리 라벨만: 손·전파·하드네거·이미지 손라벨). 오버샘플용 handset")
 ap.add_argument("--no-sam", action="store_true", help="전파(SAM) 라벨을 뺀다(손라벨만). 전파가 점수를 깎는지 가릴 때 쓴다")
 ap.add_argument("--marks", default=None,
@@ -79,6 +82,7 @@ hand_kind = "person" if a.mode == "person" else "fire"
 hand_rows = json.load(io.open(V / f"data/학습데이터/손라벨/{hand_kind}_labels.json", encoding="utf-8")) if (V / f"data/학습데이터/손라벨/{hand_kind}_labels.json").exists() else []
 img_rows = json.load(io.open(V / "data/학습데이터/손라벨/image_labels.json", encoding="utf-8")) if (V / "data/학습데이터/손라벨/image_labels.json").exists() else []
 hand_frames = collections.defaultdict(list)      # (clip_stem, t) → 박스
+marker_keys = set()                              # '객체 없음' 표시가 있는 (clip_stem, t)
 hand_src = {}
 for r in hand_rows:
     if r.get("eval"):
@@ -88,7 +92,7 @@ for r in hand_rows:
     if int(r.get("cls", -1)) >= 0:
         hand_frames[key].append((int(r["cls"]), [r["x"], r["y"], r["w"], r["h"]]))
     else:
-        hand_frames.setdefault(key, [])          # 빈 라벨(검토완료) = 배경 프레임
+        marker_keys.add(key)                     # '객체 없음' 표시. 박스가 하나도 없을 때만 빈 프레임(아래 SAM 뒤에서 판정)
 hand_imgs = {}                                   # rel → 박스
 for r in img_rows:
     rel = str(r["clip"])[4:] if str(r["clip"]).startswith("img:") else r.get("file")
@@ -138,6 +142,18 @@ for f in glob.glob(str(V / "data/학습데이터/자동라벨/sam2/*.json")):
             sam_frames[key].append((c, b))
         if key in sam_frames and not sam_frames[key]:
             del sam_frames[key]                      # 표류 박스뿐이던 프레임은 통째로 뺀다
+
+
+# '객체 없음' 표시 판정 (2026-09-26 사용자 기준): 그 프레임에 박스가 하나도 없을 때만 객체 없음(빈 프레임).
+# 손박스나 SAM 박스가 다시 생겼으면 객체 있음(표시는 무시하고 박스를 쓴다). 편집기는 마지막 박스를 Del 해도 표시를 남기고,
+# SAM 전파는 표시 프레임을 건너뛰지 않아 박스가 다시 생긴다. 전에는 표시가 이겨서 사람이 있는 프레임이 배경이 됐다.
+for key in marker_keys:
+    if hand_frames.get(key):
+        stats["표시 무시: 손박스 있음"] += 1; continue
+    if sam_frames.get(key):
+        stats["표시 무시: SAM 박스 있음(객체 있음)"] += 1; continue
+    hand_frames[key] = []
+    stats["표시: 빈 프레임(객체 없음)"] += 1
 
 
 _MP4 = None
@@ -200,6 +216,8 @@ for src_name, frames in (("hand", hand_frames), ("sam", sam_frames)):
 # ---------- 2.5) 하드 네거티브(손라벨 클립만): 라벨 구간 앞뒤 배경을 무라벨로 ----------
 NEG_STEP = 0.5                                   # 샘플 간격(초)
 NEG_BUF = 10 if a.mode == "fire" else 0          # 라벨 구간에서 띄울 간격(스텝). 불연기=10프레임 버퍼(연기가 인접 프레임까지 번짐), 사람=바로 앞뒤
+NEG_FROM = a.neg_from or ("head" if a.mode == "person" else "near")
+HEAD_T0, HEAD_GAP, HEAD_MAX = 1.0, 10.0, 60.0    # head: 1초부터, 첫 양성 10초 전까지, 영상 앞 60초 안
 occ = collections.defaultdict(set)               # stem → 양성 시각(손+SAM): 버퍼·배제에 쓴다
 hand_pos_n = collections.Counter()               # stem → 손라벨 양성 프레임 수(개수 상한)
 for (stem, t), boxes in hand_frames.items():
@@ -223,12 +241,23 @@ if a.neg > 0:
         cap = cv2.VideoCapture(str(mp4)); fps = cap.get(cv2.CAP_PROP_FPS) or 30.0
         dur = (cap.get(cv2.CAP_PROP_FRAME_COUNT) or 0) / (fps or 30.0); cap.release()
         pos = occ[stem]; f0, f1 = min(pos), max(pos); buf = NEG_BUF * NEG_STEP
-        before = [round(f0 - buf - k * NEG_STEP, 1) for k in range(1, a.neg + 1)]
-        before = [t for t in before if t >= 0.5]
-        after = [round(f1 + buf + k * NEG_STEP, 1) for k in range(1, a.neg + 1)]
-        after = [t for t in after if t <= dur - 0.5]
-        cand = [x for pair in zip(before, after) for x in pair] + before[len(after):] + after[len(before):]   # 앞뒤 번갈아(균형)
-        cand = [t for t in cand if all(abs(t - q) >= NEG_STEP for q in pos)]   # 양성 근처 제외(안전)
+        if NEG_FROM == "head":
+            # 영상 앞쪽에서 고르게. 대부분의 영상은 시작 직후에 사람이 없다(2026-09-26 사용자).
+            # 바로 앞뒤(near)는 들어오는 사람이 찍혀 920장 중 74장(8%)에 사람이 있었다
+            k = min(2 * a.neg, hand_pos_n[stem])
+            hi = min(f0 - HEAD_GAP, HEAD_MAX, dur - 0.5)
+            if k <= 0 or hi - HEAD_T0 < NEG_STEP:
+                stats["하드네거티브: 앞쪽 구간 없음(편)"] += 1; continue
+            span = hi - HEAD_T0
+            cand = sorted({round((HEAD_T0 + span * (i + 0.5) / k) * 2) / 2 for i in range(k)})   # 0.5초 격자에 고르게
+            cand = [t for t in cand if HEAD_T0 <= t <= hi and all(abs(t - q) >= HEAD_GAP for q in pos)]
+        else:
+            before = [round(f0 - buf - k * NEG_STEP, 1) for k in range(1, a.neg + 1)]
+            before = [t for t in before if t >= 0.5]
+            after = [round(f1 + buf + k * NEG_STEP, 1) for k in range(1, a.neg + 1)]
+            after = [t for t in after if t <= dur - 0.5]
+            cand = [x for pair in zip(before, after) for x in pair] + before[len(after):] + after[len(before):]   # 앞뒤 번갈아(균형)
+            cand = [t for t in cand if all(abs(t - q) >= NEG_STEP for q in pos)]   # 양성 근처 제외(안전)
         cand = cand[:hand_pos_n[stem]]           # 상한 = 손라벨 양성 프레임 수
         for t in cand:
             items.append(("val" if is_val(stem) else "train", (mp4, t), [], "neg"))
@@ -307,6 +336,7 @@ for sp in ("train", "val"):
     (OUT / f"{sp}.txt").write_text("\n".join(lists[sp]) + "\n")
 (OUT / "data.yaml").write_text(f"path: {OUT}\ntrain: {OUT}/train.txt\nval: {OUT}/val.txt\nnc: {len(NAMES)}\nnames: {NAMES}\n")
 meta = {"name": NAME, "mode": a.mode, "built": time.strftime("%F %T"), "train": len(lists["train"]), "val": len(lists["val"]),
-        "priority": "hand > sam > gt", "excluded": "use!=train, eval rows, eval copies", "sam_anchor": a.sam_anchor, "stats": dict(stats), "contract": "configs/datasets.yaml"}
+        "priority": "hand > sam > gt", "excluded": "use!=train, eval rows, eval copies", "sam_anchor": a.sam_anchor,
+        "neg_from": NEG_FROM, "marker_rule": "객체 없음 표시는 박스(손·SAM)가 하나도 없을 때만 빈 프레임(2026-09-26)", "stats": dict(stats), "contract": "configs/datasets.yaml"}
 (OUT / "meta.json").write_text(json.dumps(meta, ensure_ascii=False, indent=1), encoding="utf-8")
 print(f"완료 → {OUT}  train {len(lists['train']):,} · val {len(lists['val']):,}")
