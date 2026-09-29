@@ -1,0 +1,73 @@
+# 그리드 1단계 뒷판(2026-09-29, 사용자 '사람 판만 먼저'). 사람 기본 셋 = 배경 10%(배경 비율 시험 결과).
+# 보류했던 절반 배치 2판을 그 셋으로 + 1280 최대 배치 170. 960 · 640 최대는 절반 판 첫 2에폭 메모리를 본 뒤.
+# 만든 스크립트 /NHNHOME/make_grid1b_0929.py
+name: grid1b_20260929
+defaults:
+  val_small: 600
+  vram_gate_mib: 10000
+  min_free_gb: 150
+  ram_cache_max: 0
+  stagger_sec: 120
+  util_gate_pct: 30
+  util_window_min: 10
+experiments:
+- name: p960_grid_b160_bg10_20260929
+  model: yolo11s
+  item: 사람
+  names:
+  - person
+  base: trainset_person_hnfix_full_bg10_20260928
+  extras: []
+  oversample: {}
+  val_set: data/학습데이터/trainset_person_hnfix_20260927/val_domain.txt
+  extra:
+    patience: 0
+    seed: 0
+  train:
+    multi_scale: 0.0
+    epochs: 60
+    cache: false
+    workers: 8
+    imgsz: 960
+    batch: 160
+  need_mib: 88000
+- name: p640_grid_b360_bg10_20260929
+  model: yolo11s
+  item: 사람
+  names:
+  - person
+  base: trainset_person_hnfix_full_bg10_20260928
+  extras: []
+  oversample: {}
+  val_set: data/학습데이터/trainset_person_hnfix_20260927/val_domain.txt
+  extra:
+    patience: 0
+    seed: 0
+  train:
+    multi_scale: 0.0
+    epochs: 60
+    cache: false
+    workers: 8
+    imgsz: 640
+    batch: 360
+  need_mib: 88000
+- name: p1280_grid_b170_bg10_20260929
+  model: yolo11s
+  item: 사람
+  names:
+  - person
+  base: trainset_person_hnfix_full_bg10_20260928
+  extras: []
+  oversample: {}
+  val_set: data/학습데이터/trainset_person_hnfix_20260927/val_domain.txt
+  extra:
+    patience: 0
+    seed: 0
+  train:
+    multi_scale: 0.0
+    epochs: 60
+    cache: false
+    workers: 8
+    imgsz: 1280
+    batch: 170
+  need_mib: 168000
