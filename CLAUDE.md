@@ -92,6 +92,7 @@
 | 결과·로그·가중치 저장 및 검색 | `docs/file_path.md` (§2) |
 | 신규 데이터 수신 / 학습셋 추가 | `docs/data.md` |
 | 실험(학습·채점) 큐 실행 | `docs/EXPERIMENTS.md` |
+| 새 제안 확인 · 기록 | `docs/PROPOSALS.md` · `docs/EXPERIMENTS.md` 4.19 |
 | 대시보드(`dash_v2`) 수정 | `docs/dashboard.md` |
 | 성능 판단 및 수치 보고 | `docs/kisa/B200_평가.md` |
 | 채점 규칙 및 F1 수식 확인 | `docs/kisa/평가.md` |
