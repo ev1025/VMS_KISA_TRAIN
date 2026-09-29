@@ -619,7 +619,17 @@ def review_models(tab_item):
                         "ended": m.get("ended"), "done": RC.is_done(exp, m, ck, ko),
                         "progress": _rv_json(d / "_progress.json"), "score": s and s.get("score"),
                         "official": o and {k: o[k] for k in ("점수", "정검", "미검", "오검")}})
-    return {"models": out}
+    groups = []                                              # 검수 탭 '실험' 드롭다운 = 결과 탭 블록 중 이 항목 모델이 든 것(2026-09-30)
+    try:
+        import yaml
+        have = {m["exp"] for m in out}
+        for b in (yaml.safe_load((G / "configs/result_blocks.yaml").read_text(encoding="utf-8")) or {}).get("blocks") or []:
+            runs = [b["control"], *b["runs"]]
+            if have & set(runs):
+                groups.append({"id": b["id"], "label": f"[{b.get('date', '')}] {b.get('title', '')}", "runs": runs})
+    except Exception:
+        groups = []
+    return {"models": out, "groups": groups}
 
 
 def review_summary(key, tab_item):

@@ -21,7 +21,8 @@ function rvRows() {
   return META.items[CUR.item].rows.filter(r => FILT === "all" || rvVerdict(r.name) === FILT);
 }
 async function rvLoadModels(item) {
-  try { RV.models[item] = (await (await fetch("/api/review_models?item=" + item)).json()).models || []; }   // 계산이 끝난 판이 늘어나므로 매번 받는다
+  RV.groups = RV.groups || {};
+  try { const j = await (await fetch("/api/review_models?item=" + item)).json(); RV.models[item] = j.models || []; RV.groups[item] = j.groups || []; }   // 계산이 끝난 판이 늘어나므로 매번 받는다
   catch (e) { RV.models[item] = RV.models[item] || []; }
   const ready = RV.models[item].filter(m => m.done);
   let want = RV.sel[item];
@@ -96,11 +97,53 @@ function rvLabel(m) {
   const wait = m.done ? "" : (m.progress ? ` (계산 중 ${m.progress.done}/${m.progress.total})` : " (계산 대기)");
   return `${m.exp} · ${m.ckpt} · ${m.res}${sc}${wait}`;
 }
-// 모델 고르기 + 점수 한 줄 + 판정 필터. #filtBox 는 데이터 확인 탭에서 숨겨져 검수 탭에만 보인다
+// '실험' 묶음(결과 탭 블록) 안의 모델만 고르게 한다. _all = 전체, _other = 블록에 없는 실험
+function rvInGroup(id, gs, inAny) {
+  if (id === "_all") return () => true;
+  if (id === "_other") return m => !inAny.has(m.exp);
+  const g = gs.find(x => x.id === id), s = new Set(g ? g.runs : []);
+  return m => s.has(m.exp);
+}
+function rvGroup(gs, inAny) {                            // 고른 묶음. 처음이거나 지금 모델이 밖이면 지금 모델이 든 묶음
+  RV.grp = RV.grp || {};
+  let g = RV.grp[CUR.item];
+  if (g == null) { try { g = localStorage.getItem("rv_grp_" + CUR.item); } catch (e) { g = null; } }
+  const ok = id => id === "_all" || id === "_other" || gs.some(x => x.id === id);
+  const m = rvModel();
+  if (!g || !ok(g) || (m && !rvInGroup(g, gs, inAny)(m))) {
+    const hit = m && gs.find(x => x.runs.includes(m.exp));
+    g = hit ? hit.id : (m && !inAny.has(m.exp) ? "_other" : "_all");
+  }
+  RV.grp[CUR.item] = g;
+  return g;
+}
+// 실험 고르기 + 모델 고르기 + 점수 한 줄 + 판정 필터. #filtBox 는 데이터 확인 탭에서 숨겨져 검수 탭에만 보인다
 function buildFilt() {
   const box = $("#filtBox"); box.innerHTML = "";
   box.style.cssText = "display:flex;flex-direction:column;gap:6px";
-  const ms = RV.models[CUR.item] || [];
+  const all = RV.models[CUR.item] || [], gs = (RV.groups || {})[CUR.item] || [];
+  let ms = all;
+  if (gs.length) {
+    const inAny = new Set(gs.flatMap(g => g.runs));
+    box.appendChild(el("label", "", "실험"));
+    const gsel = el("select");
+    [["_all", "전체"], ...gs.map(g => [g.id, g.label]), ...(all.some(m => !inAny.has(m.exp)) ? [["_other", "블록에 없는 실험"]] : [])]
+      .forEach(([v, t]) => { const o = el("option", "", t); o.value = v; gsel.appendChild(o); });
+    gsel.value = rvGroup(gs, inAny);
+    gsel.onchange = () => {
+      RV.grp[CUR.item] = gsel.value;
+      try { localStorage.setItem("rv_grp_" + CUR.item, gsel.value); } catch (e) {}
+      const inG = rvInGroup(gsel.value, gs, inAny);
+      if (!all.some(m => m.key === rvKey() && inG(m))) {           // 지금 모델이 밖이면 그 묶음의 첫 끝난 모델로
+        const f = all.find(m => m.done && inG(m));
+        RV.sel[CUR.item] = f ? f.key : "";
+        try { localStorage.setItem("rv_sel_" + CUR.item, RV.sel[CUR.item]); } catch (e) {}
+      }
+      FILT = "all"; rvRefresh();
+    };
+    box.appendChild(gsel);
+    ms = all.filter(rvInGroup(gsel.value, gs, inAny));
+  }
   const lab = el("label", "", "모델 (지금 데이터로 학습한 판)"); box.appendChild(lab);
   const msel = el("select");
   const none = el("option", "", "모델 없음 (정답 · 구역만)"); none.value = ""; msel.appendChild(none);
