@@ -559,6 +559,84 @@ RV_ITEM = {"fire": "fire", "intrusion": "intrusion", "loiter": "loitering", "fal
 _RV_NAME = re.compile(r"^[A-Za-z0-9_.\-]+$")
 
 
+# ---------------------------------------------------------------- 히스토리 탭(2026-09-30): 모델 개선 기록, 사용자가 고친다
+HISTORY = G / "configs/history.yaml"
+HS_ST, HS_DEC = ("완료", "진행", "할 일"), ("채택", "기각", "보류")
+HS_KEYS = ("id", "s", "dec", "t", "why", "sub", "ref", "cond", "carry")
+HS_EDIT = os.environ.get("VMS_HISTORY_EDIT") == "1"   # 고칠 수 있는 원본은 한 서버만(서버 B, dash.sh 가 켬). 다른 서버는 보기만 → 두 곳이 갈라지지 않게
+
+
+def history_read():
+    import yaml
+    if not HISTORY.is_file():
+        return {"error": "configs/history.yaml 이 없습니다"}
+    d = yaml.safe_load(HISTORY.read_text(encoding="utf-8")) or {}
+    d["updated_at"] = str(d.get("updated_at") or "")
+    days = []
+    for day in d.get("days") or []:
+        day["date"] = str(day.get("date"))
+        day["items"] = day.get("items") or []
+        days.append(day)
+    d["days"] = sorted(days, key=lambda x: x["date"], reverse=True)
+    d["readonly"] = not HS_EDIT
+    return d
+
+
+def _hs_clean(doc):
+    """저장 전 모양 검사. 모르는 칸은 버리고, 값이 틀리면 ValueError"""
+    days = []
+    for day in doc.get("days") or []:
+        date = str(day.get("date") or "")
+        if not re.match(r"^\d{4}-\d{2}-\d{2}$", date):
+            raise ValueError(f"날짜 모양: {date}")
+        items = []
+        for it in day.get("items") or []:
+            it = {k: str(it[k]).strip() for k in HS_KEYS if it.get(k) not in (None, "")}
+            if not it.get("t") or not it.get("id"):
+                raise ValueError("항목 이름 · id 가 비었다")
+            if it.get("s") not in HS_ST:
+                raise ValueError(f"상태: {it.get('s')}")
+            if it.get("dec") and (it["dec"] not in HS_DEC or it["s"] != "완료"):
+                raise ValueError(f"판정은 완료 항목에만(채택 · 기각 · 보류): {it['t'][:30]}")
+            items.append(it)
+        ms = [{"at": str(m.get("at", "")).strip(), "text": str(m.get("text", "")).strip()} for m in day.get("milestones") or [] if m.get("text")]
+        out = {"date": date}
+        if day.get("note"):
+            out["note"] = str(day["note"]).strip()
+        if ms:
+            out["milestones"] = ms
+        out["items"] = items
+        days.append(out)
+    if len({d["date"] for d in days}) != len(days):
+        raise ValueError("같은 날짜가 둘")
+    ids = [it["id"] for d in days for it in d["items"]]
+    if len(set(ids)) != len(ids):
+        raise ValueError("같은 id 가 둘")
+    return sorted(days, key=lambda x: x["date"], reverse=True)
+
+
+def history_write(body):
+    """문서 통째로 저장. body = {base: 읽었을 때의 updated_at, by, doc}. 그 사이 다른 곳에서 고쳤으면 저장하지 않는다(conflict)"""
+    import yaml
+    from datetime import datetime, timedelta, timezone
+    if not HS_EDIT:
+        return {"ok": False, "err": "이 서버는 히스토리를 보기만 합니다. 고치기는 서버 B 대시보드에서"}
+    with _SAVE_LOCK:
+        cur = history_read()
+        if cur.get("error"):
+            return {"ok": False, "err": cur["error"]}
+        if str(body.get("base") or "") != cur["updated_at"]:
+            return {"ok": False, "conflict": True}
+        days = _hs_clean(body.get("doc") or {})
+        doc = {"updated_at": datetime.now(timezone(timedelta(hours=9))).strftime("%Y-%m-%d %H:%M:%S"),
+               "updated_by": str(body.get("by") or "사용자"), "days": days}
+        head = "".join(ln for ln in HISTORY.read_text(encoding="utf-8").splitlines(True) if ln.startswith("#"))   # 칸 설명 주석은 남긴다
+        tmp = HISTORY.with_suffix(".yaml.tmp")
+        tmp.write_text(head + yaml.safe_dump(doc, allow_unicode=True, sort_keys=False, width=100000), encoding="utf-8")
+        tmp.replace(HISTORY)
+    return {"ok": True, "doc": history_read()}
+
+
 def _rc():
     import sys as _s
     if str(G / "scripts") not in _s.path:
@@ -1693,6 +1771,13 @@ class H(BaseHTTPRequestHandler):
             except Exception as e:
                 self._bytes(json.dumps({"err": str(e)}).encode(), "application/json; charset=utf-8", 500)
             return
+        if p == "/api/history":                 # 히스토리 저장(문서 통째로, 마지막 수정 시각 대조)
+            try:
+                n = int(self.headers.get("Content-Length", 0))
+                r = history_write(json.loads(self.rfile.read(n) or b"{}"))
+            except Exception as e:
+                r = {"ok": False, "err": f"{type(e).__name__}: {e}"}
+            self._bytes(json.dumps(r, ensure_ascii=False).encode(), "application/json; charset=utf-8"); return
         if p in ("/api/catmode", "/api/datasets"):   # {cat, mode|media|gt|classes|use|note ...} 저장 → datasets.yaml. 값이 null 이면 그 필드를 지운다
             try:
                 n = int(self.headers.get("Content-Length", 0))
@@ -2113,6 +2198,12 @@ class H(BaseHTTPRequestHandler):
             except Exception:
                 pass
             self._bytes(json.dumps(q, ensure_ascii=False).encode(), "application/json; charset=utf-8"); return
+        if p == "/api/history":                   # 히스토리 탭(2026-09-30) 원본 configs/history.yaml
+            try:
+                body = history_read()
+            except Exception as ex:
+                body = {"error": f"{type(ex).__name__}: {ex}"}
+            self._bytes(json.dumps(body, ensure_ascii=False).encode(), "application/json; charset=utf-8"); return
         if p == "/api/result_blocks":             # 결과 탭(2026-09-29 재설계): 새 데이터 판 비교 블록. 계산은 dash_v2/results_newdata.py
             try:
                 import results_newdata as _RN

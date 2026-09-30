@@ -4,7 +4,7 @@ let IS_BENCH = false;                 // 라벨 작업대(서버로 보내는 �
 function buildMode() {
   const box = $("#modeBox"); box.innerHTML = "";
   const TABS = IS_BENCH ? [["data", "데이터 확인"]]                                  // 작업대는 라벨만 한다
-                        : [["data", "데이터 확인"], ["review", "영상 검수"], ["results", "결과"]];
+                        : [["data", "데이터 확인"], ["review", "영상 검수"], ["results", "결과"], ["history", "히스토리"]];
   TABS.forEach(([k, label]) => {
     const b = el("button", k === CUR.mode ? "on" : "", label);
     b.onclick = () => {
@@ -19,8 +19,9 @@ function buildMode() {
 }
 function applyMode() {
   document.onkeydown = null;   // 편집기 밖에선 단축키 끄기
-  $("#right").hidden = (CUR.mode === "results");   // 결과 탭은 우측 없이
-  $(".left").style.display = (CUR.mode === "results") ? "none" : "";   // 결과 탭은 결과만(왼쪽 패널째 숨김). .srcbox 의 display:flex 가 [hidden] 을 이겨 드롭다운이 남던 것도 여기서 끝(2026-09-29)
+  const wide = CUR.mode === "results" || CUR.mode === "history";   // 결과 · 히스토리 탭은 가운데만
+  $("#right").hidden = wide;
+  $(".left").style.display = wide ? "none" : "";   // 결과 탭은 결과만(왼쪽 패널째 숨김). .srcbox 의 display:flex 가 [hidden] 을 이겨 드롭다운이 남던 것도 여기서 끝(2026-09-29)
   if (CUR.mode !== "review") {                      // 검수 탭의 항목 이름표 · 모델 · 판정 필터를 바로 거둔다. 데이터 탭은 목록을 받아 온 뒤에야 다시 그려 그 사이 남아 보였다
     $("#filtBox").hidden = true; $("#filtBox").innerHTML = "";
     const lb = $(".srcbox label"); if (lb && lb.textContent === "검수 항목") lb.textContent = "데이터 원본";
@@ -38,6 +39,8 @@ function applyMode() {
     applyMode._first = false;
   } else if (CUR.mode === "results") {
     $("#list").innerHTML = ""; buildResults();
+  } else if (CUR.mode === "history") {
+    $("#list").innerHTML = ""; buildHistory();
   } else {
     enterReview();   // 모델 목록 · 판정을 서버에서 받아 첫 영상(또는 보던 영상)을 연다(review.js)
   }
@@ -285,7 +288,7 @@ async function boot() {
   for (const [k, v] of Object.entries(META.items)) v.rows.forEach(row => row.item = k);
   try { IS_BENCH = !!(await (await fetch("/api/pushinfo")).json()).enabled; } catch (e) { IS_BENCH = false; }
   const last = (typeof loadSession === "function") ? loadSession() : {};
-  if (last.mode === "data" || last.mode === "review" || last.mode === "results") CUR.mode = last.mode;
+  if (["data", "review", "results", "history"].includes(last.mode)) CUR.mode = last.mode;
   if (IS_BENCH) CUR.mode = "data";     // 작업대엔 다른 탭이 없다(지난 세션이 검수였어도 데이터 확인으로)
   DS_KIND = "raw";                                  // 학습 데이터 탭은 없다
   if (last.dsSel && String(last.dsSel).startsWith("raw:")) DS_SEL = last.dsSel;
