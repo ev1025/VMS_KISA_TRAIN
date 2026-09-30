@@ -97,6 +97,21 @@ def clip_windows(gt, dur, trs, ignore_pre=0.0, ignore_post=False):
     return pos, neg, neg_pre
 
 
+def vanish_negs(neg, n, seed, keep=(6, 16)):
+    """사라지는 음성(2026-09-30): 사람이 끝까지 다 보이는 음성 창(서기 · 걷기)의 뒤쪽을 0 벡터로 지운 창 n 개.
+    = 쓰러지지 않고 화면 밖으로 나가거나 가려져 안 보이게 된 사람. 앞 keep 슬롯(3 ~ 8초)만 남긴다.
+    왜: AI허브 쓰러짐 35편(학습 안 함) 진단에서 이른 경보 9편 중 6편이 확정 순간 그 사람이 안 보이는 창(0 벡터 6 ~ 13칸)이었다.
+    분류기가 '사라짐 = 쓰러짐' 으로 배웠다는 뜻이라, 쓰러지는 몸짓 없이 사라지는 창을 음성으로 가르친다."""
+    if n <= 0:
+        return []
+    rng = random.Random(seed + 7919)
+    full = [w for w in neg if (np.abs(w[-8:]).sum(axis=1) > 0).all()]   # 마지막 4초가 다 보이는 창만 재료로
+    out = []
+    for _ in range(n):
+        w = rng.choice(full).copy(); w[rng.randint(*keep):] = 0.0; out.append(w)
+    return out
+
+
 def train(pos, neg, seed, extra_neg=None, epochs=12, B=512):
     """기본 레시피. extra_neg(어려운 음성)는 3배 표집 뒤에 그대로 덧붙인다."""
     random.seed(seed); torch.manual_seed(seed); np.random.seed(seed)
@@ -195,6 +210,7 @@ def main():
     ap.add_argument("--hard-cap", type=float, default=3.0, help="어려운 음성 총량 상한 = 양성 창 수 × 이 값(기본 3)")
     ap.add_argument("--hard-pre-only", action="store_true", help="어려운 음성을 사건 시작 전 창에서만 캔다(이른 오검만 겨냥)")
     ap.add_argument("--ignore-post", action="store_true", help="사건이 끝난 뒤(누워 있는) 창을 음성에서 뺀다")
+    ap.add_argument("--vanish", type=float, default=0.0, help="사라지는 음성 창 수 = 양성 창 수 × 이 값(0 = 끔, 2026-09-30)")
     ap.add_argument("--tag", default="")
     ap.add_argument("--no-insample", action="store_true")
     ap.add_argument("--device", default="cpu", help="cpu 또는 cuda")
@@ -210,7 +226,7 @@ def main():
     files = sorted(p for p in Path(a.kpts).glob("*.npz") if not p.stem.startswith(FT.DEPLOY_PREFIX))
     print(f"학습 영상 {len(files)}편 · {a.folds}겹 장면 묶음 교차검증 · 피처 {a.kpts} (자세 {a.imgsz}) · "
           f"ignore_pre {a.ignore_pre} · ignore_post {a.ignore_post} · seeds {a.seeds} · hard_neg {a.hard_neg} "
-          f"(w{a.hard_weight} cap{a.hard_cap} pre_only {a.hard_pre_only}) · device {a.device} → {out_cv}", flush=True)
+          f"(w{a.hard_weight} cap{a.hard_cap} pre_only {a.hard_pre_only}) · vanish {a.vanish} · device {a.device} → {out_cv}", flush=True)
     t0 = time.time(); clips = prep(files)
     print(f"전처리 {len(clips)}편 {time.time() - t0:.0f}s", flush=True)
     win = {s: clip_windows(gt, dur, trs, a.ignore_pre, a.ignore_post) for s, gt, dur, trs in clips}
@@ -239,14 +255,16 @@ def main():
             hard = mine_hard(tr, win, a.seed, pre_only=a.hard_pre_only)
             cap = int(len(pos) * a.hard_cap)
             hard = (hard * a.hard_weight)[:cap] if hard else []   # 반복 가중, 총량 상한(기본 3배·정규 음성과 같은 양)
+        van = vanish_negs(neg, int(len(pos) * a.vanish), a.seed)
+        extra = (hard or []) + van if (hard is not None or van) else None
         nets, info = [], None
         for k in range(a.seeds):
-            net, npos, nneg, loss = train(pos, neg, a.seed + k, extra_neg=hard)
+            net, npos, nneg, loss = train(pos, neg, a.seed + k, extra_neg=extra)
             nets.append(net); info = (npos, nneg, loss)
         for s, gt, _dur, trs in te:
             dump(out_cv, s, gt, curves_of(nets, trs), a.imgsz, fold=f)
         print(f"겹 {f}: 학습 {len(tr)}편(양성창 {info[0]} 음성창 {info[1]}"
-              + (f", 어려운 음성 {len(hard)}" if hard is not None else "")
+              + (f", 어려운 음성 {len(hard)}" if hard is not None else "") + (f", 사라지는 음성 {len(van)}" if van else "")
               + f", 마지막 loss {info[2]:.4f}, 시드 {a.seeds}) → 검증 {len(te)}편 {time.time() - t1:.0f}s", flush=True)
     print(f"끝. 훑기: .venv/bin/python scripts/fall_sweep330.py {out_cv}", flush=True)
 
