@@ -60,6 +60,8 @@ KP.DEFAULT_IMGSZ    # 기본 입력 크기 (640)
 
 ### 기록 탐색 위치
 
+* 요청 · 결정의 계보(무엇을 왜 채택 · 기각 · 보류했나): `configs/history.yaml` (대시보드 히스토리 탭. 아래 항목들은 모델 · 결과 파일의 계보다)
+
 * 이 모델의 학습 데이터: `results/MODELS.json` (가장 중요)
 * 실험 설정/점수/mAP: `results/<실험>/{meta,score,eval_map,bench}`
 * 학습 하이퍼파라미터: `runs/<실험>/args.yaml`
