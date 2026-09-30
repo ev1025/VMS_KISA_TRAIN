@@ -2468,7 +2468,11 @@ class H(BaseHTTPRequestHandler):
             self._bytes(b"", "text/plain"); return
         m = re.match(r"/vid/(.+\.mp4)$", p)
         if m:
-            vp = G/urllib.parse.unquote(m.group(1))
+            rel = urllib.parse.unquote(m.group(1)); vp = G/rel
+            # 맥 하드웨어 디코더가 못 읽는 편(C00_089_0001 3:33, 오류 3)은 플레이어가 ?safe=1 로 다시 부른다.
+            # 다시 인코딩한 시청용 사본(dumps/vid_safe, 같은 경로)이 있으면 그걸 준다. 채점에는 안 쓴다
+            if "safe=1" in urllib.parse.urlparse(self.path).query and (G/"dumps"/"vid_safe"/rel).exists():
+                vp = G/"dumps"/"vid_safe"/rel
             if vp.exists() and WS in vp.resolve().parents: self._stream(vp, "video/mp4")
             else: self.send_error(404, "video not found")
             return

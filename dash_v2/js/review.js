@@ -215,6 +215,12 @@ function renderCenter(row, opt) {
   v.onerror = () => {
     const e = v.error, why = e ? `오류 ${e.code}${e.message ? " · " + e.message : ""}` : "";
     console.warn("영상 오류", row.video, _lastT.toFixed(2), why);
+    if (e && e.code === 3 && !v.src.includes("safe=1")) {   // 디코딩 오류 → 다시 인코딩한 시청용 사본으로 그 자리부터(2026-09-30)
+      const t = _lastT, go = _wantPlay;
+      v.addEventListener("loadedmetadata", () => { v.currentTime = t; if (go) v.play().catch(() => {}); }, { once: true });
+      v.src = v.src.split("?")[0] + "?safe=1";
+      return;
+    }
     if (_tries++ < 3) {
       const t = _lastT, go = _wantPlay;
       setTimeout(() => {
