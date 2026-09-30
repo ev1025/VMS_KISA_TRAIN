@@ -190,14 +190,33 @@ function nrTerms(T) {                            // 맨 위 '용어 정리'(접�
   const rows = T.map(t => { const g = t.g === g0 ? "" : (g0 = t.g); return `<tr><td class="nr-mut">${nrEsc(g)}</td><th>${nrEsc(t.t)}</th><td>${nrEsc(t.d)}</td></tr>`; }).join("");
   return `<details class="nr-terms"${nrTerms.open ? " open" : ""}><summary>용어 정리 ${nrMut(T.length + "개")}</summary><div class="nr-tscroll"><table>${rows}</table></div></details>`;
 }
-function nrScoreCard(S) {                        // 항목별 실제로 낼 수 있는 최고 점수(공식 채점) · 그 모델
+function nrScoreCard(S) {                        // 항목별 실제로 낼 수 있는 최고 점수(공식 채점) · 그 모델. 누르면 판정기 설정(학습 외)
   if (!S.length) return "";
+  nrScoreCard.S = S;
   return `<div class="nr-score">` + S.map(s => {
-    const has = s.f1 != null, cls = !has ? "" : (s.f1 >= 90 ? " ok" : " bad");
+    const has = s.f1 != null, cls = (!has ? "" : (s.f1 >= 90 ? " ok" : " bad")) + (nrScoreCard.open === s.item ? " on" : "");
     const tip = has && s.tp != null ? ` title="정검 ${s.tp} · 미검 ${s.fn} · 오검 ${s.fp}"` : "";
-    return `<div class="nr-sc${cls}"${tip}><div class="nr-sc-it">${nrEsc(s.item)}</div><div class="nr-sc-v">${has ? s.f1.toFixed(2) : "–"}</div>` +
-      `<div class="nr-sc-m">${has ? nrEsc(s.model || s.exp) + (s.ck ? " · " + nrEsc(s.ck) : "") : "채점 전"}</div></div>`;
-  }).join("") + `</div>`;
+    return `<button type="button" class="nr-sc${cls}" data-it="${nrEsc(s.item)}"${tip}><div class="nr-sc-it">${nrEsc(s.item)}</div><div class="nr-sc-v">${has ? s.f1.toFixed(2) : "–"}</div>` +
+      `<div class="nr-sc-m">${has ? nrEsc(s.model || s.exp) + (s.ck ? " · " + nrEsc(s.ck) : "") : "채점 전"}</div></button>`;
+  }).join("") + `</div><div id="nrJudge">${nrJudge()}</div>`;
+}
+function nrJudge() {                              // 누른 스코어카드 항목의 판정기 설정: 적용 중 · 시험한 기술(결과 · 판정 · 이유)
+  const s = (nrScoreCard.S || []).find(x => x.item === nrScoreCard.open), j = s && s.judge;
+  if (!j) return "";
+  const pill = d => `<span class="nr-dec nr-dec-${{채택: "ok", 기각: "no", 보류: "hold"}[d] || "wait"}">${nrEsc(d || "")}</span>`;
+  const here = t => !t.variant ? nrMut("–") : !t.here ? nrMut("계산 전") :
+    `${s.f1 != null ? s.f1.toFixed(2) + " → " : ""}<b>${t.here["점수"].toFixed(2)}</b> ${nrMut(`정 ${t.here["정검"]} · 미 ${t.here["미검"]} · 오 ${t.here["오검"]}`)}`;
+  const rows = (j.tried || []).map(t => `<tr><th>${nrEsc(t.name)}</th><td>${nrEsc(t.what || "")}</td><td>${pill(t.dec)}</td><td>${nrEsc(t.result || "")}</td><td>${nrEsc(t.why || "")}</td><td class="nr-num">${here(t)}</td></tr>`).join("");
+  return `<div class="nr-judge"><div class="nr-jh">${nrEsc(s.item)} 판정기 설정 (학습 외)${s.exp ? nrMut(` · ${s.exp} · ${s.ck}`) : ""}</div>` +
+    `<div class="nr-jc"><b>적용 중</b><ul>${(j.applied || []).map(a => `<li>${nrEsc(a)}</li>`).join("")}</ul></div>` +
+    (rows ? `<div class="nr-jc"><b>시험한 기술</b><div class="nr-tbl"><table><tr><th>기술</th><th>내용</th><th>판정</th><th>결과</th><th>이유</th><th>이 모델에 적용<br>${nrMut("채점편, 측정만")}</th></tr>${rows}</table></div></div>` : "") + `</div>`;
+}
+function nrScoreBind(root) {                      // 스코어카드 누르면 펼침 · 다시 누르면 접힘
+  root.querySelectorAll(".nr-sc[data-it]").forEach(b => { b.onclick = () => {
+    nrScoreCard.open = nrScoreCard.open === b.dataset.it ? null : b.dataset.it;
+    root.querySelectorAll(".nr-sc[data-it]").forEach(x => x.classList.toggle("on", x.dataset.it === nrScoreCard.open));
+    const box = root.querySelector("#nrJudge"); if (box) box.innerHTML = nrJudge();
+  }; });
 }
 function nrQueueHtml(q) {                       // 맨 위 큐 상자: 옛 결과 탭과 같은 모양(실행 중 실험 · 에폭 · 이 에폭 · 속도 · 에폭당 · 예상 종료 · 최근 mAP · GPU + 러너 로그)
   const Y = new Date().getFullYear();
@@ -218,11 +237,9 @@ function nrQueueHtml(q) {                       // 맨 위 큐 상자: 옛 결�
         `<td style="padding:3px 10px;font-variant-numeric:tabular-nums;white-space:nowrap">${j.remain_h}시간 → <b>${nrEsc(j.finish_kst || "–")}</b></td>` +
         `<td style="padding:3px 10px;font-variant-numeric:tabular-nums;white-space:nowrap">${j.val ? `${j.val.map50.toFixed(3)} / ${j.val.map5095.toFixed(3)} <span style="color:var(--mut)">(P ${j.val.P.toFixed(2)} R ${j.val.R.toFixed(2)})</span>` : '<span style="color:var(--mut)">첫 검증 전</span>'}</td>` +
         `<td style="padding:3px 10px;white-space:nowrap">${nrEsc(j.mem == null ? "–" : j.mem)}</td></tr>`).join("") + `</tbody></table></div>` : "") +
-    `<details class="nr-qdet"${nrQueueHtml.open ? " open" : ""}><summary style="cursor:pointer;color:var(--mut)">러너 로그</summary>${lastLog || '<div style="color:var(--mut)">로그 없음</div>'}</details>`;
+    `<div class="nr-qdet"><div style="color:var(--mut)">러너 로그</div>${lastLog || '<div style="color:var(--mut)">로그 없음</div>'}</div>`;   // 토글 없이 항상 보임(09-30 사용자)
 }
-function nrQueueBind(box) {                      // 러너 로그 펼침 상태를 갱신 뒤에도 유지
-  const d = box && box.querySelector(".nr-qdet"); if (d) d.ontoggle = () => { nrQueueHtml.open = d.open; };
-}
+function nrQueueBind(box) {}                     // 러너 로그는 항상 펼침(09-30). 부르는 곳이 있어 이름만 남김
 async function nrQueueTick() {                   // 학습 중이면 30초마다 큐 상자만 갱신(화면 전체를 다시 그리지 않음)
   const box = $("#nrQ");
   if (CUR.mode !== "results" || !box) return;
@@ -243,6 +260,7 @@ async function buildResults() {
   c.innerHTML = `<div class="nr"><div class="nr-top">${nrScoreCard(D.score || [])}<div class="nr-queue" id="nrQ">${nrQueueHtml(q)}</div>` +   // 위에 고정: 항목별 최고 점수 · 큐(항상 펼침) · 용어 정리
     nrTerms(D.terms || []) + `</div>` +
     D.blocks.map(b => nrBlock(b, D, q)).join("") + (D.others.length ? nrOthers(D, q) : "") + "</div>";
+  nrScoreBind(c);
   c.scrollTop = y;
   const tm = c.querySelector(".nr-terms"); if (tm) tm.ontoggle = () => { nrTerms.open = tm.open; };   // 1분 갱신 때 펼친 상태 유지
   nrQueueBind($("#nrQ")); nrBindToggles(c);

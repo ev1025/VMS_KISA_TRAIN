@@ -223,9 +223,27 @@ def scorecard(R, cfg):
             out.append({"item": ko})
             continue
         f1, _, x, ck, s = max(cand, key=lambda c: (c[0], c[1]))
-        out.append({"item": ko, "f1": f1, "exp": x, "ck": ck, "tp": s["tp"], "fn": s["fn"], "fp": s["fp"]})
-    out.append({"item": "쓰러짐", **(cfg.get("fall_ref") or {})})   # 쓰러짐은 새로 학습하지 않고 배포 모델 그대로(09-29 사용자), 기준값은 yaml
+        out.append({"item": ko, "f1": f1, "exp": x, "ck": ck, "tp": s["tp"], "fn": s["fn"], "fp": s["fp"], "judge": judge(cfg, ko, it, x, ck)})
+    out.append({"item": "쓰러짐", **(cfg.get("fall_ref") or {}), "judge": judge(cfg, "쓰러짐", "falldown", None, None)})   # 쓰러짐은 배포 모델 그대로(09-29 사용자), 기준값은 yaml
     return out
+
+
+def judge(cfg, ko, item, exp, ck):
+    """스코어카드를 누르면 나오는 판정기 설정(yaml judge). variant 가 있는 기술은 이 모델에 붙인 채점편 결과
+    (scripts/review_post.py 가 검수 캐시 위에서 계산해 둔 것)를 붙인다. 없으면 None(상위 3개 밖이거나 계산 전)"""
+    j = dict((cfg.get("judge") or {}).get(ko) or {})
+    tried = []
+    for t in j.get("tried") or []:
+        t = dict(t)
+        if t.get("variant") and exp:
+            f = RC.cache_dir(exp, f"{ck}+{t['variant']}", item) / "summary.json"
+            try:
+                t["here"] = json.loads(f.read_text(encoding="utf-8"))["score"]
+            except Exception:
+                t["here"] = None
+        tried.append(t)
+    j["tried"] = tried
+    return j
 
 
 def build():
@@ -252,7 +270,7 @@ def build():
         R3 = {}
     for x, r in R.items():
         r["rule3"] = (R3.get("runs") or {}).get(x)
-    return {**{k: v for k, v in cfg.items() if k not in ("blocks", "fall_ref")},          # dv · key_clips · terms(용어 풀이) 등은 그대로 넘긴다
+    return {**{k: v for k, v in cfg.items() if k not in ("blocks", "fall_ref", "judge")},          # dv · key_clips · terms(용어 풀이) 등은 그대로 넘긴다
             "blocks": [block(b, R) for b in cfg.get("blocks") or []], "others": others, "runs": R, "score": scorecard(R, cfg), "rule3": {k: R3.get(k) for k in ("made", "rate", "picks")}}
 
 

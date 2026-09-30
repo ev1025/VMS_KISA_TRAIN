@@ -27,7 +27,7 @@ async function rvLoadModels(item) {
   const ready = RV.models[item].filter(m => m.done);
   let want = RV.sel[item];
   if (want == null) { try { want = localStorage.getItem("rv_sel_" + item); } catch (e) { want = null; } }
-  RV.sel[item] = want === "" ? "" : (ready.some(m => m.key === want) ? want : (ready[0] ? ready[0].key : ""));
+  RV.sel[item] = ready.some(m => m.key === want) ? want : (ready[0] ? ready[0].key : "");   // '모델 없음' 은 없앴다(09-30)
 }
 async function rvLoadSummary() {
   RV.summ = null;
@@ -95,24 +95,25 @@ function rvLabel(m) {
   const sc = m.official && m.official["점수"] != null ? ` · 공식 ${m.official["점수"].toFixed(2)}`
            : m.score && m.score["점수"] != null ? ` · ${m.score["점수"].toFixed(2)}` : "";
   const wait = m.done ? "" : (m.progress ? ` (계산 중 ${m.progress.done}/${m.progress.total})` : " (계산 대기)");
-  return `${m.exp} · ${m.ckpt} · ${m.res}${sc}${wait}`;
+  return `${m.exp} · ${m.ckLabel || m.ckpt} · ${m.res}${sc}${wait}`;
 }
-// '실험' 묶음(결과 탭 블록) 안의 모델만 고르게 한다. _all = 전체, _other = 블록에 없는 실험
+// '실험' 묶음 안의 모델만 고르게 한다. _top = 상위권(keys: 판 · 기술 결과 하나하나), 블록 = 실험 이름(runs), _other = 블록에 없는 실험
 function rvInGroup(id, gs, inAny) {
-  if (id === "_all") return () => true;
-  if (id === "_other") return m => !inAny.has(m.exp);
-  const g = gs.find(x => x.id === id), s = new Set(g ? g.runs : []);
-  return m => s.has(m.exp);
+  if (id === "_other") return m => !m.variant && !inAny.has(m.exp);
+  const g = gs.find(x => x.id === id);
+  if (g && g.keys) { const k = new Set(g.keys); return m => k.has(m.key); }
+  const s = new Set(g ? g.runs || [] : []);
+  return m => !m.variant && s.has(m.exp);
 }
 function rvGroup(gs, inAny) {                            // 고른 묶음. 처음이거나 지금 모델이 밖이면 지금 모델이 든 묶음
   RV.grp = RV.grp || {};
   let g = RV.grp[CUR.item];
   if (g == null) { try { g = localStorage.getItem("rv_grp_" + CUR.item); } catch (e) { g = null; } }
-  const ok = id => id === "_all" || id === "_other" || gs.some(x => x.id === id);
+  const ok = id => id === "_other" || gs.some(x => x.id === id);
   const m = rvModel();
-  if (!g || !ok(g) || (m && !rvInGroup(g, gs, inAny)(m))) {
-    const hit = m && gs.find(x => x.runs.includes(m.exp));
-    g = hit ? hit.id : (m && !inAny.has(m.exp) ? "_other" : "_all");
+  if (!g || !ok(g) || (m && !rvInGroup(g, gs, inAny)(m))) {       // 처음 · 지금 모델이 밖이면 상위권 → 그 모델이 든 블록 → 블록 밖
+    const hit = gs.find(x => m && rvInGroup(x.id, gs, inAny)(m));
+    g = hit ? hit.id : (m && !inAny.has(m.exp) ? "_other" : (gs[0] ? gs[0].id : "_other"));
   }
   RV.grp[CUR.item] = g;
   return g;
@@ -124,10 +125,10 @@ function buildFilt() {
   const all = RV.models[CUR.item] || [], gs = (RV.groups || {})[CUR.item] || [];
   let ms = all;
   if (gs.length) {
-    const inAny = new Set(gs.flatMap(g => g.runs));
+    const inAny = new Set(gs.flatMap(g => g.runs || []));
     box.appendChild(el("label", "", "실험"));
     const gsel = el("select");
-    [["_all", "전체"], ...gs.map(g => [g.id, g.label]), ...(all.some(m => !inAny.has(m.exp)) ? [["_other", "블록에 없는 실험"]] : [])]
+    [...gs.map(g => [g.id, g.label]), ...(all.some(m => !m.variant && !inAny.has(m.exp)) ? [["_other", "블록에 없는 실험"]] : [])]
       .forEach(([v, t]) => { const o = el("option", "", t); o.value = v; gsel.appendChild(o); });
     gsel.value = rvGroup(gs, inAny);
     gsel.onchange = () => {
@@ -143,11 +144,16 @@ function buildFilt() {
     };
     box.appendChild(gsel);
     ms = all.filter(rvInGroup(gsel.value, gs, inAny));
+    const gk = (gs.find(x => x.id === gsel.value) || {}).keys;   // 상위권 = 1위 · 1위의 기술들 · 2위 … 순서
+    if (gk) ms.sort((x, y) => gk.indexOf(x.key) - gk.indexOf(y.key));
   }
   const lab = el("label", "", "모델 (지금 데이터로 학습한 판)"); box.appendChild(lab);
   const msel = el("select");
-  const none = el("option", "", "모델 없음 (정답 · 구역만)"); none.value = ""; msel.appendChild(none);
   ms.forEach(m => { const o = el("option", "", rvLabel(m)); o.value = m.key; o.disabled = !m.done; msel.appendChild(o); });
+  if (!ms.some(m => m.key === rvKey())) {                  // 묶음 밖 모델이면 그 묶음의 첫 끝난 모델로('모델 없음' 은 없앴다)
+    const f = ms.find(m => m.done);
+    if (f) { RV.sel[CUR.item] = f.key; setTimeout(rvRefresh, 0); }   // 경보 · 편별 판정도 그 모델 것으로 다시 받는다
+  }
   msel.value = rvKey();
   msel.onchange = () => {
     RV.sel[CUR.item] = msel.value;
@@ -258,7 +264,7 @@ function renderCenter(row, opt) {
   if (review) {                                          // 검수 탭: 모델은 왼쪽에서 고른다. 여기는 이름만
     const m = rvModel(), tag = el("span", "", "");
     tag.style.cssText = "margin-left:auto;font-size:var(--fs-xs);color:var(--mut);white-space:nowrap;overflow:hidden;text-overflow:ellipsis";
-    tag.textContent = m ? `${m.exp} · ${m.ckpt} · ${m.res}` + (opt.missing ? " · 이 편 저장값 없음" : "") : "모델 없음";
+    tag.textContent = m ? `${m.exp} · ${m.ckLabel || m.ckpt} · ${m.res}` + (opt.missing ? " · 이 편 저장값 없음" : "") : "모델 없음";
     ctrl.appendChild(tag);
   } else ctrl.appendChild(boxPicker(row, () => drawZone(zoneov, row, v.currentTime)));   // 데이터 확인 탭: 예전 모델 박스 고르기
   c.appendChild(ctrl);
@@ -507,7 +513,7 @@ function renderRight(row, rv) {
   if (m) {
     r.appendChild(el("div", "rtitle", "모델"));
     r.appendChild(KV("실험", m.exp));
-    r.appendChild(KV("체크포인트 · 해상도", `${m.ckpt} · ${m.res}`));
+    r.appendChild(KV("체크포인트 · 해상도", `${m.ckLabel || m.ckpt} · ${m.res}`));
     r.appendChild(KV("학습 데이터", (m.data || []).join(" · ") || "-"));
     const s = RV.summ && RV.summ.score, o = RV.summ && RV.summ.official;
     if (s) r.appendChild(KV("이 항목 점수", `${s["점수"].toFixed(2)}` + (o ? ` · 공식 ${o["점수"].toFixed(2)}` : "")));

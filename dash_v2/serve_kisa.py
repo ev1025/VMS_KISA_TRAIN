@@ -655,7 +655,8 @@ def _rv_json(f):
 def _rv_key(key):
     """'실험|best' → (실험, best). 경로에 쓰므로 모양을 먼저 본다."""
     exp, _, ck = (key or "").partition("|")
-    if not _RV_NAME.match(exp) or ck not in ("best", "last", "배포"):
+    base, _, v = ck.partition("+")                           # best+seam = best 에 판정기 기술을 붙인 결과(scripts/review_post.py)
+    if not _RV_NAME.match(exp) or base not in ("best", "last", "배포") or (v and not re.match(r"^[A-Za-z]+$", v)):
         return None, None
     return exp, ck
 
@@ -680,9 +681,11 @@ def review_models(tab_item):
         s, pg = _rv_json(d / "summary.json"), _rv_json(d / "_progress.json")
         if not (s or pg):
             return {"models": []}
-        return {"models": [{"key": RC.FALL_EXP + "|" + RC.FALL_CK, "exp": RC.FALL_EXP, "ckpt": RC.FALL_CK, "res": 1280,
+        key = RC.FALL_EXP + "|" + RC.FALL_CK
+        return {"models": [{"key": key, "exp": RC.FALL_EXP, "ckpt": RC.FALL_CK, "res": 1280,
                             "data": ["yolo11x-pose(사전학습) + 판정망 3벌"], "ended": s and s.get("made"), "done": bool(s),
-                            "progress": pg, "score": s and s.get("score"), "official": _fall_official()}]}
+                            "progress": pg, "score": s and s.get("score"), "official": _fall_official()}],
+                "groups": [{"id": "_top", "label": "상위권 (배포 모델)", "keys": [key]}]}
     ko = {v: k for k, v in RC.ITEM_OF.items()}[item]
     out = []
     for exp, m in RC.eligible():
@@ -697,7 +700,7 @@ def review_models(tab_item):
                         "ended": m.get("ended"), "done": RC.is_done(exp, m, ck, ko),
                         "progress": _rv_json(d / "_progress.json"), "score": s and s.get("score"),
                         "official": o and {k: o[k] for k in ("점수", "정검", "미검", "오검")}})
-    groups = []                                              # 검수 탭 '실험' 드롭다운 = 결과 탭 블록 중 이 항목 모델이 든 것(2026-09-30)
+    groups = [_rv_top(item, out)]                            # 맨 앞 = 상위권(점수 상위 3 + 판정기 기술), 뒤 = 결과 탭 블록
     try:
         import yaml
         have = {m["exp"] for m in out}
@@ -708,6 +711,26 @@ def review_models(tab_item):
     except Exception:
         groups = []
     return {"models": out, "groups": groups}
+
+
+def _rv_top(item, out):
+    """상위 3개 판(작업 PC 공식 점수 순)과, 그 판에 판정기 쪽 기술(조각 정리 · 겹침 제거 · 규칙 B …)을 붙인 결과.
+    기술 결과는 검수 캐시 위에서 판정만 다시 돈 것(scripts/review_post.py). 없거나 낡았으면 뒤에서 계산한다"""
+    RC = _rc()                                               # scripts 를 경로에 넣는다
+    import review_post as RP
+    tops = RP.top(item, out)
+    keys = []
+    for m in tops:
+        keys.append(m["key"])
+        for vid, v in RP.VARIANTS.get(item, {}).items():
+            ck = m["ckpt"] + "+" + vid
+            s = _rv_json(RC.cache_dir(m["exp"], ck, item) / "summary.json")
+            out.append(dict(m, key=m["exp"] + "|" + ck, ckpt=ck, ckLabel=f"{m['ckpt']} + {v['label']}", variant=v["label"],
+                            base=m["key"], done=RP.is_fresh(m["exp"], m["ckpt"], item, vid), progress=None,
+                            score=s and s.get("score"), official=None))
+            keys.append(m["exp"] + "|" + ck)
+    RP.compute_missing(item, tops)
+    return {"id": "_top", "label": f"상위권 (점수 상위 {len(tops)}개 + 판정기 기술)", "keys": keys}
 
 
 def review_summary(key, tab_item):
@@ -722,7 +745,7 @@ def review_summary(key, tab_item):
         return None
     if item == "falldown":
         s["official"] = _fall_official()
-    o = (RC.official(exp).get(ck) or {}).get(item)
+    o = (RC.official(exp).get(ck) or {}).get(item)          # 기술을 붙인 결과(best+seam)는 공식 채점이 없다
     if o:
         s["official"] = {k: o[k] for k in ("점수", "정검", "미검", "오검")}
         for c, r in (s.get("clips") or {}).items():
