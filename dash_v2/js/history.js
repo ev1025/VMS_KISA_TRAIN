@@ -55,13 +55,15 @@ function hsForm(it) {                                // 항목 고치기 칸(그
 function hsRow(it) {
   if (HS.edit === it.id && !HS.doc.readonly) return hsForm(it);
   const st = it.s === "할 일" ? "todo" : it.s === "진행" ? "run" : "ok";
+  const tags = [...(it.carry ? [`<span class="hs-tag hs-tag-carry">${hsEsc(it.carry)}</span>`] : []),     // 기록 위치 · 넘어감 = 본문 아래 태그(오른쪽 끝에 두면 시선이 흩어지고 제목 줄이 깨졌다)
+    ...String(it.ref || "").split(" · ").filter(Boolean).map(r => `<span class="hs-tag">${hsEsc(r)}</span>`)];
   return `<div class="hs-it"><span class="hs-pill hs-p-${st}">${HS_LBL[it.s] || hsEsc(it.s)}</span>
-    <div><div class="hs-ttl">${hsEsc(it.t)}</div>
+    <div class="hs-body"><div class="hs-ttl">${hsEsc(it.t)}</div>
       ${it.dec ? `<div class="hs-why"><span class="hs-dec hs-d-${it.dec}">${it.dec}</span>${hsEsc(it.why)}</div>` : ""}
       ${it.cond ? `<div class="hs-cond">선행 조건: ${hsEsc(it.cond)}</div>` : ""}
-      ${it.sub ? `<div class="hs-sub">${hsEsc(it.sub)}</div>` : ""}</div>
-    <div class="hs-rc">${it.carry ? `<span class="hs-carry">${hsEsc(it.carry)}</span>` : ""}${it.ref ? `<span class="hs-ref">${hsEsc(it.ref)}</span>` : ""}
-      ${HS.doc.readonly ? "" : `<button class="hs-pen" data-id="${hsEsc(it.id)}" title="고치기" aria-label="고치기">✎</button>`}</div></div>`;
+      ${it.sub ? `<div class="hs-sub" title="눌러서 펼치기 · 접기">${hsEsc(it.sub)}</div>` : ""}
+      ${tags.length ? `<div class="hs-tags">${tags.join("")}</div>` : ""}</div>
+    ${HS.doc.readonly ? "<span></span>" : `<button class="hs-pen" data-id="${hsEsc(it.id)}" title="고치기" aria-label="고치기">✎</button>`}</div>`;
 }
 function hsRender() {
   const c = $("#center"), D = HS.doc, all = D.days.flatMap(d => d.items), y = c.scrollTop;
@@ -94,6 +96,7 @@ function hsRender() {
   c.querySelectorAll(".hs-dfb").forEach(b => b.onclick = () => { HS.df = HS.df === b.dataset.d ? null : b.dataset.d; hsRender(); });
   c.querySelectorAll(".hs-day").forEach(e => e.ontoggle = () => { if (!HS.f && !HS.df) { e.open ? HS.open.add(e.dataset.date) : HS.open.delete(e.dataset.date); } });
   c.querySelectorAll(".hs-pen").forEach(b => b.onclick = () => { HS.edit = b.dataset.id; hsRender(); });
+  c.querySelectorAll(".hs-sub").forEach(e => e.onclick = () => e.classList.toggle("open"));   // 세부 수치는 한 줄만, 누르면 펼침
   c.querySelectorAll(".hs-add").forEach(b => b.onclick = () => {
     const d = HS.doc.days.find(x => x.date === b.dataset.date), id = hsNewId(d.date);
     d.items.unshift({ id, s: "할 일", t: "" }); HS.edit = id; HS.open.add(d.date); hsRender();

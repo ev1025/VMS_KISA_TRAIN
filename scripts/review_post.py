@@ -80,6 +80,75 @@ def still_out(f=1.0):
     return run
 
 
+def seam8(dets):
+    """조각 정리, 경계 허용 8px. 09-30 C00_239_0001: 위 조각 아래 끝이 타일 경계 528 이 아니라 522 ~ 524 에서 끝나 2px 로는 거의 안 합쳐졌다"""
+    return seam_fix(dets, tol=8.0)
+
+
+def cut_out(tol=8.0, W=1280, H=720, grid=3, overlap=0.2, bottom_only=False):
+    """타일 경계에 잘린 박스는 추적만 하고 진입 판정에서 뺀다(09-30 C00_057_0001: y=288 경계에 잘린 윗몸 조각은
+    꼭짓점 4개가 구역 안인데 실제 발끝은 구역 밖 → 정답보다 10초 일찍 진입. C00_255_0001 다리 조각도 같은 꼴).
+    잘림 = 박스 아래끝이 위 타일 끝(288 · 528) 근처, 위끝이 아래 타일 시작(192 · 432) 근처, 좌우도 같은 식(tol px)"""
+    th, tw = H // grid, W // grid
+    oy, ox = int(th * overlap), int(tw * overlap)
+    yb = [((g + 1) * th - oy, (g + 1) * th + oy) for g in range(grid - 1)]
+    xb = [((g + 1) * tw - ox, (g + 1) * tw + ox) for g in range(grid - 1)]
+    near = lambda v, e: abs(v - e) <= tol
+
+    def cut(x1, y1, x2, y2):
+        if bottom_only:                                      # 발끝을 모르는 박스만(아래끝이 위 타일 끝에 잘림)
+            return any(near(y2, hi) for _lo, hi in yb)
+        return any(near(y2, hi) or near(y1, lo) for lo, hi in yb) or any(near(x2, hi) or near(x1, lo) for lo, hi in xb)
+
+    def run(tracked):
+        return [(t, [b for b in boxes if not cut(*b[2:])]) for t, boxes in tracked]
+    return run
+
+
+class CapTracker(K.Tracker):
+    """판정기 Tracker 와 같고, 놓친 동안 늘어나는 중심 거리 한도만 2번 놓친 만큼으로 묶는다.
+    판정기는 한도 = max(60, 0.8 x 박스 긴 변) x (1 + 놓친 횟수) 라 4.5초(9번) 놓치면 약 1,700px 까지 늘어
+    화면 반대편에서 들어온 다른 사람이 옛 번호를 받는다(09-30 C00_239_0001: 둘째 사람이 첫 사람 번호를 받아 새 진입자로 안 셈)"""
+    MISS_CAP = 2
+
+    def update(self, dets):
+        import math
+        for t in self.tracks:
+            t["miss"] += 1
+        out, used = [], set()
+        for conf, x1, y1, x2, y2 in sorted(dets, key=lambda d: -d[0]):
+            box = (x1, y1, x2, y2)
+            best, bi = self.iou_thr, None
+            for i, t in enumerate(self.tracks):
+                if i in used:
+                    continue
+                v = K.iou(box, t["box"])
+                if v > best:
+                    best, bi = v, i
+            if bi is None:
+                cx, cy = (x1 + x2) / 2, (y1 + y2) / 2
+                dbest, di = 1e18, None
+                for i, t in enumerate(self.tracks):
+                    if i in used:
+                        continue
+                    tx1, ty1, tx2, ty2 = t["box"]
+                    d = math.hypot(cx - (tx1 + tx2) / 2, cy - (ty1 + ty2) / 2)
+                    lim = max(60.0, 0.8 * max(x2 - x1, y2 - y1)) * (1 + min(t["miss"], self.MISS_CAP))
+                    if d < dbest and d <= lim:
+                        dbest, di = d, i
+                bi = di
+            if bi is None:
+                self.tracks.append({"id": self.next_id, "box": box, "miss": 0})
+                used.add(len(self.tracks) - 1)
+                out.append((self.next_id, round(conf, 3), *box))
+                self.next_id += 1
+            else:
+                self.tracks[bi]["box"] = box; self.tracks[bi]["miss"] = 0; used.add(bi)
+                out.append((self.tracks[bi]["id"], round(conf, 3), *box))
+        self.tracks = [t for t in self.tracks if t["miss"] <= self.max_gap]
+        return out
+
+
 B_RULE = dict(corners=4, hold=1, gap=2)                     # 유예 규칙 B(09-30 연구개발 117편 최고 벌): 몸 전체 · 0.5초 · 끊김 1초
 # id(폴더 이름, 영문) → 화면 이름 · 박스 후처리 · 번호 거르기 · 규칙 상수(판정기 cfg 를 덮음). 항목별
 VARIANTS = {
@@ -88,6 +157,9 @@ VARIANTS = {
         "contain": dict(label="겹침 제거", post=contain),
         "seamB": dict(label="조각 정리 + 규칙 B", post=seam_fix, rule=B_RULE),
         "seamBstill": dict(label="조각 정리 + 규칙 B + 정지 번호 제외", post=seam_fix, rule=B_RULE, track=still_out(1.0)),
+        "seam8": dict(label="조각 정리(허용 8px)", post=seam8),
+        "trk": dict(label="번호 거리 한도", tracker=CapTracker),
+        "seam8trkfoot": dict(label="조각 정리(허용 8px) + 번호 거리 한도 + 발끝 잘린 박스 진입 제외", post=seam8, tracker=CapTracker, track=cut_out(bottom_only=True)),
     },
 }
 NONE = dict(label="없음(검산용)")
@@ -112,7 +184,7 @@ def rerun(item, clip, v, gts):
     cfg = dict(K.ITEMS[item]); cfg.update(v.get("rule") or {})
     poly = [tuple(p) for p in clip["zone"]] if clip.get("zone") else None
     rule = K.IntrusionRule(poly, cfg["conf"], cfg["corners"], cfg["hold"], cfg["settle"], cfg["gap"])
-    tr = K.Tracker()
+    tr = (v.get("tracker") or K.Tracker)()
     tracked = []
     for t, boxes in clip["samples"]:
         dets = [[c, x1, y1, x2, y2] for _pid, c, x1, y1, x2, y2 in boxes]

@@ -75,6 +75,7 @@ async function renderRawList(cat) {
   let r;
   try { r = await (await fetch("/api/raw?src=" + encodeURIComponent(cat))).json(); }
   catch (e) { box.innerHTML = '<div class="empty">이 카테고리를 못 읽었습니다</div>'; return; }
+  if (CUR.mode !== "data") return;               // 받아 오는 사이 다른 탭으로 갔으면 그 탭 목록을 덮지 않는다(09-30 검수 목록에 데이터 목록이 뜨던 원인)
   box.innerHTML = "";
   RAW_CAT = cat; SUBSEL = ""; COND_REDRAW = null;
   // 목록 맨 위 머리글. 하위폴더 드롭다운과 촬영조건 칩을 한 상자에 넣고 이 상자만 고정한다

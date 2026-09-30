@@ -57,7 +57,7 @@ async function rvRefresh() {
   $("#list").innerHTML = '<div class="empty">불러오는 중…</div>';
   await rvLoadModels(CUR.item);
   await rvLoadSummary();
-  if (my !== _RV_SEQ) return;
+  if (my !== _RV_SEQ || CUR.mode !== "review") return;   // 받아 오는 사이 다른 탭으로 갔으면 그 탭 목록을 덮지 않는다
   buildFilt(); renderList();
   const rows = rvRows();
   const cur = rows.find(r => r.name === CUR.name) || rows[0];
@@ -70,7 +70,7 @@ async function openRow(row) {
   if (rvKey()) {
     $("#center").innerHTML = '<div class="empty">저장된 결과를 읽는 중…</div>';
     rv = await rvClip(row.name);
-    if (my !== _RV_SEQ) return;
+    if (my !== _RV_SEQ || CUR.mode !== "review") return;   // 받아 오는 사이 다른 탭으로 갔으면 그 탭 목록을 덮지 않는다
   }
   renderCenter(row, { review: true, rv, missing: !!rvKey() && !rv });
   renderRight(row, rv);
@@ -147,7 +147,7 @@ function buildFilt() {
     const gk = (gs.find(x => x.id === gsel.value) || {}).keys;   // 상위권 = 1위 · 1위의 기술들 · 2위 … 순서
     if (gk) ms.sort((x, y) => gk.indexOf(x.key) - gk.indexOf(y.key));
   }
-  const lab = el("label", "", "모델 (지금 데이터로 학습한 판)"); box.appendChild(lab);
+  const lab = el("label", "", "모델"); box.appendChild(lab);
   const msel = el("select");
   ms.forEach(m => { const o = el("option", "", rvLabel(m)); o.value = m.key; o.disabled = !m.done; msel.appendChild(o); });
   if (!ms.some(m => m.key === rvKey())) {                  // 묶음 밖 모델이면 그 묶음의 첫 끝난 모델로('모델 없음' 은 없앴다)
