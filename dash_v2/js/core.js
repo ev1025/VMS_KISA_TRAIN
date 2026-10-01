@@ -14,13 +14,13 @@ let FILT = "all", VID = null;
 const vClass = v => ({ "정검": "ok", "오검": "bad", "오탐": "bad", "미검": "miss", "정상": "none", "라벨": "ok", "빈프레임": "none" }[v] || "none");
 
 
-// 전역 항목 필터(계약 v2, 2026-10-01): 모든 탭에 적용. 계층마다 항목 이름이 달라 여기 한 곳에서 묶는다
-//   meta = results meta.item · history item, review = 검수 API item, card = 결과 탭 점수 카드, mode = 데이터 확인 탭 라벨 모드
+// 전역 항목 필터(계약 v2, 2026-10-01): 영상 검수 · 결과(비교 묶음) · 히스토리 탭에 적용. 데이터 확인 탭 · 점수 카드 · 큐는 늘 전부. 계층마다 항목 이름이 달라 여기 한 곳에서 묶는다
+//   meta = results meta.item · history item, review = 검수 API item
 const GF_DEF = {
   all: { label: "전체" },
-  fire: { label: "화재", meta: "방화", review: ["fire"], card: ["방화"], mode: "fire" },
-  person: { label: "배회·침입", meta: "사람", review: ["intrusion", "loiter"], card: ["침입", "배회"], mode: "person" },
-  fall: { label: "쓰러짐", meta: "쓰러짐", review: ["fall"], card: ["쓰러짐"], mode: "person" },
+  fire: { label: "화재", meta: "방화", review: ["fire"] },
+  person: { label: "사람", meta: "사람", review: ["intrusion", "loiter"] },   // 침입 · 배회(10-01 사용자: 이름은 '사람')
+  fall: { label: "쓰러짐", meta: "쓰러짐", review: ["fall"] },
 };
 let GF = "all";
 try { const v = localStorage.getItem("kisa_gf"); if (GF_DEF[v]) GF = v; } catch (e) {}

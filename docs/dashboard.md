@@ -117,7 +117,7 @@
 
 | 무엇 | 어디 | 규칙 |
 | :--- | :--- | :--- |
-| 전역 항목 필터 | `js/core.js` `GF_DEF` · `GF`, 단추 = `js/main.js buildMode()` | 전체 · 화재 · 배회·침입 · 쓰러짐. 모든 탭에 적용, `localStorage kisa_gf` 에 기억. 계층별 이름(meta.item · 검수 item · 점수 카드 · 라벨 모드)은 `GF_DEF` 한 곳 |
+| 전역 항목 필터 | `js/core.js` `GF_DEF` · `GF`, 단추 = `js/main.js buildMode()` | 전체 · 화재 · 사람 · 쓰러짐(사람 = 침입 · 배회). 영상 검수 · 결과 · 히스토리 탭에 적용, `localStorage kisa_gf` 에 기억. 계층별 이름(meta.item · 검수 item)은 `GF_DEF` 한 곳 |
 | 데이터 확인 탭 | `js/main.js buildMode()` | 전역 필터와 무관. 늘 전체 원본, 필터를 바꿔도 보던 화면 그대로 |
 | 영상 검수 탭 | `js/review.js buildSrc()` · `serve_kisa.py review_models()` | 검수 항목 = 필터 안에서만. 그룹 이름표 = 블록 `[날짜] 제목` + 대조군 `meta.phase` 의 `phases` 이름표 |
 | 결과 탭 | `js/main.js nrDraw()` · `results_newdata.run()` | 비교 묶음 · 묶음 밖 실험을 필터로 거름(점수 카드 · 큐는 늘 전부). 실험마다 모델 · 단계 배지, 단계 고르기(`localStorage nr_ph`). `runs[판].phase` = `meta.phase` |
