@@ -610,6 +610,34 @@ body > div[style*="position: fixed"] button{font-family:inherit}
 .nr-tpop th,.nr-tpop td{padding:var(--s1) var(--s3) var(--s1) 0;text-align:left;vertical-align:top;border-top:1px solid var(--line);line-height:1.6}
 .nr-tpop th{font-family:var(--mono);white-space:nowrap;font-weight:600}
 .nr-tpop td:first-child{white-space:nowrap;width:1%}
+/* 데이터 확인 탭 '학습 데이터' 보기(2026-10-01, js/trainview.js) */
+.tv-seg{display:flex;flex:1}.tv-seg button{flex:1;height:var(--ctl-h);background:var(--panel);color:var(--mut);border:1px solid var(--line-ctl);margin-left:-1px;font-size:var(--fs-sm);font-weight:600;cursor:pointer}
+.tv-seg button:first-child{border-radius:var(--r) 0 0 var(--r);margin-left:0}.tv-seg button:last-child{border-radius:0 var(--r) var(--r) 0}
+.tv-seg button.on{background:var(--sel);border-color:var(--blue);color:var(--tx);position:relative;z-index:1}
+.tv-lab{display:block;margin:var(--s2) var(--s1) var(--s1);color:var(--mut);font-size:12px;font-weight:600}
+.tv-exp{width:100%;height:var(--ctl-h);background:var(--panel);color:var(--tx);border:1px solid var(--line-ctl);border-radius:var(--r);font-size:var(--fs-md)}
+.tv-note{margin:var(--s1);color:var(--mut);font-size:12px}
+.tv-role{flex:0 0 auto;color:var(--mut);font-size:12px;font-family:var(--font)}
+.tv{padding:var(--s3) var(--s4) var(--s6)}
+.tv-head{position:sticky;top:0;z-index:5;background:var(--bg);padding-bottom:var(--s2);display:flex;flex-direction:column;gap:var(--s2);border-bottom:1px solid var(--line)}
+.tv-title{display:flex;gap:var(--s2);align-items:baseline;flex-wrap:wrap;font-size:var(--fs-lg)}.tv-title .nr-mut{font-size:12px;font-family:var(--mono)}
+.tv-meta{font-size:12px}
+.tv-chips{display:flex;gap:var(--s1);flex-wrap:wrap;align-items:center}
+.tv-gl{width:72px;color:var(--mut);font-size:12px;font-weight:600}
+.tv-chip{height:var(--ctl-s);padding:0 var(--s2);background:var(--panel);color:var(--tx);border:1px solid var(--line-ctl);border-radius:var(--r);font-size:12px;cursor:pointer}
+.tv-chip.on{background:var(--sel);border-color:var(--blue)}
+.tv-pager{display:flex;gap:var(--s2);align-items:center;font-size:12px}.tv-pager button{height:var(--ctl-s);padding:0 var(--s3);background:var(--panel);color:var(--tx);border:1px solid var(--line-ctl);border-radius:var(--r);cursor:pointer}
+.tv-pager button:disabled{opacity:.4;cursor:default}
+.tv-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:var(--s2);margin-top:var(--s3)}
+.tv-cell{display:flex;flex-direction:column;gap:var(--s1);padding:var(--s1);background:var(--panel);border:1px solid var(--line);border-radius:var(--r-lg);color:var(--tx);text-align:left;cursor:pointer;min-width:0}
+.tv-cell.on{border-color:var(--blue)}
+.tv-img,.tv-big{position:relative;display:block;line-height:0}.tv-img img,.tv-big img{width:100%;border-radius:var(--r-sm);background:#000}
+.tv-svg{position:absolute;inset:0;width:100%;height:100%}
+.tv-cap{font-family:var(--mono);font-size:12px;color:var(--mut);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.tv-flags{display:flex;flex-wrap:wrap;gap:4px}.tv-flag{padding:0 6px;border-radius:999px;background:var(--t-miss);color:var(--miss);font-size:12px;line-height:20px}
+.tv-flag.s{background:var(--t-bad);color:var(--bad-tx)}
+.tv-path{font-family:var(--mono);font-size:12px;overflow-wrap:anywhere;margin:var(--s1) 0}
+.tv-tbl{width:100%;border-collapse:collapse;margin-top:var(--s2);font-size:12px;font-variant-numeric:tabular-nums}.tv-tbl th,.tv-tbl td{padding:2px 4px;border-top:1px solid var(--line);text-align:right}.tv-tbl th:first-child,.tv-tbl td:first-child{text-align:left}
 </style></head><body>
 <div class="top">
  <div class="brand" title="처음 화면으로" style="cursor:pointer" onclick="try{localStorage.removeItem('kisa_last_view')}catch(e){};location.href='/'">KISA 검수</div>
@@ -635,7 +663,7 @@ body > div[style*="position: fixed"] button{font-family:inherit}
  <div class="center" id="center"><div class="empty">항목을 선택하세요</div></div>
  <div class="right" id="right"><div class="empty">—</div></div>
 </div>
-<script src="js/host.js"></script><script src="js/core.js"></script><script src="js/review.js"></script><script src="js/data.js"></script><script src="js/editor.js"></script><script src="js/history.js"></script><script src="js/main.js"></script><script>
+<script src="js/host.js"></script><script src="js/core.js"></script><script src="js/review.js"></script><script src="js/data.js"></script><script src="js/editor.js"></script><script src="js/history.js"></script><script src="js/trainview.js"></script><script src="js/main.js"></script><script>
 // 창 크기 표시. 반응형이 걸렸는지 눈으로 확인하려고 둔다(2026-09-25).
 (function(){
  // 어느 서버인지 이름표. 세 서버에서 같은 화면이 떠서 헷갈린다(2026-09-25).

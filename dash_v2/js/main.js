@@ -30,6 +30,7 @@ function buildMode() {
 }
 function applyMode() {
   document.onkeydown = null;   // 편집기 밖에선 단축키 끄기
+  { const sr = document.getElementById("srcRow"); if (sr) sr.style.display = "flex"; }   // 학습 데이터 보기가 숨긴 드롭다운 줄을 되살린다(검수 탭도 이 줄을 쓴다)
   const wide = CUR.mode === "results" || CUR.mode === "history";   // 결과 · 히스토리 탭은 가운데만
   $("#right").hidden = wide;
   $(".left").style.display = wide ? "none" : "";   // 결과 탭은 결과만(왼쪽 패널째 숨김). .srcbox 의 display:flex 가 [hidden] 을 이겨 드롭다운이 남던 것도 여기서 끝(2026-09-29)

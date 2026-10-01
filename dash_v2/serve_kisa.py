@@ -2247,6 +2247,18 @@ class H(BaseHTTPRequestHandler):
             except Exception as ex:
                 body = {"error": f"{type(ex).__name__}: {ex}"}
             self._bytes(json.dumps(body, ensure_ascii=False).encode(), "application/json; charset=utf-8"); return
+        if p in ("/api/tv_exps", "/api/tv_set", "/api/tv_thumb"):   # 데이터 확인 탭 '학습 데이터' 보기(2026-10-01). 읽기만. 계산은 dash_v2/trainview.py
+            q = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
+            g = lambda k, d="": (q.get(k) or [d])[0]
+            try:
+                import trainview as _TV
+                if p == "/api/tv_thumb":
+                    data = _TV.thumb(g("p"), max(64, min(int(float(g("w", "320"))), 1600)))
+                    self._bytes(data, "image/jpeg") if data else self.send_error(404); return
+                body = _TV.exps() if p == "/api/tv_exps" else _TV.set_page(g("name"), g("flag", "sus"), max(0, int(g("offset", "0"))), max(1, min(int(g("limit", "60")), 200)))
+            except Exception as ex:
+                body = {"error": f"{type(ex).__name__}: {ex}"}
+            self._bytes(json.dumps(body, ensure_ascii=False).encode(), "application/json; charset=utf-8"); return
         if p == "/api/result_blocks":             # 결과 탭(2026-09-29 재설계): 새 데이터 판 비교 블록. 계산은 dash_v2/results_newdata.py
             try:
                 import results_newdata as _RN

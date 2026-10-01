@@ -38,6 +38,8 @@ async function buildDatasetSrc() {
   cb.onclick = async () => { cb.textContent = "\u2026"; try { await fetch("/api/refresh_cache", { method: "POST" }); } catch (e) {} SOURCES = null; DSMETA = null; buildDatasetSrc(); };
   sr.appendChild(cb);
   initPushButton();                               // 보내기 버튼은 이 줄(새로고침 왼쪽)에 붙는다
+  if (typeof tvToggle === "function") { tvToggle(kb); if (TV_ON) { tvEnter(); return; } }   // [원본 데이터 | 학습 데이터](trainview.js)
+  sr.style.display = "flex";
   // 드롭다운은 고른 쪽만
   if (DS_KIND === "raw") {
     $(".srcbox label").hidden = true;   // 드롭다운만 봐도 알아볼 수 있어 이름표를 안 둔다
