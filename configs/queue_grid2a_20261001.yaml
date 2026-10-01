@@ -1,0 +1,139 @@
+# 그리드 2단계 사람 데이터 요인 6판(2026-10-01). 대조군 = 1단계 승자 p1280_grid_b85_bg10_20260928, 판마다 base(학습 목록)만 다르다.
+# bg10hn = 울타리류 우선 배경 10% · notiny = 작은 사람 제거 · clean = 군중 제거 · cleannotiny = 둘 다 · bg15hn · bg20hn = 배경 15 · 20%.
+# 실행: exp_queue.py run 이 파일 --jobs 2 (판당 약 84GB). 채점 = 작업 PC eval_watch11. 만든 스크립트 /NHNHOME/make_grid2a_1001.py
+name: grid2a_20261001
+defaults:
+  val_small: 600
+  vram_gate_mib: 10000
+  min_free_gb: 150
+  ram_cache_max: 0
+  stagger_sec: 120
+  util_gate_pct: 30
+  util_window_min: 10
+experiments:
+- name: p1280_grid2_bg10hn_b85_20261001
+  model: yolo11s
+  item: 사람
+  phase: grid2
+  names:
+  - person
+  base: trainset_person_hnfix_full_bg10hn_20261001
+  extras: []
+  oversample: {}
+  val_set: data/학습데이터/trainset_person_hnfix_20260927/val_domain.txt
+  extra:
+    patience: 0
+    seed: 0
+  train:
+    multi_scale: 0.0
+    epochs: 60
+    cache: false
+    workers: 8
+    imgsz: 1280
+    batch: 85
+  need_mib: 84000
+- name: p1280_grid2_notiny_b85_20261001
+  model: yolo11s
+  item: 사람
+  phase: grid2
+  names:
+  - person
+  base: trainset_person_hnfix_full_bg10_notiny_20260930
+  extras: []
+  oversample: {}
+  val_set: data/학습데이터/trainset_person_hnfix_20260927/val_domain.txt
+  extra:
+    patience: 0
+    seed: 0
+  train:
+    multi_scale: 0.0
+    epochs: 60
+    cache: false
+    workers: 8
+    imgsz: 1280
+    batch: 85
+  need_mib: 84000
+- name: p1280_grid2_clean_b85_20261001
+  model: yolo11s
+  item: 사람
+  phase: grid2
+  names:
+  - person
+  base: trainset_person_hnfix_full_bg10_clean_20260930
+  extras: []
+  oversample: {}
+  val_set: data/학습데이터/trainset_person_hnfix_20260927/val_domain.txt
+  extra:
+    patience: 0
+    seed: 0
+  train:
+    multi_scale: 0.0
+    epochs: 60
+    cache: false
+    workers: 8
+    imgsz: 1280
+    batch: 85
+  need_mib: 84000
+- name: p1280_grid2_cleannotiny_b85_20261001
+  model: yolo11s
+  item: 사람
+  phase: grid2
+  names:
+  - person
+  base: trainset_person_hnfix_full_bg10_clean_notiny_20260930
+  extras: []
+  oversample: {}
+  val_set: data/학습데이터/trainset_person_hnfix_20260927/val_domain.txt
+  extra:
+    patience: 0
+    seed: 0
+  train:
+    multi_scale: 0.0
+    epochs: 60
+    cache: false
+    workers: 8
+    imgsz: 1280
+    batch: 85
+  need_mib: 84000
+- name: p1280_grid2_bg15hn_b85_20261001
+  model: yolo11s
+  item: 사람
+  phase: grid2
+  names:
+  - person
+  base: trainset_person_hnfix_full_bg15hn_20261001
+  extras: []
+  oversample: {}
+  val_set: data/학습데이터/trainset_person_hnfix_20260927/val_domain.txt
+  extra:
+    patience: 0
+    seed: 0
+  train:
+    multi_scale: 0.0
+    epochs: 60
+    cache: false
+    workers: 8
+    imgsz: 1280
+    batch: 85
+  need_mib: 84000
+- name: p1280_grid2_bg20hn_b85_20261001
+  model: yolo11s
+  item: 사람
+  phase: grid2
+  names:
+  - person
+  base: trainset_person_hnfix_full_bg20hn_20261001
+  extras: []
+  oversample: {}
+  val_set: data/학습데이터/trainset_person_hnfix_20260927/val_domain.txt
+  extra:
+    patience: 0
+    seed: 0
+  train:
+    multi_scale: 0.0
+    epochs: 60
+    cache: false
+    workers: 8
+    imgsz: 1280
+    batch: 85
+  need_mib: 84000

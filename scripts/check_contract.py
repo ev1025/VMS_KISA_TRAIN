@@ -53,13 +53,17 @@ def check_metas(metas, phases):
 
 
 def check_blocks(blocks_doc, metas):
-    """3. 블록마다 control ∈ runs. 블록 단계 = 대조군 meta.phase (표: 블록 id → 단계 또는 없음)"""
+    """3. 블록마다 control ∈ runs. 블록 단계 = 블록의 phase(선택 키), 없으면 대조군 meta.phase (표: 블록 id → 단계 또는 없음)
+    2단계 블록은 대조군이 1단계 판이라 블록에 phase 를 적는다. 적은 값은 phases 코드여야 한다"""
+    phases = blocks_doc.get("phases") if isinstance(blocks_doc.get("phases"), dict) else {}
     bad = []
     for b in blocks_doc.get("blocks") or []:
         bid, ctrl = b.get("id"), b.get("control")
         if ctrl not in (b.get("runs") or {}):
             bad.append(f"블록 {bid}: control={ctrl!r} 가 runs 에 없음")
-        ph = (metas.get(ctrl) or {}).get("phase")
+        if b.get("phase") is not None and b["phase"] not in phases:
+            bad.append(f"블록 {bid}: phase={b['phase']!r} 는 phases 에 없음")
+        ph = b.get("phase") or (metas.get(ctrl) or {}).get("phase")
         print(f"  {str(bid):40} {ph or '없음'}")
     return bad
 
@@ -185,6 +189,8 @@ def selfcheck():
         assert check_phases({"phases": {"grid1": 1}}), "phases 값이 문자열이 아닌 것을 못 잡음"
         assert check_metas({"r9": {"phase": "grid9"}}, phases), "meta 의 모르는 phase 를 못 잡음"
         assert check_blocks({"blocks": [{"id": "b", "control": "zz", "runs": {"r1": ""}}]}, ok_metas), "control ∉ runs 를 못 잡음"
+        assert check_blocks({"phases": phases, "blocks": [{"id": "b", "phase": "grid9", "control": "r1", "runs": {"r1": ""}}]}, ok_metas), "블록의 모르는 phase 를 못 잡음"
+        assert not check_blocks({"phases": phases, "blocks": [{"id": "b", "phase": "grid1", "control": "r1", "runs": {"r1": ""}}]}, ok_metas), "블록 phase 가 멀쩡한데 걸림"
         assert check_history(hist({"id": "a", "s": "진행", "dec": "채택", "t": "x"}), phases), "완료 아닌 항목의 dec 를 못 잡음"
         assert check_history(hist({"id": "a", "s": "완료", "dec": "확인 중", "t": "x"}), phases), "HS_DEC 밖 dec 를 못 잡음"
         assert check_history(hist({"id": "a", "s": "할 일", "t": "x"}, {"id": "a", "s": "할 일", "t": "y"}), phases), "id 중복을 못 잡음"

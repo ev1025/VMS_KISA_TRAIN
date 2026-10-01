@@ -77,7 +77,8 @@
 
 - 바뀐 것:
   - `results/<실험>/meta.json` 선택 키 `phase`. 쓰는 곳 = `scripts/exp_queue.py write_meta()`, 값 = 큐 yaml 실험 항목의 `phase`. 없음 = 그리드 밖
-  - `configs/result_blocks.yaml` 최상위 `phases` 표(코드 → 화면 이름표). 선택 키 `judge.tried[].phase`
+  - `configs/result_blocks.yaml` 최상위 `phases` 표(코드 → 화면 이름표). 선택 키 `judge.tried[].phase` · `blocks[].phase`
+  - `blocks[].phase`: 블록의 단계. 없으면 대조군 판의 `meta.phase`. 2단계 블록은 대조군이 1단계 판이라 블록에 적는다(10-01 오후 추가: `grid2_person_bg_hn` · `grid2_person_crowd_tiny` · `grid1_res_batch_fire`)
 
   | 코드 | 이름표 |
   |---|---|
@@ -89,9 +90,9 @@
 
   - 소급 규칙: `configs/queue_grid1*.yaml` 에 든 끝난 판 → `"phase": "grid1"`. 나머지는 비움(그리드 밖)
 - 영향:
-  - `/api/result_blocks`: `phases` 는 YAML 그대로 실림(풀스택 코드 수정 없음). `results_newdata.run()` 응답에 `phase` 1줄 노출 필요
+  - `/api/result_blocks`: `phases` 는 YAML 그대로 실림(풀스택 코드 수정 없음). `results_newdata.run()` 응답에 `phase` 1줄 노출 필요. `block()` 의 키 튜플에 `phase` 추가 1줄(없으면 대조군 run 의 phase 로)
   - 결과 탭: 단계 필터 · 배지. 검수 탭: 그룹 이름표
-- 옮기기: 바뀐 `meta.json` 은 서버 B `results/<실험>/` 로 복사(ML). 10-01 소급 14판: grid1a~d · fire_map50 큐의 끝난 판 전부(`f640_grid_b720_20260930` 은 학습 중이라 끝난 뒤 소급)
+- 옮기기: 바뀐 `meta.json` 은 서버 B `results/<실험>/` 로 복사(ML). 10-01 소급 15판: grid1a~d · fire_map50 큐의 끝난 판 전부(`f640_grid_b720_20260930` 포함, 13:26 종료 뒤 소급). 같은 날 grid1c · grid1d · mAP50 판 6개의 `status` 를 `done` → `trained` 로 맞춤(SCORE_ON_THOR 표식 누락으로 서버가 채점해 검수 · 결과 탭 대상에서 빠져 있었음)
 - 쓴 사람: ML 세션
 - 확인: 2026-10-01 dash_v2 139c7b9
 
