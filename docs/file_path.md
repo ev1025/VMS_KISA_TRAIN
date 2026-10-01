@@ -39,6 +39,7 @@ KP.DEFAULT_IMGSZ    # 기본 입력 크기 (640)
 | 위치 | 담는 것 | 비고 |
 | --- | --- | --- |
 | 루트 (`model.py`, `score_kisa.py` 등) | 주 실행 진입점 | 위치 이동 불가 (상대경로 러너 및 프로세스명 추적 목적) |
+| 루트 (`sync_context_for_fullstack.md`, `ml_changelog.md`) | ML ↔ 대시보드 세션 인수인계 · 변경 기록 | 사용자 지정 위치(2026-10-01). `check_layout.py` 는 루트 `.py` 만 검사 |
 | `scripts/` | 파이프라인 스크립트 | 새 스크립트는 이곳에 생성 (루트 생성 금지) |
 | `scripts/_archive/<날짜>/` | 일회성·탐색 스크립트 보관 | 삭제 대신 이곳으로 이동 |
 | `scripts/data_prep/` | 데이터 준비 단계 스크립트 |  |

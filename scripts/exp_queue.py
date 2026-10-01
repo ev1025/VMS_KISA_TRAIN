@@ -476,6 +476,7 @@ def _read_source(name):
 def write_meta(exp, defaults, n_train, pt, started, status):
     rdir = V / "results" / exp["name"]; rdir.mkdir(parents=True, exist_ok=True)
     meta = {"name": exp["name"], "item": exp.get("item", "방화"), "model": exp["model"],
+            "phase": exp.get("phase"),      # 그리드 단계 코드(configs/result_blocks.yaml phases). 없으면 null = 그리드 밖(계약 v1, 2026-10-01)
             "base": exp.get("base", defaults.get("base")), "extras": exp.get("extras", []),
             "oversample": dict(defaults.get("oversample", {}), **exp.get("oversample", {})),
             "train": dict(defaults.get("train", {}), **exp.get("train", {})),
