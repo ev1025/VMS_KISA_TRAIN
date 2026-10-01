@@ -23,8 +23,7 @@ function buildMode() {
     b.onclick = () => {
       if (GF === k) return;
       GF = k; try { localStorage.setItem("kisa_gf", k); } catch (e) {}
-      applyMode._first = true;                       // 필터를 바꾸면 보던 영상으로 되돌리지 않는다(목록만 바뀌고 가운데는 옛 영상이 남던 것). 새 목록의 첫 영상이 열린다
-      buildMode(); applyMode();
+      buildMode(); if (CUR.mode !== "data") applyMode();   // 데이터 확인 탭은 필터와 무관(보던 화면 그대로)
     };
     g.appendChild(b);
   });
