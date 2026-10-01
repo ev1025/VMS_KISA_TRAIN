@@ -20,7 +20,7 @@ from pathlib import Path
 import yaml
 
 ROOT = Path(os.environ.get("VMS_ROOT") or Path(__file__).resolve().parents[1])
-HS_ST = ("완료", "진행", "할 일", "아이디어")        # 히스토리 상태(계약 v2: 아이디어 추가)
+HS_ST = ("완료", "진행", "할 일")                    # 히스토리 상태(계약 v3: 아이디어를 없앰, 전부 할 일)
 HS_DEC = ("채택", "기각", "보류")                    # 판정. 완료 항목에만
 HS_ITEM = ("방화", "사람", "쓰러짐", "공통")          # 히스토리 item(선택 키)
 ITEM_DIRS = {"사람": ("intrusion", "loitering"), "침입": ("intrusion",), "배회": ("loitering",),
@@ -107,8 +107,8 @@ def review_table(blocks_doc, metas, root):
 
 
 def check_changelog(md, serve_src):
-    """6. ml_changelog.md 맨 위 vN = 머리 '계약 버전' = serve_kisa.py CONTRACT_VER(상수가 없으면 경고만).
-    '- 확인:' 이 빈 항목은 미확인 목록으로 찍음"""
+    """6. ml_changelog.md 맨 위 vN = 머리 '계약 버전'. serve_kisa.py CONTRACT_VER = 확인 줄이 채워진 가장 높은 번호(상수가 없으면 경고만).
+    '- 확인:' 이 빈 항목은 미확인 목록으로 찍고 위반으로 치지 않는다(풀스택 반영 대기)"""
     parts = RE_ENTRY.split(md)               # [머리, 번호, 본문, 번호, 본문, ...]
     if len(parts) < 3:
         return ["ml_changelog.md: '## vN · 날짜 · 제목' 항목이 없음"]
@@ -119,9 +119,10 @@ def check_changelog(md, serve_src):
     ver = RE_VER.search(serve_src)
     if not ver:
         print(f"  경고: dash_v2/serve_kisa.py 에 CONTRACT_VER 없음(풀스택 반영 전). changelog 맨 위 = v{top}")
-    elif int(ver.group(1)) != top:
-        bad.append(f"ml_changelog.md 맨 위 v{top} ≠ serve_kisa.py CONTRACT_VER = {ver.group(1)}")
     pend = [f"v{parts[i]}" for i in range(1, len(parts), 2) if re.search(r"^- 확인:\s*$", parts[i + 1], re.M)]
+    conf = max([int(parts[i]) for i in range(1, len(parts), 2) if f"v{parts[i]}" not in pend] or [0])   # 풀스택이 확인한 가장 높은 번호
+    if ver and int(ver.group(1)) != conf:
+        bad.append(f"serve_kisa.py CONTRACT_VER = {ver.group(1)} ≠ changelog 에서 확인된 가장 높은 번호 v{conf}")
     print(f"  미확인: {' · '.join(pend) or '없음'}")
     return bad
 
@@ -171,7 +172,7 @@ def selfcheck():
     ok_metas = {"r1": {"item": "사람", "status": "trained", "phase": "grid1"}, "r2": {"item": "사람", "status": "trained"}}
     ok_hist = {"days": [{"date": "2026-10-01", "items": [
         {"id": "a1", "s": "완료", "dec": "채택", "t": "x", "item": "사람", "phase": "grid1"},
-        {"id": "a2", "s": "아이디어", "t": "y"}]}]}
+        {"id": "a2", "s": "할 일", "t": "y"}]}]}
     ok_md = "계약 버전: v2\n\n## v2 · 2026-10-01 · 둘\n- 확인: 2026-10-01 dash_v2 abc1234\n## v1 · 2026-10-01 · 하나\n- 확인:\n"
     ok_src = "PORT = 8890\nCONTRACT_VER = 2\n"
 
@@ -199,6 +200,10 @@ def selfcheck():
         assert check_history(hist({"id": "a", "s": "검토", "t": "x"}), phases), "HS_ST 밖 상태를 못 잡음"
         assert check_history({"days": [hist()["days"][0], hist()["days"][0]]}, phases), "날짜 중복을 못 잡음"
         assert check_changelog(ok_md, "CONTRACT_VER = 1\n"), "changelog ↔ CONTRACT_VER 불일치를 못 잡음"
+        wait_md = "계약 버전: v3\n\n## v3 · d · t\n- 확인:\n## v2 · d · t\n- 확인: 2026-10-01 dash_v2 abc1234\n"
+        assert not check_changelog(wait_md, ok_src), "확인 전 항목(v3)을 위반으로 침"
+        assert check_changelog(wait_md, "CONTRACT_VER = 3\n"), "확인 줄 없이 CONTRACT_VER 만 올린 것을 못 잡음"
+        assert check_history(hist({"id": "a", "s": "아이디어", "t": "x"}), phases), "없앤 상태(아이디어)를 못 잡음"
         assert check_changelog("계약 버전: v1\n\n## v2 · d · t\n- 확인:\n", ok_src), "머리 계약 버전 불일치를 못 잡음"
         assert check_changelog("아무 항목 없음\n", ok_src), "항목 없는 changelog 를 못 잡음"
     print("자체 점검 통과")
