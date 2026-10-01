@@ -298,7 +298,7 @@ function catModeRow(rel, onApply) {
   return row;
 }
 // ---------- 클립 상태(표시 기본/전파/손 + 전파 구간) ----------
-// 서버 저장이라 다른 PC·Thor 에서도 같이 보인다(손라벨 폴더에 있어 '서버로 라벨 보내기' 에 같이 간다).
+// 서버 저장이라 다른 PC 에서도 같이 보인다(손라벨 폴더에 있어 '서버로 라벨 보내기' 에 같이 간다).
 let CLIPST = {};                       // stem -> {mark, a, b, smoke}   smoke:"todo" = 불은 쳤고 연기가 아직 덜 쳐진 편
 const MARK_TXT = { hand: "완료", prop: "전파" };   // 저장값은 hand 그대로(이미 적힌 것·병합 규칙이 그 값을 쓴다)
 const MARK_COL = { hand: "#3fb950", prop: "#f85149" };
@@ -524,7 +524,7 @@ async function showDatasetImage(d, im) {
   }
 }
 
-// ---------- 서버와 라벨 맞추기 (Thor 등 보내는 쪽에서만 보인다) ----------
+// ---------- 서버와 라벨 맞추기 (라벨 작업대 = 보내는 쪽에서만 보인다) ----------
 // 양쪽으로 합친다. 겹치는 값은 이 장비가 이긴다.
 // 먼저 미리보기(합치지 않고 무엇이 오갈지만)를 보여주고, 한 번 더 누르면 실제로 합친다.
 async function initPushButton() {

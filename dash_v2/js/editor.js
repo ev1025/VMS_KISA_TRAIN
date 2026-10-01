@@ -256,7 +256,7 @@ function samState(clip) {
   delete st.result; st.propFrames = [];               // propFrames 는 저장소 기준으로 다시 맞춘다(syncSam)
   SAMST[clip] = st; pullRange(clip); return st;      // 이 브라우저에 없던 구간은 서버 값으로 채운다
 }
-function pushRange(clip) {                            // 전파 구간을 서버에 적는다(브라우저에만 있으면 Thor 로 안 간다)
+function pushRange(clip) {                            // 전파 구간을 서버에 적는다(브라우저에만 있으면 다른 장비로 안 간다)
   const st = SAMST[clip]; if (!st) return;
   const stem = clip.split("/").pop().replace(/\.mp4$/, "");
   if (typeof saveClipState === "function") saveClipState(stem, { a: st.a == null ? null : st.a, b: st.b == null ? null : st.b });
@@ -275,7 +275,7 @@ function persistSam(clip) {                           // 참조샷·객체·구�
     const st = SAMST[clip]; if (!st) return;
     const seeds = st.seeds.map(q => ({ t: q.t, obj: q.obj, box: q.box, pts: q.pts || [], fromHand: !!q.fromHand, fromGT: !!q.fromGT }));   // 폴리곤·박스 인덱스는 다시 계산되니 제외
     try { localStorage.setItem("kisa_sam_" + clip.split("/").pop(), JSON.stringify({ seeds, objs: st.objs, cur: st.cur, a: st.a, b: st.b })); } catch (e) {}
-    pushRange(clip);                                  // 구간은 서버에도 적는다(다른 장비·Thor 와 맞추려고)
+    pushRange(clip);                                  // 구간은 서버에도 적는다(다른 장비와 맞추려고)
   }, 300);
 }
 const iou4 = (a, b) => { const x1 = Math.max(a[0], b[0]), y1 = Math.max(a[1], b[1]), x2 = Math.min(a[0] + a[2], b[0] + b[2]), y2 = Math.min(a[1] + a[3], b[1] + b[3]); const inter = Math.max(0, x2 - x1) * Math.max(0, y2 - y1); return inter / (a[2] * a[3] + b[2] * b[3] - inter || 1); };   // [x,y,w,h] 두 박스의 IoU
