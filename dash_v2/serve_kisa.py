@@ -562,7 +562,7 @@ _RV_NAME = re.compile(r"^[A-Za-z0-9_.\-]+$")
 # ---------------------------------------------------------------- 히스토리 탭(2026-09-30): 모델 개선 기록, 사용자가 고친다
 HISTORY = G / "configs/history.yaml"
 CONTRACT_VER = 2                                       # ml_changelog.md 맨 위 vN 과 같아야 한다(scripts/check_contract.py 가 대조)
-HS_ST, HS_DEC = ("아이디어", "할 일", "진행", "완료"), ("채택", "기각", "보류")   # 칸반 열 순서(계약 v2)
+HS_ST, HS_DEC = ("할 일", "진행", "완료"), ("채택", "기각", "보류")   # 계약 v3(2026-10-01): 아이디어 삭제. 할지 덜 정한 것도 할 일 + cond, 판정으로 가른다
 HS_ITEM = ("방화", "사람", "쓰러짐", "공통")
 HS_KEYS = ("id", "s", "dec", "t", "why", "sub", "ref", "cond", "carry", "item", "phase")
 
@@ -721,10 +721,12 @@ def review_models(tab_item):
         import yaml
         have = {m["exp"] for m in out}
         cfg = yaml.safe_load((G / "configs/result_blocks.yaml").read_text(encoding="utf-8")) or {}
+        import results_newdata as _RN
+        _E = _RN._entries()
         for b in cfg.get("blocks") or []:
             runs = [b["control"], *b["runs"]]
             if have & set(runs):
-                ph = (cfg.get("phases") or {}).get((_rv_json(G / "results" / b["control"] / "meta.json") or {}).get("phase"))   # 블록 단계 = 대조군의 단계
+                ph = (cfg.get("phases") or {}).get(_RN.block_phase(b, _E))   # 묶음 단계 = 견주는 실험들의 공통 단계(결과 탭과 같은 규칙)
                 groups.append({"id": b["id"], "label": f"[{b.get('date', '')}] {b.get('title', '')}" + (f" · {ph}" if ph else ""), "runs": runs})
     except Exception:
         groups = []

@@ -121,9 +121,28 @@
 | 데이터 확인 탭 | `js/main.js buildMode()` | 전역 필터와 무관. 늘 전체 원본, 필터를 바꿔도 보던 화면 그대로 |
 | 영상 검수 탭 | `js/review.js buildSrc()` · `serve_kisa.py review_models()` | 검수 항목 = 필터 안에서만. 그룹 이름표 = 블록 `[날짜] 제목` + 대조군 `meta.phase` 의 `phases` 이름표 |
 | 결과 탭 | `js/main.js nrDraw()` · `results_newdata.run()` | 비교 묶음 · 묶음 밖 실험을 필터로 거름(점수 카드 · 큐는 늘 전부). 실험마다 모델 · 단계 배지, 단계 고르기(`localStorage nr_ph`). `runs[판].phase` = `meta.phase` |
-| 히스토리 탭 | `js/history.js` · `serve_kisa.py _hs_clean()` | 날짜별 보기 하나(칸반은 10-01 넣었다가 같은 날 뺌). 상태 카드 = 전체 · 아이디어 · 할 일 · 진행 중 · 완료, 맨 위 Quick Add = `{id, s: 아이디어, t}`(+ 필터 항목이면 `item`). `item` · `phase` 배지 |
+| 히스토리 탭 | `js/history.js` · `serve_kisa.py _hs_clean()` | 날짜별 보기 하나(칸반은 10-01 넣었다가 같은 날 뺌). 상태 카드 = 전체 · 할 일 · 진행 중 · 완료, 맨 위 입력칸 = `{id, s: 할 일, t}`(+ 필터 항목이면 `item`). 알림은 9절. `item` · `phase` 배지 |
 | 히스토리 검증 | `_hs_clean()` | `item` ∈ 방화 · 사람 · 쓰러짐 · 공통(없으면 공통), `phase` ∈ `result_blocks.yaml phases` 코드 |
 | 단계 이름표 | GET `/api/history` 응답 `phases`, `/api/result_blocks` 응답 `phases` | `configs/result_blocks.yaml phases` 값 그대로. 응답에만 실리고 `history.yaml` 에는 안 들어감 |
 
 * 배포: 서버 A 는 `dash_v2/` 에서 pid 로 끄고 `nohup ../.venv/bin/python -u serve_kisa.py >> ../logs/dash/serve_kisa.log 2>&1 < /dev/null &`, 서버 B 는 파일 복사(`js/host.js` 제외) 뒤 `./dash.sh stop` · `./dash.sh start` 따로. 둘 다 `/api/sam2_jobs` 가 빈 것을 먼저 확인.
 * 확인: 서버 B 에서 임시 항목(`item` · `phase` 포함) 저장 → 다시 읽기 → 삭제. 서버 A `/api/history` 는 `readonly: true`.
+
+---
+
+## 9. 알림 창 (2026-10-01)
+히스토리 날짜마다 적힌 알림(`configs/history.yaml` 의 `days[].milestones` = `[{at, text}]`)은 히스토리 목록에 그리지 않는다. 머리줄 '알림' 단추로 여는 창에 모았다. 저장 칸 · 저장 방식(문서 통째로 POST `/api/history`)은 그대로다.
+
+| 무엇 | 어디 | 규칙 |
+| :--- | :--- | :--- |
+| 단추 | `dashboard.html` `#ntBtn` · `#ntCnt` | 종 그림 + '알림' + '오늘 N'(오늘 알림 수, 0 이면 없음). 어느 탭에서든 보임. 히스토리를 못 읽는 서버 · 라벨 작업대에서는 숨김. 히스토리 탭이 아니고 창이 닫혀 있으면 60초마다 문서를 다시 읽어 숫자를 맞춤 |
+| 창 | `dashboard.html` `#ntPanel`(브라우저 `popover`), `js/history.js` `ntInit()` · `ntRender()` | 열기 · 닫기(단추 · Esc · 바깥 누르기 · '닫기') · 초점 되돌리기는 브라우저가 함. 최근 날짜 먼저, 같은 날짜 안에서는 나중에 적은 것 먼저. `.nt-panel` 에 `display` 를 주면 닫힌 창이 보이므로 주지 않음 |
+| 추가 · 삭제 | `ntRender()` | 고칠 수 있는 서버(서버 B)만. 추가 = 날짜 · 시각 · 이름 · 내용(내용이 비면 서버가 버리므로 화면에서 막음), 삭제 = '지우기' + 확인. 사본(`hsCopy()`)에 고쳐 보내므로 저장이 안 되면 화면의 문서는 그대로(다시 눌러도 중복 없음), 쓰던 입력도 남음. 알림만 있던 빈 날짜는 마지막 알림을 지울 때 같이 지움(`note` 가 있으면 둠) |
+| 문서 읽기 | `hsLoad()` | 화면을 건드리지 않고 문서만 읽음. 히스토리 탭이 아닌 곳에서 창을 열 때마다 새로 읽음(히스토리 탭에서는 화면의 문서를 그대로 씀) |
+| 저장 뒤 화면 | `hsSave()` | 가운데 화면은 히스토리 탭일 때만 다시 그림(다른 탭에서 알림을 저장해도 그 탭은 그대로). 단추 숫자 · 열린 창은 `ntSync()` 가 갱신 |
+| 고치던 칸 보호 | `hsBusy()` | 히스토리 항목 고치기 칸이 열려 있으면 알림 추가 · 삭제, 아이디어 빠른 추가, 날짜 추가를 막고 먼저 저장 · 취소하게 함(통째 저장이 칸을 닫아 입력이 날아가는 것 방지) |
+| 목록에 보일 날짜 | `hsVis()` | 항목이 있거나, 알림도 없는 날짜만. 알림만 있는 날짜는 창에만 나옴. 그 날짜를 '+ 날짜' 로 넣으면 새 항목 칸이 열림 |
+
+* 결과 탭 단계 배지(같은 날 고침): 실험 단계 = `meta.json` 의 `phase`, 없으면(대기 · 학습 중) 큐 항목의 `phase`. 비교 묶음 단계 = 견주는 실험(기준 실험 제외)이 모두 같은 단계일 때 그 단계(`results_newdata.block_phase()`), 섞였으면 배지 없음. 기준 실험의 단계로 정하면 2단계 묶음이 1단계로 나온다. 단계 고르기와 검수 탭 묶음 이름표도 같은 규칙.
+
+* 계약 v3(같은 날): 히스토리 상태 '아이디어' 삭제. 상태 = 할 일 · 진행 · 완료, 상태 카드 = 전체 · 할 일 · 진행 중 · 완료, 맨 위 입력칸은 `{id, s: "할 일", t}`(+ 전역 필터 항목)로 저장(`serve_kisa.py HS_ST`, `js/history.js HS_ST`).

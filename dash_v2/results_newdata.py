@@ -53,6 +53,27 @@ def _item(c):
     return "방화" if c.get("item") == "방화" else "사람"
 
 
+def _one(vals):
+    """값이 모두 같으면 그 값, 섞였거나 없으면 None"""
+    s = set(vals)
+    return s.pop() if len(s) == 1 else None
+
+
+def phase_of(exp, E):
+    """실험의 단계 코드. 끝난 판 = meta.json, 대기 · 학습 중(meta 없음) = 큐 항목. 없으면 None(그리드 밖)"""
+    try:
+        meta = json.loads((G / "results" / exp / "meta.json").read_text(encoding="utf-8")) or {}
+    except Exception:
+        meta = {}
+    return meta.get("phase") or (E.get(exp) or {}).get("phase")
+
+
+def block_phase(b, E):
+    """비교 묶음의 단계 = 견주는 실험(기준 실험 제외)이 모두 같은 단계일 때 그 코드.
+    기준 실험은 앞 단계 판일 수 있어(2단계 묶음의 기준 = 1단계 판) 기준 실험의 단계로 정하면 틀린다(2026-10-01)"""
+    return _one(phase_of(x, E) for x in b["runs"] if x != b["control"])
+
+
 def _info(exp):
     """results/<실험>/run_info.json: 학습 서버에서 한 번 적어 두는 학습 인자 · 검증셋 · 돈 에폭 요약.
     runs/ · _exp/ · logs/ 가 없는 사본(서버 B)은 이것을 읽는다(2026-09-29)."""
@@ -165,7 +186,7 @@ def run(exp, E):
         (G / "results" / exp / "run_info.json").write_text(json.dumps(ri, ensure_ascii=False), encoding="utf-8")
     return {"exp": exp, "item": item, "items": ITEMS[item], "status": st, "new": bool(c) and RC._current(dict(c, item=item)),
             "data": _data(c), "n_train": n, "args": args, "planned": planned, "epochs_run": ep, "val": val,
-            "ended": meta.get("ended"), "phase": meta.get("phase"), "scores": sc, "lo": {it: lo_ck(sc, it) for it in ITEMS[item]}}
+            "ended": meta.get("ended"), "phase": meta.get("phase") or e.get("phase"), "scores": sc, "lo": {it: lo_ck(sc, it) for it in ITEMS[item]}}
 
 
 def verdict(r, c):
@@ -206,6 +227,7 @@ def block(b, R):
     val_known = rs[0]["val"]["key"] and _same(known) and len(known) == len(rs)
     return {**{k: b.get(k) for k in ("id", "date", "title", "question", "iv", "rule_extra", "same_data", "conclusion", "note")},
             "control": ids[0], "members": ids[1:], "labels": b["runs"], "item": rs[0]["item"],
+            "phase": _one(R[x]["phase"] for x in ids[1:]),                # 묶음 단계 = 견주는 실험들의 공통 단계(block_phase 와 같은 규칙)
             "same": {"train": [[k, rs[0]["args"][k]] for k in SHOW if k in same],
                      "rest": len([k for k in same if k not in SHOW]),
                      "data": common, "data_all": "data" not in {d["key"] for d in diffs},
@@ -281,6 +303,8 @@ if __name__ == "__main__":
     a = {"status": "done", "items": ["fire"], "lo": {"fire": "last"}, "scores": {"fire": {"last": {"tp": 7}}}}
     c = dict(a, scores={"fire": {"last": {"tp": 6}}})
     assert verdict(a, c)["call"] == "동률" and verdict(dict(a, scores={"fire": {"last": {"tp": 8}}}), c)["call"] == "개선"
+    assert _one(["grid2", "grid2"]) == "grid2" and _one(["grid1", None]) is None and _one([]) is None and _one([None]) is None
+    assert block_phase({"control": "c", "runs": {"c": "", "m1": "", "m2": ""}}, {"c": {"phase": "grid1"}, "m1": {"phase": "grid2"}, "m2": {"phase": "grid2"}}) == "grid2"
     D = build()
     for b in D["blocks"]:
         print(b["title"], "| 대조군", b["control"], "| 통제 학습 설정", b["same"]["train"], "외", b["same"]["rest"], "| 검증셋", b["same"]["val"])

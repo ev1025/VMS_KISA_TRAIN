@@ -190,7 +190,7 @@ function nrBlock(b, D, q) {
   const chips = b.members.map(x => { const v = b.verdicts[x], r = D.runs[x];     // 접었을 때도 판정이 보이게
     return v ? `<span class="nr-chip ${v.call === "동률" ? "tie" : v.call === "개선" ? "win" : "lose"}">${v.call}</span>`
       : `<span class="nr-chip wait">${r.status === "train" ? "학습 중" : r.status === "queue" ? "대기" : "채점 대기"}</span>`; }).join("");
-  return `<details class="nr-block" data-id="${nrEsc(b.id)}"${nrOpen.has(b.id) ? " open" : ""}><summary class="nr-bt">${nrEsc(b.date ? `[${b.date}] ` : "")}${nrEsc(b.title)}<span class="nr-sum">${nrPhBdg(D, D.runs[b.control].phase)}${chips}</span></summary><div class="nr-body">` +
+  return `<details class="nr-block" data-id="${nrEsc(b.id)}"${nrOpen.has(b.id) ? " open" : ""}><summary class="nr-bt">${nrEsc(b.date ? `[${b.date}] ` : "")}${nrEsc(b.title)}<span class="nr-sum">${nrPhBdg(D, b.phase)}${chips}</span></summary><div class="nr-body">` +
     (b.question ? `<p class="nr-q"><b>목적:</b> ${nrEsc(b.question)}</p>` : "") + nrCond(b, D) +
     `<div class="nr-tbl"><table>${head}${rows}</table></div>` +
     (concl.length ? `<div class="nr-note"><b>결론</b>${nrList(concl.map(nrEsc))}</div>` : "") + "</div></details>";
@@ -291,7 +291,7 @@ function nrDraw(D, q) {                           // 전역 항목 필터 · 단
   const phf = `<div class="nr-phf"><label for="nrPh">단계</label><select id="nrPh"><option value="">전체</option>` +
     Object.entries(D.phases || {}).filter(([k]) => used.has(k)).map(([k, v]) => `<option value="${nrEsc(k)}"${k === NR_PH ? " selected" : ""}>${nrEsc(v)}</option>`).join("") +
     `<option value="_none"${NR_PH === "_none" ? " selected" : ""}>단계 없음</option></select></div>`;
-  const blocks = D.blocks.filter(b => gfMeta(b.item) && [b.control, ...b.members].some(x => nrPhOk(D.runs[x])));
+  const blocks = D.blocks.filter(b => gfMeta(b.item) && b.members.some(x => nrPhOk(D.runs[x])));   // 단계는 견주는 실험 기준(기준 실험은 앞 단계 판일 수 있다)
   const body = blocks.map(b => nrBlock(b, D, q)).join("") + nrOthers(D, q);
   c.innerHTML = `<div class="nr"><div class="nr-top">${nrScoreCard(D.score || [])}<div class="nr-queue" id="nrQ">${nrQueueHtml(q)}</div>` +   // 위에 고정: 항목별 최고 점수 · 큐(항상 펼침) · 용어 정리
     nrTerms(D.terms || []) + phf + `</div>` + (body || '<div class="empty">이 조건인 실험 없음</div>') + "</div>";
@@ -337,6 +337,7 @@ async function boot() {
   try { DATASETS = await (await fetch("/api/datasets")).json(); } catch (e) { DATASETS = {}; }   // 데이터 규격(카테고리별 mode·gt·use)
   for (const [k, v] of Object.entries(META.items)) v.rows.forEach(row => row.item = k);
   try { IS_BENCH = !!(await (await fetch("/api/pushinfo")).json()).enabled; } catch (e) { IS_BENCH = false; }
+  if (!IS_BENCH) ntInit();              // 머리줄 알림 단추(history.js). 작업대에는 히스토리가 없다
   const last = (typeof loadSession === "function") ? loadSession() : {};
   if (["data", "review", "results", "history"].includes(last.mode)) CUR.mode = last.mode;
   if (IS_BENCH) CUR.mode = "data";     // 작업대엔 다른 탭이 없다(지난 세션이 검수였어도 데이터 확인으로)
