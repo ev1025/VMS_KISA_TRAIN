@@ -205,10 +205,14 @@ function nrOthers(D, q) {                        // 블록에 아직 안 넣은 
     `<p class="nr-q">비교 묶음에 추가 시 위로 이동</p>` +
     `<div class="nr-tbl"><table><tr><th>실험</th><th>항목</th><th>해상도 / 배치</th><th>학습 데이터</th><th>상태</th><th>학습 종료</th><th>F1 best / last</th><th>3규칙 F1<br>${nrMut("초당 2장 · 시작 0")}</th></tr>${rows}</table></div></div></details>`;
 }
+const nrTermD = d => {                           // 풀이 안의 'X = …' 정의는 한 줄씩 불릿으로(10-01 사용자: 한 줄로 이어 붙이면 읽기 어렵다). 앞 문장은 머리로
+  const p = String(d == null ? "" : d).split(/[.,]\s+(?=[^\s.,=()]{1,14} = )/);
+  return p.length < 2 ? nrEsc(d) : nrEsc(p[0]) + `<ul class="nr-ul">${p.slice(1).map(x => `<li>${nrEsc(x)}</li>`).join("")}</ul>`;
+};
 function nrTerms(T) {                            // 맨 위 '용어 정리'(접힘). 정의는 result_blocks.yaml terms
   if (!T.length) return "";
   let g0 = null;
-  const rows = T.map(t => { const g = t.g === g0 ? "" : (g0 = t.g); return `<tr><td class="nr-mut">${nrEsc(g)}</td><th>${nrEsc(t.t)}</th><td>${nrEsc(t.d)}</td></tr>`; }).join("");
+  const rows = T.map(t => { const g = t.g === g0 ? "" : (g0 = t.g); return `<tr><td class="nr-mut">${nrEsc(g)}</td><th>${nrEsc(t.t)}</th><td>${nrTermD(t.d)}</td></tr>`; }).join("");
   return `<details class="nr-terms"${nrTerms.open ? " open" : ""}><summary>용어 정리 ${nrMut(T.length + "개")}</summary><div class="nr-tscroll"><table>${rows}</table></div></details>`;
 }
 function nrScoreCard(S) {                        // 항목별 실제로 낼 수 있는 최고 점수(공식 채점) · 그 모델. 누르면 판정기 설정(학습 외)
