@@ -261,8 +261,9 @@ video{width:100%;aspect-ratio:16/9;object-fit:fill;display:block;background:#000
 .nt-btn[hidden]{display:none}
 .nt-btn:hover{border-color:var(--mut)}
 .top:has(+ #ntPanel:popover-open) .nt-btn{border-color:var(--blue);background:var(--panel2)}
-.nt-btn b{padding:0 7px;border-radius:999px;border:1px solid #f0883e88;color:#ffb86b;font-size:var(--fs-xs);line-height:1.6;font-variant-numeric:tabular-nums}
-.nt-btn b:empty{display:none}
+.nt-btn{position:relative}
+.nt-btn b{display:none;position:absolute;top:4px;left:21px;width:8px;height:8px;border-radius:50%;background:#f85149;box-shadow:0 0 0 2px var(--panel)}
+.nt-btn.has b{display:block}
 .nt-panel{position:fixed;inset:auto;margin:0;width:440px;max-width:calc(100vw - 16px);max-height:calc(100vh - 72px);overflow-y:auto;color:var(--tx);background:var(--panel);border:1px solid var(--line);border-radius:var(--r-lg);box-shadow:0 12px 32px #000a;padding:0 14px 14px}
 .nt-panel:focus{outline:none}
 .nt-head{position:sticky;top:0;z-index:1;display:flex;align-items:center;gap:8px;background:var(--panel);padding:12px 0 8px}
@@ -283,6 +284,309 @@ video{width:100%;aspect-ratio:16/9;object-fit:fill;display:block;background:#000
 .nt-at{color:#ffb86b;font-weight:700;overflow-wrap:anywhere;font-variant-numeric:tabular-nums}
 .nt-tx{overflow-wrap:anywhere;white-space:pre-wrap}
 .nt-empty{color:var(--mut);font-size:var(--fs-sm);padding:14px 0 4px}
+/* ========== 화면 정돈(2026-10-01 사용자 시안 선택: 머리줄 = 시안 B, 나머지 = 시안 A). 위 규칙을 덮어쓰므로 맨 끝에 둔다 ==========
+   규칙 한눈에
+   간격      4 · 8 · 12 · 16 · 24
+   높이      28(보통: 단추 · 선택 · 입력) / 24(작게: 필터 칩 · 줄 안 작은 단추). 한 줄 안에서는 한 가지만
+   모서리    4 · 6 · 8. 누르는 것은 6, 카드는 8, 읽기만 하는 배지는 알약
+   글자      12 · 13 · 14 · 16 · 20
+   테두리    구역 경계 · 카드 · 누르는 것에만. 배지는 테두리 없이 옅은 바탕, 카드 안 표는 가로 줄만
+   선택      파랑 테두리 + 옅은 파랑 바탕 한 가지(머리 탭만 파랑 채움 = 한 단계 위)
+   바탕      단추 · 선택 = 패널색, 글 입력칸 = 한 단계 어둡게(누르는 것과 적는 곳 구분) */
+
+/* ---------- 1. 토큰 ---------- */
+:root{
+  color-scheme:dark;
+  --line-soft:#262c36;                 /* 구역 경계 · 카드 · 표 줄 */
+  --line-ctl:#3a414c;                  /* 누르는 것(단추 · 선택 · 입력) */
+  --line-hover:#57606a;
+  --line:#262c36;
+  --tx2:#b1bac4;                       /* 중립 배지 글자 */
+  --bad-tx:#ff7b72;                    /* 옅은 빨강 바탕 위 글자 */
+  --sel:rgba(88,166,255,.14);          /* 선택 바탕 */
+  --t-ok:rgba(63,185,80,.15); --t-bad:rgba(248,81,73,.15); --t-miss:rgba(210,153,34,.15);
+  --t-blue:rgba(88,166,255,.15); --t-idea:rgba(163,113,247,.16); --t-mut:rgba(139,148,158,.16);
+  --fs-2xs:12px; --fs-xs:12px; --fs-sm:12px; --fs-md:13px; --fs-lg:14px; --fs-xl:16px; --fs-num:20px;
+  --ctl-h:28px; --ctl-s:24px;
+  --r-sm:4px; --r:6px; --r-lg:8px; --r-pill:999px;
+  --s1:4px; --s2:8px; --s3:12px; --s4:16px; --s6:24px;
+  --font:"Segoe UI","Malgun Gothic","Apple SD Gothic Neo",system-ui,-apple-system,sans-serif;
+  --mono:Consolas,"Cascadia Mono","D2Coding",Menlo,ui-monospace,"Malgun Gothic",monospace;
+}
+body{font-family:var(--font);font-size:var(--fs-md);line-height:1.5}
+
+/* ---------- 2. 누르는 것 공통 ---------- */
+/* 테두리 색 · 바탕은 변수로 바꾼다. 인라인으로 var(--line) · var(--panel) 을 쓴 단추도 같이 따라온다 */
+button,select,input,textarea{--line:var(--line-ctl)}
+button:not(:disabled):hover{--line:var(--line-hover);--panel:#1f2630;--panel2:#252d3d;--blue:#79b8ff}
+select:hover,input:hover,textarea:hover{--line:var(--line-hover)}
+select:focus-visible,input:focus-visible,textarea:focus-visible{--line:var(--blue)}
+.top button,.main button,.main select,.main textarea,
+.main input:not([type=range]):not([type=radio]):not([type=checkbox]){
+  font-family:inherit;border-radius:var(--r);
+  transition:background-color .12s,border-color .12s,color .12s}
+.main button:disabled{opacity:.5;cursor:not-allowed}
+/* 선택 상자: 높이 28 · 13px. 오른쪽 24 는 화살표 자리(긴 글이 화살표와 겹치던 것) */
+.main select{height:var(--ctl-h);padding:0 var(--s6) 0 var(--s2) !important;font-size:var(--fs-md) !important;font-weight:400}
+/* 글 입력칸: 한 단계 어두운 바탕 */
+.main textarea,.main input:not([type=range]):not([type=radio]):not([type=checkbox]){--panel:var(--bg)}
+.main ::placeholder{color:var(--mut);opacity:1}
+.main input[type=radio],.main input[type=checkbox]{accent-color:var(--blue)}
+/* 키보드 포커스: 단추는 바깥 링(원래 규칙), 입력칸은 칸에 붙은 링. 접는 줄(summary) · 글상자에도 링 */
+.main select:focus-visible,.main textarea:focus-visible,
+.main input:not([type=range]):not([type=radio]):not([type=checkbox]):focus-visible{outline:1px solid var(--blue);outline-offset:0}
+summary:focus-visible{outline:2px solid var(--blue);outline-offset:2px;border-radius:var(--r-sm)}
+@media (prefers-reduced-motion:reduce){.top *,.main *{transition:none !important}}
+
+/* ---------- 3. 배지(읽기만 하는 표시) 한 가족: 알약 · 높이 20 · 12px · 테두리 없음 ---------- */
+.tag,.nr-chip,.nr-dec,.nr-bdg,.hs-pill,.hs-bdg,.hs-dec,.hs-cnt span{
+  display:inline-block;height:20px;line-height:20px;padding:0 var(--s2);margin:0;
+  border:0;border-radius:var(--r-pill);background:var(--t-mut);color:var(--tx2);
+  font-family:var(--font);font-size:12px;font-weight:600;white-space:nowrap;vertical-align:baseline}
+/* 상태 색: 초록 = 정검 · 완료 · 채택 · 개선 / 빨강 = 오검 · 기각 · 하락 / 노랑 = 미검 · 할 일 / 파랑 = 진행 · 대기 */
+.nr-chip.win,.nr-dec-ok,.hs-p-ok,.hs-dec.hs-d-채택,.hs-cnt .hs-c-ok{background:var(--t-ok);color:var(--ok)}
+.nr-chip.lose,.nr-dec-no,.hs-dec.hs-d-기각{background:var(--t-bad);color:var(--bad-tx)}
+.tag.warn,.hs-p-todo,.hs-cnt .hs-c-todo{background:var(--t-miss);color:var(--miss)}
+.nr-chip.wait,.hs-p-run,.hs-cnt .hs-c-run{background:var(--t-blue);color:var(--blue)}
+.hs-p-idea,.hs-cnt .hs-c-idea{background:var(--t-idea);color:var(--hs-idea)}
+.nr-chip.tie,.nr-dec-hold,.nr-dec-wait,.hs-dec.hs-d-보류{background:var(--t-mut);color:var(--tx2)}
+.nr-bdg,.hs-bdg{color:var(--mut)}
+.nr-bdg.ph,.hs-bdg.ph{color:var(--tx2)}          /* 단계 이름표: 판정 칩(파랑)과 섞이지 않게 중립 */
+.tag{margin:0 0 0 var(--s1)}
+
+/* ---------- 4. 머리(시안 B): 탭 = 밑줄 · 가운데, 항목 필터 = 오른쪽 붙은 칸 ---------- */
+.top{--b-l0:#07090d;--b-l1:#161b23;--b-l2:#222933;--b-l3:#2e3643;--b-hair:#262d38;--b-sel:#58a6ff22;--b-sel-tx:#cfe4ff;
+  position:relative;height:56px;padding:0 var(--s4);gap:var(--s4);background:var(--b-l1);border-bottom:1px solid var(--b-hair);--panel:var(--b-l2);--panel2:var(--b-l2)}
+.top .brand{order:-9;font-size:16px;font-weight:700}
+#host{order:-8;margin-left:0;height:20px;padding:0 var(--s2) !important;border-radius:10px !important;
+  font:600 12px/20px var(--font) !important;color:var(--tx) !important;background:var(--b-l0) !important}
+/* 탭: 머리줄 가운데. 꺼진 탭은 글자만, 켜진 탭은 파랑 밑줄 */
+.mode{position:absolute;left:50%;top:0;bottom:-1px;transform:translateX(-50%);gap:var(--s1);margin:0}
+.mode button{height:100%;padding:0 var(--s3);border:0;border-radius:0;background:transparent;color:var(--mut);font-size:14px;font-weight:600}
+.mode button:hover{background:transparent;color:var(--tx);box-shadow:inset 0 -2px 0 var(--b-l3)}
+.mode button.on,.mode button.on:hover{background:transparent;color:var(--tx);box-shadow:inset 0 -2px 0 var(--blue);cursor:default}
+.mode button:focus-visible{outline-offset:-4px;border-radius:var(--r)}
+#jobStat{order:-6;margin-left:0 !important}
+.top .spacer{order:-5}
+/* 항목 필터: 오른쪽, 한 바탕 위 붙은 칸 */
+.gf{order:-4;margin:0;padding:2px;gap:2px;border:0;background:var(--b-l2);border-radius:var(--r)}
+.gf button,.gf button:first-child,.gf button:last-child{height:var(--ctl-s);margin:0;padding:0 var(--s3);border:0;border-radius:var(--r-sm);
+  background:transparent;color:var(--mut);font-size:12px;font-weight:600;line-height:1}
+.gf button:hover{color:var(--tx)}
+.gf button.on{background:var(--b-sel);color:var(--b-sel-tx)}
+.top .stat{order:-3;font-size:12px}
+.top .stat:empty{display:none}
+
+/* ---------- 5. 왼쪽 패널 ---------- */
+.srcbox{padding:var(--s3);gap:var(--s3)}
+.srcbox .tools{margin:0;gap:var(--s2)}
+.srcbox .tools:empty{display:none}                  /* 빈 줄이 간격 한 칸을 먹던 것 */
+.srcbox label{margin:0 0 calc(var(--s2) * -1);font-size:12px;font-weight:600;line-height:16px}
+#srcRow{gap:var(--s2) !important}
+#refreshBtn{flex:0 0 var(--ctl-h) !important;font-size:var(--fs-lg) !important}
+#pushBtn{height:var(--ctl-h);padding:0 var(--s3) !important;font-size:12px !important;font-weight:600 !important}
+#filtBox{gap:var(--s3) !important;margin-top:0}
+#filtBox[hidden]{display:none !important}
+/* 필터 칩(작게 24): 검수 판정 · 데이터 조건 · 히스토리 판정이 같은 모양 */
+.filt button{height:var(--ctl-s);padding:0 var(--s2);font-size:12px;font-weight:600;line-height:1}
+.filt button.on{background:var(--sel);border-color:var(--blue);color:var(--tx)}
+.list{padding:var(--s2) var(--s3)}
+.item{min-height:32px;padding:0 var(--s2);gap:var(--s2);font-family:var(--mono);font-size:12px}
+.item.on{background:var(--sel);outline:1px solid var(--blue);outline-offset:-1px}
+/* 목록 배지(인라인): 배지 가족으로 */
+.item > span:not(.nm){height:20px !important;padding:0 var(--s2) !important;margin-right:0 !important;
+  border-radius:var(--r-pill) !important;border-color:transparent !important;
+  font-family:var(--font) !important;font-size:12px !important;font-weight:600 !important;letter-spacing:0 !important}
+.item > span:not(.nm){order:2}                      /* 이름은 왼쪽에 줄 맞추고 상태 배지는 오른쪽 끝 */
+.item > span.bg{background:var(--t-mut) !important}
+.item > span.bg:has(> span:only-child[style*="#3fb950"]){background:var(--t-ok) !important}
+.item > span[style*="color: rgb(248, 81, 73)"],.item .bg span[style*="#f85149"]{color:var(--bad-tx) !important}
+/* 데이터 확인: 선택 줄과 칩 줄을 한 덩어리로(가운데 줄 하나를 뺀다) */
+.srcbox:has(+ .list > #listHead){padding-bottom:0;border-bottom-color:transparent}
+#listHead{top:calc(var(--s2) * -1) !important;margin:calc(var(--s2) * -1) calc(var(--s3) * -1) var(--s2) !important;
+  padding:var(--s2) var(--s3) var(--s3) !important;gap:var(--s2) !important}
+#condFilterRow{gap:var(--s2) !important}
+#listHead div[style*="align-items: flex-start"]{gap:var(--s2) !important}
+#listHead span{padding-top:0 !important;line-height:var(--ctl-s);font-weight:600 !important}
+#listHead button{height:var(--ctl-s) !important;padding:0 var(--s2) !important;font-weight:600 !important;line-height:1}
+#listHead button[style*="rgba(88, 166, 255, 0.133)"]{background:var(--sel) !important;border-color:var(--blue) !important;color:var(--tx) !important}
+
+/* ---------- 6. 가운데: 재생 줄 · 라벨 편집기 ---------- */
+.ctrl{gap:var(--s2);padding:var(--s2) var(--s3);background:var(--bg)}
+.ctrl button{width:36px;height:var(--ctl-h);font-size:12px;font-weight:700}
+.ctrl .now{font-weight:600}
+.ctrl .jmp{height:var(--ctl-h);padding:0 var(--s3);background:var(--panel);font-size:12px;line-height:1}
+.ctrl .rate{margin-left:var(--s2);gap:var(--s1)}
+.ctrl .rate button{min-width:32px;padding:0 var(--s2);border:1px solid var(--line);font-size:12px}
+.ctrl .rate button.on{background:var(--sel);border-color:var(--blue);color:var(--tx)}
+.ctrl select{background:var(--panel) !important}
+.tl{padding:var(--s3)}
+.leg{gap:var(--s1) var(--s4);margin-top:var(--s2)}
+.leg span{gap:var(--s1)}
+/* 프레임 줄: 상자를 벗기고 위 도구 줄과 같은 단추 줄로. 높이 28 하나 */
+.ctrl.labbar{gap:var(--s2);padding:0;background:transparent;border:0 !important;border-radius:0 !important}
+.ctrl.labbar button{height:var(--ctl-h) !important;padding:0 var(--s2) !important;margin:0 !important;
+  background:var(--panel) !important;font-size:12px !important;font-weight:600 !important}
+.ctrl.labbar input[type=text]{padding:0 var(--s1) !important;
+  font:400 var(--fs-md)/1 var(--font) !important;font-variant-numeric:tabular-nums !important}
+.ctrl.labbar .now{font-size:12px}
+/* 도구 줄(되돌리기 · 전파 · 라벨 검수 · 프레임 초기화) */
+#center > div[style*="align-self: flex-start"] > div:first-child{margin-bottom:var(--s2) !important}
+#center > div[style*="align-self: flex-start"] > div:first-child > button{min-width:var(--ctl-h);padding:0 var(--s3) !important;
+  font-size:12px !important;font-weight:600 !important}
+#center > div[style*="align-self: flex-start"] > div:first-child > button[title^="되돌리기"],
+#center > div[style*="align-self: flex-start"] > div:first-child > button[title^="다시하기"]{padding:0 !important;font-size:var(--fs-lg) !important}
+#center > div[style*="align-self: flex-start"] > div:last-child > button{height:var(--ctl-s);padding:0 var(--s2) !important}
+#center button[style*="height: 22px"]{height:var(--ctl-s) !important}
+#center button[style*="border-radius: 999px"]{min-height:var(--ctl-s);border-radius:var(--r) !important}
+
+/* ---------- 7. 오른쪽 정보 패널 ---------- */
+.right{padding:var(--s3)}
+.rtitle{margin:0 0 var(--s1);color:var(--tx);font-size:var(--fs-md);font-weight:700;line-height:20px}
+.right > .rtitle:not(:first-child){margin-top:var(--s4)}
+.kv{gap:var(--s3);align-items:baseline;padding:var(--s2) 0;line-height:16px}
+.kv > span{flex:0 0 auto}                           /* 이름표가 한 글자씩 접히던 것 */
+.kv > b{min-width:0;text-align:right;overflow-wrap:anywhere;font-weight:600}
+/* 파일 · 경로 줄도 다른 정보 줄과 같은 배치(이름 왼쪽, 값 오른쪽) */
+.right > div[style*="border-bottom"]{display:flex;justify-content:space-between;align-items:baseline;gap:var(--s3);padding:var(--s2) 0 !important}
+.right > div[style*="border-bottom"] > div{line-height:16px !important}
+.right > div[style*="border-bottom"] > div:first-child{flex:0 0 auto;margin:0 !important}
+.right > div[style*="border-bottom"] > div:last-child{min-width:0;text-align:right;font-family:var(--mono) !important}
+.right > button{height:var(--ctl-h);margin-top:var(--s3) !important;padding:0 var(--s3) !important;
+  font-size:var(--fs-md) !important;font-weight:600 !important}
+.right > button[style*="var(--panel2)"]{background:var(--panel) !important;border-color:var(--line) !important}   /* 보조 단추는 선택 모양과 섞이지 않게 */
+.right > div[style*="margin-top: 10px"]{gap:var(--s2) !important;margin-top:var(--s3) !important}
+.right > div[style*="border-top"]{padding-top:var(--s3) !important}
+.right > div[style*="border-top"] label{font-weight:600 !important}
+.right > div[style*="border-top"] label[style*="border-left"]{margin-left:0 !important;padding-left:var(--s2) !important}
+.right select + button{padding:0 var(--s3) !important;font-size:var(--fs-md) !important;font-weight:600 !important}
+.lblframe{margin-top:var(--s2)}
+.thumbs{gap:var(--s1);margin-top:var(--s2)}
+.empty{padding:48px var(--s3)}
+
+/* ---------- 8. 결과 탭 ---------- */
+.nr{padding:0 var(--s6) 48px;gap:var(--s3);max-width:1360px}
+/* 위 고정 영역: 높이를 줄인다(큐 줄 간격 · 용어 정리와 단계 필터를 한 줄에). 펼친 것이 많아도 아래 묶음이 가려지지 않게 높이 상한 */
+.nr-top{flex-direction:row;flex-wrap:wrap;align-items:flex-start;gap:var(--s2);
+  margin:0 calc(var(--s1) * -1);padding:var(--s4) var(--s1) var(--s3);       /* 좌우 4px 은 포커스 링 자리 */
+  max-height:calc(100vh - 220px);overflow-y:auto}
+.nr-top > *{flex:0 0 100%;min-width:0}
+#nrJudge:empty{display:none}
+.nr-top > .nr-phf{order:1;flex:0 0 auto;height:var(--ctl-h);font-weight:600}
+.nr-top > .nr-terms{order:2;flex:1 1 0}
+.nr-score{gap:var(--s2)}
+.nr-score .nr-sc{padding:var(--s2) var(--s3);border-radius:var(--r-lg)}
+.nr-sc.on{background:var(--sel);border-color:var(--blue);box-shadow:none}
+.nr-sc-it{font-size:12px;font-weight:600;letter-spacing:0;line-height:16px}
+.nr-sc-v{font-size:var(--fs-num);font-weight:700;line-height:24px}
+.nr-sc-m{font-family:var(--mono);line-height:16px}
+.nr-queue{padding:var(--s2) var(--s3);line-height:1.5}
+.nr-qhead{font-weight:700}
+.nr-qhead > span[style*="#3fb950"]{color:var(--blue) !important}                 /* 실행 중 = 진행 = 파랑(다른 탭과 같은 뜻) */
+.nr-qtbl span[style*="background:#3fb950"]{background:var(--blue) !important}
+.nr-qtbl th,.nr-qtbl td{padding:var(--s1) var(--s3) !important}
+.nr-qtbl th:first-child,.nr-qtbl td:first-child{padding-left:0 !important}
+.nr-qtbl th{font-weight:600}
+.nr-qtbl table{margin:var(--s1) 0 !important}
+.nr-qdet{margin-top:var(--s1)}
+.nr-qlog{font-family:var(--mono);line-height:16px}
+.nr-terms{padding:0 var(--s3)}
+.nr-terms[open]{padding-bottom:var(--s2)}
+.nr-terms > summary{height:26px;line-height:26px;font-size:var(--fs-md);font-weight:600}
+.nr-terms th{font-family:var(--mono)}
+.nr-judge{margin-top:0;padding:var(--s3)}
+.nr-jh{margin-bottom:var(--s2);font-weight:700}
+.nr-jc{margin-top:var(--s2)}
+/* 비교 묶음: 카드 안에서는 상자를 또 치지 않는다(표는 가로 줄만) */
+.nr-block{padding:var(--s3) var(--s4)}
+.nr-bt{font-weight:700}
+.nr-sum{gap:var(--s1);margin-left:var(--s3)}
+.nr-sum .nr-bdg{margin:0 var(--s1) 0 0}
+.nr-body{gap:var(--s3);margin-top:var(--s3)}
+.nr-q{font-size:var(--fs-md)}
+.nr-cond{border:0;border-collapse:separate;border-spacing:0;overflow:hidden}
+.nr-cond th{width:144px;padding:var(--s2) var(--s3);font-weight:600}
+.nr-cond td{padding:var(--s2) var(--s3) var(--s2) 0}
+.nr-code,.nr-exp,.nr-sub{font-family:var(--mono)}
+.nr-tbl{border:0}
+.nr-tbl th{padding:var(--s2) var(--s3);font-weight:600;line-height:16px}
+.nr-tbl td{padding:var(--s2) var(--s3)}
+.nr-tbl td .nr-bdg{margin:var(--s1) var(--s1) 0 0}
+.nr-role,.nr-warn{font-family:var(--font)}
+.nr-it{margin-right:var(--s1)}
+.nr-lo{font-weight:700}
+.nr-keys{gap:var(--s1)}
+.nr-keys span{padding:0 var(--s1);border-radius:var(--r-sm);font-weight:600;line-height:20px}
+.nr-keys .bad{color:var(--bad-tx)}
+.nr-note{padding-left:var(--s3)}
+
+/* ---------- 9. 히스토리 탭 ---------- */
+.hs{--hs-idea:#bc8cff;padding:0 var(--s6) 48px}
+.hs-top{padding:var(--s4) 0 var(--s3)}
+.hs-qa{gap:var(--s2);margin-bottom:var(--s3)}
+.hs-qa input{height:var(--ctl-h);padding:0 var(--s3)}
+.hs-qa button{height:var(--ctl-h);padding:0 var(--s3);font-size:var(--fs-md);font-weight:600}
+.hs-cards{grid-template-columns:repeat(5,minmax(0,1fr));gap:var(--s2)}      /* 위 입력 줄과 양 끝을 맞춘다 */
+.hs-cards .hs-card{padding:var(--s2) var(--s3);border-radius:var(--r-lg)}
+.hs-card .k{font-size:12px;font-weight:600;line-height:16px}
+.hs-card .v{font-size:var(--fs-num);font-weight:700;line-height:24px}
+.hs-card.on,.hs-card.hs-c-ok.on,.hs-card.hs-c-run.on,.hs-card.hs-c-todo.on,.hs-card.hs-c-idea.on{background:var(--sel);border-color:var(--blue);color:var(--tx)}
+.hs-card.on .k{color:var(--tx)}
+.hs-meta{gap:var(--s2);margin-top:var(--s2)}
+.hs-decf{gap:var(--s1)}
+/* 작은 단추(24): 판정 필터 칩 · + 날짜 · + 항목 · + 이정표 */
+.hs-dfb,.hs-dayadd,.hs-add,.hs-msadd{height:var(--ctl-s);padding:0 var(--s2);background:var(--panel);font-size:12px;font-weight:600;line-height:1}
+.hs-dfb.hs-d-채택{color:var(--ok)}.hs-dfb.hs-d-기각{color:var(--bad-tx)}.hs-dfb.hs-d-보류{color:var(--tx2)}
+.hs-dfb.on{background:var(--sel);border-color:var(--blue)}
+.hs-dayadd{margin-left:var(--s2)}
+.hs-open{margin-top:var(--s4);padding:var(--s3) var(--s4);border-left-width:3px}
+.hs-open ol{gap:var(--s2)}
+.hs-open li{font-size:var(--fs-md)}
+.hs-tl{margin-top:var(--s6);gap:var(--s6)}
+.hs-day::before{top:6px}
+.hs-dh{gap:var(--s3)}
+.hs-dh .d{font-size:var(--fs-xl);font-weight:700;line-height:24px}
+.hs-dh .t{font-size:var(--fs-md)}
+.hs-cnt{gap:var(--s1)}
+/* 알림 상자: 곧 따로 뺄 것이라 차분하게만 */
+.hs-ms{gap:var(--s2);margin-top:var(--s2);padding:var(--s2) var(--s3);background:var(--panel);
+  border:1px solid var(--line);border-left:3px solid var(--hs-alert);line-height:1.6}
+.hs-ms svg{flex:0 0 16px;width:16px;height:16px;margin-top:2px}
+.hs-ms b{margin-right:var(--s2)}
+.hs-msdel{flex:0 0 var(--ctl-s);width:var(--ctl-s);height:var(--ctl-s);padding:0;color:var(--mut);font-size:var(--fs-xl)}
+.hs-msdel:hover{background:var(--panel2);color:var(--tx)}
+.hs-items{margin-top:var(--s3)}
+.hs-it{grid-template-columns:72px minmax(0,1fr) var(--ctl-s);gap:var(--s4);padding:var(--s4)}
+.hs-bdgs{gap:var(--s1);margin-bottom:var(--s1)}
+.hs-bdg{white-space:normal;height:auto;min-height:20px;border-radius:10px}
+.hs-ttl{line-height:1.5}
+.hs-why{margin-top:var(--s2);line-height:1.6}
+.hs-dec{margin-right:var(--s2);font-weight:600}
+.hs-cond{margin-top:var(--s1)}
+.hs-sub{margin-top:var(--s2);line-height:1.6}
+.hs-tags{gap:var(--s1);margin-top:var(--s2)}
+.hs-tag{padding:0 var(--s2);border:0;border-radius:10px;background:var(--t-mut);color:var(--tx2);font-family:var(--mono);line-height:20px}
+.hs-tag-carry{background:var(--t-miss);color:var(--hs-todo);font-family:var(--font);font-weight:600}
+.hs-ref{font-family:var(--mono)}
+.hs-pen{width:var(--ctl-s);height:var(--ctl-s);padding:0;font-size:var(--fs-lg);line-height:1}
+.hs-empty{padding:var(--s3) var(--s4)}
+.hs-dayact{gap:var(--s2);margin-top:var(--s2)}
+/* 고치기 칸 */
+.hs-form{gap:var(--s3);padding:var(--s4)}
+.hs-form label{gap:var(--s1);font-size:12px;font-weight:600;line-height:16px}
+.hs-form input{height:var(--ctl-h);padding:0 var(--s2);font-size:var(--fs-md)}
+.hs-form textarea{padding:var(--s1) var(--s2);font-size:var(--fs-md);line-height:1.5}
+.hs-frow{gap:var(--s3)}
+.hs-fbtn{gap:var(--s2);margin-top:var(--s1)}
+.hs-fbtn button{height:var(--ctl-h);padding:0 var(--s3);font-size:var(--fs-md);font-weight:600}
+.hs-fbtn .hs-del{color:var(--bad-tx)}
+
+/* ---------- 10. 편집기가 띄우는 창(확인 · 라벨 검수 · 크게 보기): 글꼴만 맞춘다 ---------- */
+body > div[style*="position: fixed"] button{font-family:inherit}
+
+/* 알림 창(나중에 생긴 요소): 단추 높이만 이 시안 기준에 맞춘다 */
+.nt-x,.nt-del{min-height:24px;padding:0 8px;font-size:12px}
+.nt-form button{min-height:28px}
 </style></head><body>
 <div class="top">
  <div class="brand" title="처음 화면으로" style="cursor:pointer" onclick="try{localStorage.removeItem('kisa_last_view')}catch(e){};location.href='/'">KISA 검수</div>

@@ -171,8 +171,8 @@ function ntSync() {                                  // 단추의 '오늘 N' + �
   const b = $("#ntBtn"), D = HS.doc;
   if (!D || D.error) { b.hidden = true; if (ntOpen()) $("#ntPanel").hidePopover(); return; }   // 히스토리를 못 읽는 서버
   const n = ((D.days.find(d => d.date === hsToday()) || {}).milestones || []).length;
-  b.hidden = false; b.title = `오늘 알림 ${n}건`;
-  $("#ntCnt").textContent = n ? `오늘 ${n}` : "";
+  b.hidden = false; b.title = `오늘 알림 ${n}건`; b.setAttribute("aria-label", n ? `알림, 오늘 ${n}건` : "알림");
+  b.classList.toggle("has", n > 0);                    // 오늘 알림이 있으면 종 위에 빨간 점(10-01 사용자: '오늘 N' 글자 대신)
   if (ntOpen()) ntRender();
 }
 function ntRender(reset) {                           // 최근 날짜 먼저, 같은 날짜 안에서는 나중에 적은 것 먼저. reset 이 아니면 쓰던 입력은 남긴다(다시 읽거나 저장이 안 됐을 때 날아가지 않게)
