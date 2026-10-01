@@ -186,7 +186,7 @@ video{width:100%;aspect-ratio:16/9;object-fit:fill;display:block;background:#000
 /* 히스토리 탭(2026-09-30): 모델 개선 기록 · 상태(완료 · 진행 · 할 일) · 판정(채택 · 기각 · 보류) */
 .hs{--hs-ok:#3fb950;--hs-run:#58a6ff;--hs-todo:#d29922;--hs-idea:#a371f7;--hs-alert:#f0883e;padding:0 22px 48px;max-width:880px;margin:0 auto;width:100%}
 .hs-top{position:sticky;top:0;z-index:6;background:var(--bg);padding:14px 0 12px;border-bottom:1px solid var(--line)}
-.hs-cards{display:grid;grid-template-columns:repeat(4,150px);justify-content:start;gap:8px}
+.hs-cards{display:grid;grid-template-columns:repeat(5,150px);justify-content:start;gap:8px}
 .hs-card{background:var(--panel);border:1px solid var(--line);border-radius:var(--r-lg);padding:9px 12px;text-align:left;cursor:pointer;color:var(--tx)}
 .hs-card:hover{border-color:var(--mut)}
 .hs-card .k{font-size:var(--fs-xs);color:var(--mut);font-weight:700}
@@ -270,7 +270,7 @@ video{width:100%;aspect-ratio:16/9;object-fit:fill;display:block;background:#000
 .hs-bdg{font-size:var(--fs-2xs);font-weight:700;color:var(--mut);border:1px solid var(--line);border-radius:999px;padding:0 8px;line-height:1.7}
 .hs-bdg.ph{color:var(--blue);border-color:#58a6ff55}
 @media (max-width:1100px){.hs-kb{grid-template-columns:repeat(2,minmax(0,1fr))}}
-@media (max-width:760px){.hs-it{grid-template-columns:56px minmax(0,1fr) 28px}.hs-cards{grid-template-columns:repeat(4,minmax(0,1fr))}.hs-prog{display:none}.hs-kb{grid-template-columns:minmax(0,1fr)}}
+@media (max-width:760px){.hs-it{grid-template-columns:56px minmax(0,1fr) 28px}.hs-cards{grid-template-columns:repeat(5,minmax(0,1fr))}.hs-prog{display:none}.hs-kb{grid-template-columns:minmax(0,1fr)}}
 </style></head><body>
 <div class="top">
  <div class="brand" title="처음 화면으로" style="cursor:pointer" onclick="try{localStorage.removeItem('kisa_last_view')}catch(e){};location.href='/'">KISA 검수</div>

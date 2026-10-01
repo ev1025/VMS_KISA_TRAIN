@@ -105,7 +105,7 @@ function hsDays(D, all) {                            // 날짜별 보기(09-30 �
 }
 function hsRender() {
   const c = $("#center"), D = HS.doc, all = D.days.flatMap(d => d.items).filter(hsGf), y = c.scrollTop, kb = HS.view === "kanban";
-  const cards = kb ? "" : '<div class="hs-cards">' + HS_ST.map(s => `<button class="hs-card hs-c-${hsCls(s)}${HS.f === s ? " on" : ""}" data-s="${s}" aria-pressed="${HS.f === s}">
+  const cards = kb ? "" : '<div class="hs-cards">' + `<button class="hs-card${HS.f ? "" : " on"}" data-s="" aria-pressed="${!HS.f}"><div class="k">전체</div><div class="v">${all.length}</div></button>` + HS_ST.map(s => `<button class="hs-card hs-c-${hsCls(s)}${HS.f === s ? " on" : ""}" data-s="${s}" aria-pressed="${HS.f === s}">
       <div class="k">${HS_LBL[s]}</div><div class="v">${all.filter(i => i.s === s).length}</div></button>`).join("") + "</div>";
   const decf = HS_DEC.map(x => `<button class="hs-dfb hs-d-${x}${HS.df === x ? " on" : ""}" data-d="${x}" aria-pressed="${HS.df === x}">${x} ${all.filter(i => i.dec === x).length}</button>`).join("");
   const qa = D.readonly ? "" : `<form class="hs-qa"><input name="t" placeholder="모델 개선 아이디어${GF === "all" ? "" : " · " + gf().label}" aria-label="아이디어 빠른 추가" autocomplete="off"><button>+ 아이디어</button></form>`;   // Quick Add: {id, s: 아이디어, t}(+ 전역 필터 항목)만
@@ -136,7 +136,7 @@ function hsRender() {
       await hsSave();
     };
   });
-  c.querySelectorAll(".hs-card").forEach(b => b.onclick = () => { HS.f = HS.f === b.dataset.s ? null : b.dataset.s; hsRender(); });
+  c.querySelectorAll(".hs-card").forEach(b => b.onclick = () => { HS.f = HS.f === b.dataset.s ? null : (b.dataset.s || null); hsRender(); });
   c.querySelectorAll(".hs-dfb").forEach(b => b.onclick = () => { HS.df = HS.df === b.dataset.d ? null : b.dataset.d; hsRender(); });
   c.querySelectorAll(".hs-day").forEach(e => e.ontoggle = () => { if (!HS.f && !HS.df) { e.open ? HS.open.add(e.dataset.date) : HS.open.delete(e.dataset.date); } });
   c.querySelectorAll(".hs-pen").forEach(b => b.onclick = () => { HS.edit = b.dataset.id; hsRender(); });
