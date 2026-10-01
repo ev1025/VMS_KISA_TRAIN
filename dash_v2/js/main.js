@@ -209,11 +209,17 @@ const nrTermD = d => {                           // 풀이 안의 'X = …' 정�
   const p = String(d == null ? "" : d).split(/[.,]\s+(?=[^\s.,=()]{1,14} = )/);
   return p.length < 2 ? nrEsc(d) : nrEsc(p[0]) + `<ul class="nr-ul">${p.slice(1).map(x => `<li>${nrEsc(x)}</li>`).join("")}</ul>`;
 };
-function nrTerms(T) {                            // 맨 위 '용어 정리'(접힘). 정의는 result_blocks.yaml terms
+function nrBar(D, phSel) {                       // 위쪽 한 줄 카드: 단계 고르기 + 오른쪽 끝 '용어 정리' 단추(10-01 사용자 시안 B)
+  const n = (D.terms || []).length;
+  const btn = n ? `<button type="button" class="nr-tbtn" popovertarget="nrTermsPop">용어 정리 <span class="nr-mut">${n}개</span></button>` : "";
+  return `<div class="nr-bar"><div class="nr-bar-row"><label for="nrPh">단계</label>${phSel}<span class="nr-grow"></span>${btn}</div></div>`;
+}
+function nrTerms(T) {                            // '용어 정리' 창(브라우저 popover, 단추 아래 오른쪽에 떠 있음). 정의는 result_blocks.yaml terms
   if (!T.length) return "";
   let g0 = null;
   const rows = T.map(t => { const g = t.g === g0 ? "" : (g0 = t.g); return `<tr><td class="nr-mut">${nrEsc(g)}</td><th>${nrEsc(t.t)}</th><td>${nrTermD(t.d)}</td></tr>`; }).join("");
-  return `<details class="nr-terms"${nrTerms.open ? " open" : ""}><summary>용어 정리 ${nrMut(T.length + "개")}</summary><div class="nr-tscroll"><table>${rows}</table></div></details>`;
+  return `<div id="nrTermsPop" class="nr-tpop" popover role="dialog" aria-label="용어 정리"><div class="nr-tpop-h"><b>용어 정리</b> <span class="nr-mut">${T.length}개</span>` +
+    `<button type="button" class="nr-tx" popovertarget="nrTermsPop" popovertargetaction="hide">닫기</button></div><table>${rows}</table></div>`;
 }
 function nrScoreCard(S) {                        // 항목별 실제로 낼 수 있는 최고 점수(공식 채점) · 그 모델. 누르면 판정기 설정(학습 외)
   if (!S.length) return "";
@@ -294,16 +300,20 @@ function nrDraw(D, q) {                           // 전역 항목 필터 · 단
   const c = $("#center");
   nrJudge.ph = D.phases || {};
   const used = new Set(Object.values(D.runs).map(r => r.phase).filter(Boolean));
-  const phf = `<div class="nr-phf"><label for="nrPh">단계</label><select id="nrPh"><option value="">전체</option>` +
+  const phSel = `<select id="nrPh"><option value="">전체</option>` +
     Object.entries(D.phases || {}).filter(([k]) => used.has(k)).map(([k, v]) => `<option value="${nrEsc(k)}"${k === NR_PH ? " selected" : ""}>${nrEsc(v)}</option>`).join("") +
-    `<option value="_none"${NR_PH === "_none" ? " selected" : ""}>단계 없음</option></select></div>`;
+    `<option value="_none"${NR_PH === "_none" ? " selected" : ""}>단계 없음</option></select>`;
   const blocks = D.blocks.filter(b => gfMeta(b.item) && b.members.some(x => nrPhOk(D.runs[x])));   // 단계는 견주는 실험 기준(기준 실험은 앞 단계 판일 수 있다)
   const body = blocks.map(b => nrBlock(b, D, q)).join("") + nrOthers(D, q);
   c.innerHTML = `<div class="nr"><div class="nr-top">${nrScoreCard(D.score || [])}<div class="nr-queue" id="nrQ">${nrQueueHtml(q)}</div>` +   // 위에 고정: 항목별 최고 점수 · 큐(항상 펼침) · 용어 정리
-    nrTerms(D.terms || []) + phf + `</div>` + (body || '<div class="empty">이 조건인 실험 없음</div>') + "</div>";
+    nrBar(D, phSel) + `</div>` + (body || '<div class="empty">이 조건인 실험 없음</div>') + nrTerms(D.terms || []) + "</div>";
   nrScoreBind(c);
   $("#nrPh").onchange = e => { NR_PH = e.target.value; try { localStorage.setItem("nr_ph", NR_PH); } catch (x) {} nrDraw(D, q); };
-  const tm = c.querySelector(".nr-terms"); if (tm) tm.ontoggle = () => { nrTerms.open = tm.open; };   // 1분 갱신 때 펼친 상태 유지
+  const pop = $("#nrTermsPop"), tb = c.querySelector(".nr-tbtn");
+  if (pop) pop.addEventListener("beforetoggle", e => {                         // 단추 바로 아래 오른쪽 끝에 맞춘다
+    if (e.newState !== "open") return;
+    const r = tb.getBoundingClientRect(); pop.style.top = r.bottom + 8 + "px"; pop.style.right = Math.max(8, innerWidth - r.right) + "px";
+  });
   nrQueueBind($("#nrQ")); nrBindToggles(c);
 }
 

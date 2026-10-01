@@ -591,14 +591,23 @@ body > div[style*="position: fixed"] button{font-family:inherit}
 /* 알림 창(나중에 생긴 요소): 단추 높이만 이 시안 기준에 맞춘다 */
 .nt-x,.nt-del{min-height:24px;padding:0 8px;font-size:12px}
 .nt-form button{min-height:28px}
-/* 결과 탭 단계 · 용어 정리: 점수 카드 · 큐와 같은 카드 모양(패널 바탕 · 테두리 · 모서리 8 · 높이 40 · 제목 14px 굵게)(10-01 사용자) */
-.nr-top > .nr-phf,.nr-top > .nr-terms,.nr-top > .nr-queue{background:var(--panel);border:1px solid var(--line-ctl);border-radius:var(--r-lg)}   /* 테두리 색 = 점수 카드와 같게 */
-.nr-top > .nr-phf{height:40px;padding:0 var(--s3);gap:var(--s3);color:var(--tx);font-size:var(--fs-lg);font-weight:700}
-.nr-top > .nr-phf select{height:var(--ctl-h);min-width:220px;font-weight:400}
-.nr-top > .nr-terms{padding:0 var(--s3)}
-.nr-top > .nr-terms[open]{padding-bottom:var(--s3)}
-.nr-top > .nr-terms > summary{height:38px;line-height:38px;font-size:var(--fs-lg);font-weight:700}
-.nr-top > .nr-terms > summary .nr-mut{font-weight:400}
+/* 결과 탭 위쪽(10-01 사용자): 단계 + '용어 정리' 단추 = 한 줄 카드, 용어 정리는 단추 아래 떠 있는 창(popover, display 를 주지 않는다).
+   카드 모양 = 점수 카드 · 큐와 같게(바탕 · 테두리 색 · 모서리 8) */
+.nr-top > .nr-bar,.nr-top > .nr-queue{background:var(--panel);border:1px solid var(--line-ctl);border-radius:var(--r-lg)}
+.nr-top > .nr-bar{order:-2;flex:0 0 100%}
+.nr-bar-row{display:flex;align-items:center;gap:var(--s3);height:38px;padding:0 var(--s3);font-size:var(--fs-lg);font-weight:700}
+.nr-bar-row select{height:var(--ctl-h);min-width:220px;font-weight:400}
+.nr-grow{flex:1}
+.nr-tbtn{height:var(--ctl-h);padding:0 var(--s3);background:var(--panel);border:1px solid var(--line-ctl);border-radius:var(--r);color:var(--tx);font-size:var(--fs-md);font-weight:600;cursor:pointer}
+.nr-tbtn .nr-mut{font-weight:400}
+.nr-tpop{position:fixed;inset:auto;margin:0;width:680px;max-width:calc(100vw - 16px);max-height:calc(100vh - 120px);overflow:auto;color:var(--tx);background:var(--panel);border:1px solid var(--line-ctl);border-radius:var(--r-lg);box-shadow:0 12px 32px #000a;padding:0 var(--s3) var(--s3);font-size:var(--fs-sm)}
+.nr-tpop:focus{outline:none}
+.nr-tpop-h{position:sticky;top:0;display:flex;align-items:center;gap:var(--s2);background:var(--panel);padding:var(--s3) 0 var(--s2);font-size:var(--fs-lg)}
+.nr-tpop-h .nr-tx{margin-left:auto;height:var(--ctl-s);padding:0 var(--s2);background:none;border:1px solid var(--line-ctl);border-radius:var(--r);color:var(--mut);font-size:12px;cursor:pointer}
+.nr-tpop table{border-collapse:collapse;width:100%}
+.nr-tpop th,.nr-tpop td{padding:var(--s1) var(--s3) var(--s1) 0;text-align:left;vertical-align:top;border-top:1px solid var(--line);line-height:1.6}
+.nr-tpop th{font-family:var(--mono);white-space:nowrap;font-weight:600}
+.nr-tpop td:first-child{white-space:nowrap;width:1%}
 </style></head><body>
 <div class="top">
  <div class="brand" title="처음 화면으로" style="cursor:pointer" onclick="try{localStorage.removeItem('kisa_last_view')}catch(e){};location.href='/'">KISA 검수</div>
