@@ -48,7 +48,7 @@
 - 머리 `미확인:` = `확인:` 이 빈 항목 번호
 - `scripts/check_contract.py` 가 맨 위 번호 · 머리 · `CONTRACT_VER` 를 대조(상수가 아직 없으면 경고만)
 
-## v2 · 2026-10-01 · 히스토리 칸반: 상태 `아이디어` · 선택 키 `item` · `phase`
+## v2 · 2026-10-01 · 히스토리: 상태 `아이디어` · 선택 키 `item` · `phase`
 
 - 바뀐 것:
   - `configs/history.yaml` 항목 `s` 값 추가: `아이디어`. 전체 = `완료` · `진행` · `할 일` · `아이디어`
@@ -56,22 +56,23 @@
   - 선택 키 `phase` ∈ `result_blocks.yaml phases` 코드. 없으면 그리드 밖
   - Quick Add 규약: `{id, s: "아이디어", t}` 셋만(전역 필터가 항목이면 `item` 도). 범위 = 모델 개선 아이디어만
 
-  | 칸반 | `s` | `dec` |
+  | `s` | 뜻 | `dec` |
   |---|---|---|
-  | Backlog | `아이디어` | 없음 |
-  | To-Do | `할 일` | 없음 |
-  | In Progress | `진행` | 없음 |
-  | Done | `완료` | `채택` · `기각` · `보류` |
+  | `아이디어` | 아직 일정에 안 올린 모델 개선 아이디어 | 없음 |
+  | `할 일` | 하기로 한 일 | 없음 |
+  | `진행` | 하는 중 | 없음 |
+  | `완료` | 끝남 | `채택` · `기각` · `보류` |
 
 - 영향:
   - `/api/history`: `HS_ST` 에 `아이디어`, `HS_KEYS` 에 `item` · `phase`, `_hs_clean` 값 검사 2줄(item 집합 · phase ∈ phases)
-  - `js/history.js`: 칸반 열 · Quick Add · 배지 · 전역 필터
+  - `js/history.js`: 상태 카드 · Quick Add · 배지 · 전역 필터(보기 = 날짜별 하나)
   - ML 쪽: `sync_history.py ORDER` 에 `"아이디어": 3`(맨 아래), daily-report `SKILL.md` 히스토리 절(상태 · 키 · Quick Add · 할 일로 올릴 때 cond · item · phase 채움)
 - 옮기기:
-  - 기존 34항목 `item` 소급 = ML 이 서버 B `/api/history` 로. **풀스택이 새 `_hs_clean` 을 B 서버에 올린 뒤에만**(그 전엔 `_hs_clean` 이 모르는 키를 버림)
+  - 기존 43항목 `item` · `phase` 소급 끝(10-01 14:21, ML). 공통은 키를 안 씀(화면 저장 규칙과 같음). 규칙 · 결과 = `sync_context_for_fullstack.md` 7-6
   - 원본은 B `configs/history.yaml` 하나. A 사본 복사 · 커밋은 ML
 - 쓴 사람: ML 세션
 - 확인: 2026-10-01 dash_v2 139c7b9
+- 덧붙임(10-01 오후, 사용자 지시): 칸반 보기와 '칸반 | 날짜별' 전환 단추 삭제(dash_v2 3d4779c). 화면은 날짜별 보기 하나. 스키마 · `/api/history` 변화 없음 → 계약 버전 v2 그대로. `history.yaml` 머리 주석에 `아이디어` · `item` · `phase` 설명 2줄 추가(내용 변화 없음)
 
 ## v1 · 2026-10-01 · 실험 단계 `phase`
 
@@ -99,5 +100,5 @@
 ## 풀스택 → ML 요청
 
 - (날짜) 요청 → ML 답(날짜)
-- (2026-10-01) 알림: 서버 B 가 v2 서버(`_hs_clean` 이 `item` · `phase` 를 받음, 임시 항목 왕복 확인). 히스토리 기존 항목 `item` 소급 가능 → ML 답( )
-- (2026-10-01) 알림: GET `/api/history` 응답에 `phases`(`result_blocks.yaml phases` 그대로)가 `readonly` 처럼 덧붙음. 파일에는 안 들어가고 POST 는 `doc.days` 만 읽음. 스킬이 응답을 통째로 되돌려 보내도 영향 없음 → ML 답( )
+- (2026-10-01) 알림: 서버 B 가 v2 서버(`_hs_clean` 이 `item` · `phase` 를 받음, 임시 항목 왕복 확인). 히스토리 기존 항목 `item` 소급 가능 → ML 답(2026-10-01): 43항목 `item` · `phase` 소급 끝(14:21 저장, A 사본 커밋). 공통은 키 없음
+- (2026-10-01) 알림: GET `/api/history` 응답에 `phases`(`result_blocks.yaml phases` 그대로)가 `readonly` 처럼 덧붙음. 파일에는 안 들어가고 POST 는 `doc.days` 만 읽음. 스킬이 응답을 통째로 되돌려 보내도 영향 없음 → ML 답(2026-10-01): 확인. ML 은 `doc.days` 만 되돌려 보냄. `sync_context_for_fullstack.md` 7-5 에 반영

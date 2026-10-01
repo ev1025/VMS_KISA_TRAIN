@@ -550,7 +550,7 @@ run 응답:
 | 사본 | 서버 A `configs/history.yaml` = 커밋용. A 화면은 `readonly: true` |
 | 편집 가능 조건 | 서버 프로세스 환경변수 `VMS_HISTORY_EDIT == "1"`(B 는 `dash.sh` 가 켬. A 는 없음) |
 | 범위 | 모델 · 데이터 · 체크포인트 · 판정 규칙 실험과 그 할 일만. 대시보드 요청 · 운영 · 문서 정리는 안 담음(`ml_changelog.md` 요청 절) |
-| 규모 | 10-01 11시 기준 5일 · 43항목(전부 `item` 없음 → 소급 예정) |
+| 규모 | 10-01 기준 5일 · 43항목. `item` · `phase` 소급 끝(7-6) |
 
 ### 7-2. 파일 스키마
 
@@ -568,22 +568,24 @@ run 응답:
 | item | `dec` | str | 판정. `s == 완료` 일 때만. `채택` · `기각` · `보류` |
 | item | `t` | str | 제목(필수). 제목만 보고 무슨 작업인지 알게 |
 | item | `why`, `sub`, `ref`, `cond`, `carry` | str | 판정 이유, 결과 수치, 기록 위치(`" · "` 로 나누면 태그), 선행 조건, 넘어감(`→ 09-30`) |
-| item | `item` | str | **v2(새).** `방화` · `사람` · `쓰러짐` · `공통`. 없으면 공통 |
+| item | `item` | str | **v2(새).** `방화` · `사람` · `쓰러짐` · `공통`. 없으면 공통. 화면은 공통을 고르면 키를 지워 저장하고 ML 도 공통이면 키를 안 쓴다(파일에 `item: 공통` 없음) |
 | item | `phase` | str | **v2(새).** `phases` 코드. 없으면 그리드 밖 |
 
 - 파일 머리 `#` 주석 줄은 저장 때 보존
 - 서버 상수(풀스택이 바꿈): `HS_KEYS = id, s, dec, t, why, sub, ref, cond, carry, item, phase` · `HS_ST = 아이디어, 할 일, 진행, 완료` · `HS_DEC = 채택, 기각, 보류` · `HS_ITEM = 방화, 사람, 쓰러짐, 공통`(새) · `CONTRACT_VER = 2`(새, 정수)
 - `_hs_clean` 추가 2줄: `item` 은 없거나 `HS_ITEM` 안, `phase` 는 없거나 `result_blocks.yaml phases` 키 안. 그 밖은 지금처럼(모르는 키 버림 · 빈 값 제거 · `t` · `id` 필수 · 날짜 정규식 · 같은 날짜 · 같은 id 거부)
 
-### 7-3. 칸반 매핑
+### 7-3. 상태 · 보기 · 배지
 
-| 칸반 열 | `s` | `dec` |
+| `s` | 뜻 | `dec` |
 |---|---|---|
-| Backlog | `아이디어` | 없음 |
-| To-Do | `할 일` | 없음 |
-| In Progress | `진행` | 없음 |
-| Done | `완료` | 채택 · 기각 · 보류 |
+| `아이디어` | 아직 일정에 안 올린 모델 개선 아이디어 | 없음 |
+| `할 일` | 하기로 한 일(앞 일이 끝나야 하면 `cond`) | 없음 |
+| `진행` | 하는 중 | 없음 |
+| `완료` | 끝남 | 채택 · 기각 · 보류 |
 
+- 보기 = 날짜별 하나. 칸반 보기와 '칸반 | 날짜별' 전환 단추는 10-01 에 넣었다가 같은 날 사용자 지시로 삭제(dash_v2 3d4779c) → 다시 만들지 않는다
+- 상태 카드 = 전체 · 아이디어 · 할 일 · 진행 중 · 완료
 - 배지: `item`(없으면 공통) · `phase`(이름표 그대로, 없으면 표시 안 함) · `dec`
 - 전역 필터(2절 UI 열)가 켜지면 `item` 이 같은 항목 + 공통만
 - 일지 동기화(`sync_history.py`)는 진행 → 할 일 → 완료 → 아이디어 순으로 그림. 아이디어는 맨 아래
@@ -597,7 +599,7 @@ run 응답:
 
 ### 7-5. GET · POST
 
-- GET `/api/history` → 파일 문서 + `readonly: bool`. date · updated_at 은 문자열, 날짜 내림차순. 파일 없으면 `{error}`
+- GET `/api/history` → 파일 문서 + `readonly: bool` + `phases`(`result_blocks.yaml phases` 그대로. 응답에만 실리고 파일에는 없음). date · updated_at 은 문자열, 날짜 내림차순. 파일 없으면 `{error}`
 - POST `/api/history` 본문 `{base: <읽었을 때 updated_at>, by: "사용자"|"Claude", doc: {days: […]}}`. 처리 순서:
   1. 읽기 전용 서버면 `{ok: false, err: "이 서버는 히스토리를 보기만 합니다…"}`
   2. `_SAVE_LOCK` 안에서 파일 다시 읽음. `str(base)` ≠ 현재 `updated_at` 이면 `{ok: false, conflict: true}` → 화면은 다시 불러오고 입력 버림
@@ -609,7 +611,7 @@ run 응답:
 ### 7-6. 운영 · 소급
 
 - ML 순서: B GET → 수정 → POST(충돌이면 다시) → B 파일을 A `configs/history.yaml` 로 복사 → `[ml]` 커밋 · 푸시 → `sync_history.py <날짜>`
-- 기존 34항목 `item` 소급은 ML 이 B API 로. 단 **풀스택이 v2 서버를 B 에 올린 뒤**(그 전엔 `_hs_clean` 이 `item` · `phase` 를 버림)
+- 기존 43항목 `item` · `phase` 소급 끝(10-01 14:21, ML). 규칙: `item` 은 한 항목에만 걸릴 때 쓰고 둘 이상이면 공통(키 없음), `phase` 는 그 일이 답하는 단계(`result_blocks.yaml judge.tried` 의 단계와 같게), 쓰러짐과 그리드 계획(09-28) 전 실험(09-27 항목 · 09-27 큐 채점)은 없음. 결과: 사람 20 · 방화 8 · 쓰러짐 5 · 공통 10 / grid0 1 · grid1 6 · grid2 11 · grid3 4 · grid4 9 · 없음 12
 - `ml_changelog.md` 확인 규칙: 풀스택이 계약 항목을 반영하면 그 항목 아래 `확인: YYYY-MM-DD dash_v2 <커밋 7자>` 한 줄 + 머리 `미확인:` 에서 번호 제거 + `serve_kisa.py` 의 `CONTRACT_VER` 를 그 번호로. `scripts/check_contract.py`(ML, 읽기 전용) 가 `serve_kisa.py` 본문의 `CONTRACT_VER = N`(정수) 줄을 읽어 changelog 맨 위 번호와 대조(상수가 없으면 경고만)
 
 ---
@@ -618,14 +620,14 @@ run 응답:
 
 ### 8-1. 지금 탭 ↔ 계약 v2 뒤 ↔ 엔드포인트
 
-| 지금 탭(`main.js buildMode`) | 계약 v2 뒤(풀스택이 구현) | 주 엔드포인트 |
+| 지금 탭(`main.js buildMode`) | 계약 v2 반영(10-01 구현 끝) | 주 엔드포인트 |
 |---|---|---|
-| 데이터 확인 `data` | 그대로 | `/api/sources` `/api/raw` `/api/clips` `/api/clipconds` `/api/clipinfo` `/api/dataset` `/api/datasets` `/api/catmode` `/api/clipstates` `/api/clipstate` `/api/refresh_cache` `/api/pushinfo` `/api/push_labels` + 편집기 · SAM2 묶음 |
+| 데이터 확인 `data` | 전역 필터 밖. 늘 전체 원본, 필터를 바꿔도 보던 화면 그대로(사용자 10-01) | `/api/sources` `/api/raw` `/api/clips` `/api/clipconds` `/api/clipinfo` `/api/dataset` `/api/datasets` `/api/catmode` `/api/clipstates` `/api/clipstate` `/api/refresh_cache` `/api/pushinfo` `/api/push_labels` + 편집기 · SAM2 묶음 |
 | 영상 검수 `review` | 전역 필터 연동. 그룹 이름표 = 블록 `label` + `phases` 이름표(은어 없이) | `/api/review_models` `/api/review_summary` `/api/review_clip` `/api/meta` `/vid` `/frameat` `/api/gtlabel` `/api/labels` |
-| 결과 `results` | 전역 필터. 판 배지 `runs[].phase` → `phases` 이름표. 용어 토글 = `terms` | `/api/result_blocks` `/api/queue`(30초) `/api/bench` |
-| 히스토리 `history` | 칸반 4열 + Quick Add + `item` · `phase` 배지 + 전역 필터. B 만 저장 | `/api/history` GET · POST |
+| 결과 `results` | 비교 묶음 · 묶음에 없는 실험만 전역 필터로 거름. 점수 카드 · 큐는 필터와 무관하게 전부(사용자 10-01). 실험 배지 `runs[].phase` → `phases` 이름표. 용어 토글 = `terms` | `/api/result_blocks` `/api/queue`(30초) `/api/bench` |
+| 히스토리 `history` | 날짜별 보기 하나(칸반 없음, 7-3) + 상태 카드 + Quick Add + `item` · `phase` 배지 + 전역 필터. B 만 저장 | `/api/history` GET · POST |
 
-- 전역 필터 값: 화재 · 배회·침입 · 쓰러짐(2절 표). 상태는 `core.js` 전역 + localStorage(마지막 탭과 같은 방식)
+- 전역 필터 값: 전체 · 화재 · 배회·침입 · 쓰러짐(2절 표). 데이터 확인 탭은 필터 밖. 상태는 `core.js` 전역 + localStorage `kisa_gf`
 - 서버 이름표 `#host` 는 `js/host.js`(git 제외)
 
 ### 8-2. 엔드포인트 전체
@@ -749,7 +751,8 @@ SAM2:
 | 교란 변수 · declared false | `vary` 에 선언 안 된 설정 차이 | "통제 안 된 설정 차이" |
 | 동률 / 개선 / 하락 | 정검 합 차 2편 미만이면 동률 | 그대로 + "(정검 차 N편)" |
 | 지금 데이터 · new | 09-26 이후 손라벨(hnfix 계열)로 학습한 판 | "최신 데이터" |
-| others | 블록에 없는 실험 | "비교 블록 밖 실험" |
+| 블록 · block | 대조군 하나 + 견줄 실험들(`result_blocks.yaml blocks`) | "비교 묶음" |
+| others | 블록에 없는 실험 | "비교 묶음에 없는 실험" |
 | official · 작업 PC 점수 | 공식 채점 점수(`score.txt`) | "공식 점수" |
 | score(캐시) | 검수 캐시 점수(`summary.json`) | "검수 점수" |
 | 초당 6장 · r6p0 · 6p0 | 표본 간격 1/6초(시작 프레임 0) | "초당 6장 판정" |
@@ -807,21 +810,22 @@ SAM2:
 덧붙임:
 - 이름이 같은 `phase` 셋(4-2절 주의). 항목 이름 계층 불일치(2절)
 - A 와 B 의 `results/` 폴더 수 · `SUMMARY.md` 판이 다름(B 는 ML 이 복사한 만큼만)
-- `_hs_clean` 이 v2 전까지 `item` · `phase` 를 버림 → 소급 순서(7-6)
 
 ---
 
 ## 12. 풀스택 세션 첫 할 일(계약 v1 · v2 수용 순서)
+
+상태(10-01): 1 ~ 7 전부 끝. 계약 v1 · v2 반영 = dash_v2 139c7b9, 칸반 삭제 = 3d4779c, 히스토리 소급 = ML(7-6). 아래 표는 새로 시작하는 세션이 이미 된 것을 확인하는 용도
 
 | # | 할 일 | 끝난 기준 |
 |---|---|---|
 | 1 | `ml_changelog.md` 머리 `미확인:` 의 v1 · v2 항목 읽기(바뀐 것 · 영향 · 옮기기) | 이 문서 4-2 · 7-2 와 같은지 확인 |
 | 2 | `dash_v2/serve_kisa.py`: `HS_ST` 에 `아이디어`, `HS_KEYS` 에 `item` · `phase`, `HS_ITEM` 신설, `_hs_clean` 2줄(`item` ∈ HS_ITEM 또는 없음, `phase` ∈ `result_blocks.yaml phases` 또는 없음), `CONTRACT_VER = 2`(정수) | B 에서 GET `/api/history` → 오늘 day 에 `{id: "hchk_tmp", s: "아이디어", t: "계약 확인용", item: "공통", phase: "grid1"}` → POST(base) → GET 에 `item` · `phase` 살아 있음 → 삭제 → POST |
 | 3 | `dash_v2/results_newdata.py run()`: run 응답에 `phase: meta.get("phase")` 1줄 | `curl -s localhost:8890/api/result_blocks` 에 `phases` 사전과 `runs[판].phase`(1단계 판 = `grid1`, 나머지 null) |
-| 4 | `js/history.js` 칸반 4열 + Quick Add(7-3 · 7-4), `js/main.js` · `js/core.js` 전역 필터(화재 · 배회·침입 · 쓰러짐) + `phase` · `item` 배지, `js/review.js` 그룹 이름표(블록 `label` + `phases` 이름표, 9절 문구) | 9절 규칙 위반 0. 은어 · 서술문 없음 |
+| 4 | `js/history.js` 날짜별 보기 + 상태 카드 + Quick Add(7-3 · 7-4. 칸반 보기는 만들지 않는다), `js/main.js` · `js/core.js` 전역 필터(화재 · 배회·침입 · 쓰러짐) + `phase` · `item` 배지, `js/review.js` 그룹 이름표(블록 `label` + `phases` 이름표, 9절 문구) | 9절 규칙 위반 0. 은어 · 서술문 없음 |
 | 5 | A 대시보드 재시작(먼저 `/api/sam2_jobs` 에 `running` · `queued` 없음 확인. pid 로 끄고 `dash_v2/` 에서 `../.venv/bin/python -u serve_kisa.py`, 로그는 `logs/dash/`) → B 로 `dash_v2/*.py` · `js/*.js` · `dashboard.html` 복사(`host.js` 제외) → B `dash.sh stop` → `dash.sh start` → `dash.sh status` | 두 서버 모두 `/api/history` 응답에 `readonly` 가 A true · B false |
 | 6 | `ml_changelog.md` v1 · v2 항목 아래 `확인: 2026-MM-DD dash_v2 <커밋 7자>` 줄 + 머리 `미확인:` 정리 → `git add dash_v2 docs/dashboard.md ml_changelog.md` → `[dash]` 커밋 → `git pull --rebase` → 푸시 | `scripts/check_contract.py` 가 `CONTRACT_VER` 경고 없이 통과(ML 이 돌림) |
-| 7 | ML 에 알림: "B 가 v2 서버. 34항목 `item` 소급 가능"(`ml_changelog.md` 요청 절 또는 채팅) | ML 이 B API 로 소급 → A 복사 · 커밋 |
+| 7 | ML 에 알림: "B 가 v2 서버. 기존 항목 `item` 소급 가능"(`ml_changelog.md` 요청 절 또는 채팅) | ML 이 B API 로 소급 → A 복사 · 커밋 |
 
 검증 묶음(5 뒤):
 ```
