@@ -305,8 +305,8 @@ function nrDraw(D, q) {                           // 전역 항목 필터 · 단
     `<option value="_none"${NR_PH === "_none" ? " selected" : ""}>단계 없음</option></select>`;
   const blocks = D.blocks.filter(b => gfMeta(b.item) && b.members.some(x => nrPhOk(D.runs[x])));   // 단계는 견주는 실험 기준(기준 실험은 앞 단계 판일 수 있다)
   const body = blocks.map(b => nrBlock(b, D, q)).join("") + nrOthers(D, q);
-  c.innerHTML = `<div class="nr"><div class="nr-top">${nrScoreCard(D.score || [])}<div class="nr-queue" id="nrQ">${nrQueueHtml(q)}</div>` +   // 위에 고정: 항목별 최고 점수 · 큐(항상 펼침) · 용어 정리
-    nrBar(D, phSel) + `</div>` + (body || '<div class="empty">이 조건인 실험 없음</div>') + nrTerms(D.terms || []) + "</div>";
+  c.innerHTML = `<div class="nr">${nrBar(D, phSel)}<div class="nr-top">${nrScoreCard(D.score || [])}<div class="nr-queue" id="nrQ">${nrQueueHtml(q)}</div>` +   // 위에 고정: 항목별 최고 점수 · 큐(항상 펼침) · 용어 정리
+    `</div>` + (body || '<div class="empty">이 조건인 실험 없음</div>') + nrTerms(D.terms || []) + "</div>";
   nrScoreBind(c);
   $("#nrPh").onchange = e => { NR_PH = e.target.value; try { localStorage.setItem("nr_ph", NR_PH); } catch (x) {} nrDraw(D, q); };
   const pop = $("#nrTermsPop"), tb = c.querySelector(".nr-tbtn");
