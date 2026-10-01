@@ -23,6 +23,7 @@ function buildMode() {
     b.onclick = () => {
       if (GF === k) return;
       GF = k; try { localStorage.setItem("kisa_gf", k); } catch (e) {}
+      applyMode._first = true;                       // 필터를 바꾸면 보던 영상으로 되돌리지 않는다(목록만 바뀌고 가운데는 옛 영상이 남던 것). 새 목록의 첫 영상이 열린다
       buildMode(); applyMode();
     };
     g.appendChild(b);
@@ -176,13 +177,13 @@ function nrCond(b, D) {                          // 블록 머리 표
 function nrBlock(b, D, q) {
   const kc = (D.key_clips || {})[b.item];
   const head = `<tr><th>실험</th><th>조건</th><th>상태</th><th>학습 종료</th><th>F1 best / last<br>${nrMut("굵게 = 비교값")}</th><th>3규칙 F1<br>${nrMut("초당 2장 · 시작 0")}</th>` +
-    (kc ? "<th>변별 편</th>" : "") + "<th>대조군과 차이<br>(정검 편수)</th><th>판정</th></tr>";
+    (kc ? "<th>변별 편</th>" : "") + "<th>기준 실험과 차이<br>(정검 편수)</th><th>판정</th></tr>";
   const rows = [b.control, ...b.members].map((x, i) => {
     const r = D.runs[x], v = b.verdicts[x];
     const delta = !i ? nrMut("-") : v ? Object.entries(v.delta).map(([it, d]) => `<div><span class="nr-it">${NR_KO[it]}</span>${d > 0 ? "+" : ""}${d}</div>`).join("") : nrMut("-");
     const chip = !i ? "" : v ? `<span class="nr-chip ${v.call === "동률" ? "tie" : v.call === "개선" ? "win" : "lose"}">${v.call}</span>`
       : `<span class="nr-chip wait">${r.status === "train" ? "학습 중" : r.status === "queue" ? "대기" : "채점 대기"}</span>`;
-    return `<tr class="${i ? "" : "ctl"}"><td class="nr-exp">${nrEsc(x).replace(/_/g, "_<wbr>")}${i ? "" : '<span class="nr-role">대조군</span>'}${nrBadges(D, r)}${r.new ? "" : '<div class="nr-warn">새 데이터 실험 아님</div>'}</td>` +
+    return `<tr class="${i ? "" : "ctl"}"><td class="nr-exp">${nrEsc(x).replace(/_/g, "_<wbr>")}${i ? "" : '<span class="nr-role">기준 실험</span>'}${nrBadges(D, r)}${r.new ? "" : '<div class="nr-warn">새 데이터 실험 아님</div>'}</td>` +
       `<td class="nr-chg">${nrChanged(b, r)}</td><td class="nr-st">${nrStatus(r, q)}</td><td class="nr-num">${nrEnded(r, q)}</td>` +
       `<td class="nr-num">${nrScore(r)}</td><td class="nr-r3">${nrRule3(r)}</td>${kc ? `<td>${nrKeys(r, kc)}</td>` : ""}<td class="nr-num">${delta}</td><td>${chip}</td></tr>`;
   }).join("");
@@ -201,8 +202,8 @@ function nrOthers(D, q) {                        // 블록에 아직 안 넣은 
   const rows = os.map(x => { const r = D.runs[x];
     return `<tr><td class="nr-exp">${nrEsc(x).replace(/_/g, "_<wbr>")}${nrBadges(D, r)}</td><td>${r.item}</td><td class="nr-num">${nrEsc(r.args.imgsz)} / ${nrEsc(r.args.batch)}</td>` +
       `<td class="nr-chg"><div class="nr-sub">${r.data.map(nrEsc).join("<br>")}</div></td><td class="nr-st">${nrStatus(r, q)}</td><td class="nr-num">${nrEnded(r, q)}</td><td class="nr-num">${nrScore(r)}</td><td class="nr-r3">${nrRule3(r)}</td></tr>`; }).join("");
-  return `<details class="nr-block" data-id="_others"${nrOpen.has("_others") ? " open" : ""}><summary class="nr-bt">블록에 없는 새 데이터 실험 ${nrMut(os.length + "개")}</summary><div class="nr-body">` +
-    `<p class="nr-q">configs/result_blocks.yaml 에 블록 추가 시 위로 이동</p>` +
+  return `<details class="nr-block" data-id="_others"${nrOpen.has("_others") ? " open" : ""}><summary class="nr-bt">비교 묶음에 없는 실험 ${nrMut(os.length + "개")}</summary><div class="nr-body">` +
+    `<p class="nr-q">비교 묶음에 추가 시 위로 이동</p>` +
     `<div class="nr-tbl"><table><tr><th>실험</th><th>항목</th><th>해상도 / 배치</th><th>학습 데이터</th><th>상태</th><th>학습 종료</th><th>F1 best / last</th><th>3규칙 F1<br>${nrMut("초당 2장 · 시작 0")}</th></tr>${rows}</table></div></div></details>`;
 }
 function nrTerms(T) {                            // 맨 위 '용어 정리'(접힘). 정의는 result_blocks.yaml terms

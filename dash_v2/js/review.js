@@ -129,7 +129,7 @@ function buildFilt() {
     const inAny = new Set(gs.flatMap(g => g.runs || []));
     box.appendChild(el("label", "", "실험"));
     const gsel = el("select");
-    [...gs.map(g => [g.id, g.label]), ...(all.some(m => !m.variant && !inAny.has(m.exp)) ? [["_other", "블록에 없는 실험"]] : [])]
+    [...gs.map(g => [g.id, g.label]), ...(all.some(m => !m.variant && !inAny.has(m.exp)) ? [["_other", "비교 묶음에 없는 실험"]] : [])]
       .forEach(([v, t]) => { const o = el("option", "", t); o.value = v; gsel.appendChild(o); });
     gsel.value = rvGroup(gs, inAny);
     gsel.onchange = () => {
