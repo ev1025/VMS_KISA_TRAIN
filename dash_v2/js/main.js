@@ -258,7 +258,7 @@ function nrQueueHtml(q) {                       // 맨 위 큐 상자: 옛 결�
         `<td style="padding:3px 10px;font-variant-numeric:tabular-nums;white-space:nowrap">${j.remain_h}시간 → <b>${nrEsc(j.finish_kst || "–")}</b></td>` +
         `<td style="padding:3px 10px;font-variant-numeric:tabular-nums;white-space:nowrap">${j.val ? `${j.val.map50.toFixed(3)} / ${j.val.map5095.toFixed(3)} <span style="color:var(--mut)">(P ${j.val.P.toFixed(2)} R ${j.val.R.toFixed(2)})</span>` : '<span style="color:var(--mut)">첫 검증 전</span>'}</td>` +
         `<td style="padding:3px 10px;white-space:nowrap">${nrEsc(j.mem == null ? "–" : j.mem)}</td></tr>`).join("") + `</tbody></table></div>` : "") +
-    `<details class="nr-qbox nr-qdet"${nrQueueHtml.logOpen ? " open" : ""}><summary>러너 로그 <span class="nr-mut">최근 ${(q.log || []).slice(-6).length}줄</span></summary>${lastLog || '<div class="nr-mut">로그 없음</div>'}</details>`;   // 평소엔 접힘(10-01 사용자). 30초마다 다시 그려도 펼친 상태는 nrQueueHtml.logOpen 으로 유지
+    `<details class="nr-qbox nr-qdet"${nrQueueHtml.logOpen ? " open" : ""}><summary>러너 로그</summary>${lastLog || '<div class="nr-mut">로그 없음</div>'}</details>`;   // 평소엔 접힘(10-01 사용자). 30초마다 다시 그려도 펼친 상태는 nrQueueHtml.logOpen 으로 유지
 }
 function nrQueueBind(box) {                      // 러너 로그 펼침 상태 기억(큐 상자를 다시 그려도 그대로)
   const d = box && box.querySelector(".nr-qdet"); if (d) d.ontoggle = () => { nrQueueHtml.logOpen = d.open; };
