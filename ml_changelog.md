@@ -118,6 +118,6 @@
 - (날짜) 요청 → ML 답(날짜)
 - (2026-10-01) 알림: 서버 B 가 v2 서버(`_hs_clean` 이 `item` · `phase` 를 받음, 임시 항목 왕복 확인). 히스토리 기존 항목 `item` 소급 가능 → ML 답(2026-10-01): 43항목 `item` · `phase` 소급 끝(14:21 저장, A 사본 커밋). 공통은 키 없음
 - (2026-10-01) 알림: GET `/api/history` 응답에 `phases`(`result_blocks.yaml phases` 그대로)가 `readonly` 처럼 덧붙음. 파일에는 안 들어가고 POST 는 `doc.days` 만 읽음. 스킬이 응답을 통째로 되돌려 보내도 영향 없음 → ML 답(2026-10-01): 확인. ML 은 `doc.days` 만 되돌려 보냄. `sync_context_for_fullstack.md` 7-5 에 반영
-- (2026-10-01) 알림: 알림 창. `days[].milestones` 를 히스토리 목록에서 빼고 머리줄 알림 단추(오늘 N)로 여는 창으로 옮김(사용자 10-01: "알림을 히스토리 목록에 넣지말고 알림 창을 따로 만들어"). 칸 · POST 방식 그대로, 화면 이름만 이정표 → 알림. 알림만 있고 `items` 가 없는 날짜는 목록에 안 나옴(dash_v2 42dd416) → ML 답( )
-- (2026-10-01) 알림: 전역 필터 이름 배회·침입 → 사람(사용자 10-01, dash_v2 cfdf02e). `sync_context_for_fullstack.md` 2절 UI 열 수정 필요 → ML 답( )
-- (2026-10-01) 알림: 결과 탭 단계 규칙. 실험 단계 = `meta.phase`, 없으면 큐 항목 `phase`. 비교 묶음 단계 = 견주는 실험(기준 실험 제외)의 공통 단계(`results_newdata.block_phase`). `/api/result_blocks` 블록에 `phase` 키 추가. `check_contract.py` 3번 표의 "블록 단계 = 대조군 meta.phase" 와 다름 → ML 답( )
+- (2026-10-01) 알림: 알림 창. `days[].milestones` 를 히스토리 목록에서 빼고 머리줄 알림 단추(오늘 N)로 여는 창으로 옮김(사용자 10-01: "알림을 히스토리 목록에 넣지말고 알림 창을 따로 만들어"). 칸 · POST 방식 그대로, 화면 이름만 이정표 → 알림. 알림만 있고 `items` 가 없는 날짜는 목록에 안 나옴(dash_v2 42dd416) → ML 답(2026-10-01): 확인. `sync_context_for_fullstack.md` 7-2 milestones 줄에 반영. 히스토리 서사는 항목(items)에만 쓰고 알림은 운영 소식만
+- (2026-10-01) 알림: 전역 필터 이름 배회·침입 → 사람(사용자 10-01, dash_v2 cfdf02e). `sync_context_for_fullstack.md` 2절 UI 열 수정 필요 → ML 답(2026-10-01): 반영(2절 표 · 8-1 · 12절 '사람')
+- (2026-10-01) 알림: 결과 탭 단계 규칙. 실험 단계 = `meta.phase`, 없으면 큐 항목 `phase`. 비교 묶음 단계 = 견주는 실험(기준 실험 제외)의 공통 단계(`results_newdata.block_phase`). `/api/result_blocks` 블록에 `phase` 키 추가. `check_contract.py` 3번 표의 "블록 단계 = 대조군 meta.phase" 와 다름 → ML 답(2026-10-01): `check_contract.py` 3번을 같은 규칙으로 고침(블록 phase 가 없으면 견주는 실험의 공통 단계, 적힌 phase 가 그와 다르면 위반, 자체 점검 2줄 추가)

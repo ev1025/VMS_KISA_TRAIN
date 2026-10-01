@@ -65,7 +65,7 @@
 | UI | `meta.item` | kisa `--item` = `dumps/review` 폴더 | 검수 API `item=` | `dash_meta` 키 | SA(경보 결과 XML, 인증 안내서 용어) `AlarmDescription` | history `item` |
 |---|---|---|---|---|---|---|
 | 화재 | 방화 | fire | fire | fire | FireDetection | 방화 |
-| 배회·침입 | 사람(옛 판: 침입 · 배회) | intrusion · loitering | intrusion · loiter | intrusion · loiter | Intrusion · Loitering | 사람 |
+| 사람(10-01 까지 '배회·침입') | 사람(옛 판: 침입 · 배회) | intrusion · loitering | intrusion · loiter | intrusion · loiter | Intrusion · Loitering | 사람 |
 | 쓰러짐 | 쓰러짐 | falldown | fall | fall | Falldown | 쓰러짐 |
 
 - `meta.item = "사람"` 은 사람 검출 모델 판. 침입 · 배회를 둘 다 채점한다. `results_newdata.ITEMS = {"사람": ["intrusion","loitering"], "방화": ["fire"]}`
@@ -264,7 +264,7 @@ phases:   # 그리드 단계(09-28 계획). 값 = 화면 이름표. 코드는 me
 | 키 | 필수 | 뜻 |
 |---|---|---|
 | `id` | 필수 | 블록 id |
-| `phase` | 선택 | **계약 v1(새).** 블록의 단계 코드. 없으면 대조군 판의 `meta.phase`. 2단계 블록은 대조군이 1단계 판이라 블록에 적혀 있다. 응답으로 넘기려면 `results_newdata.block()` 키 튜플에 `phase` 추가(풀스택 1줄) |
+| `phase` | 선택 | **계약 v1(새).** 블록의 단계 코드. 없으면 견주는 실험(대조군 제외)의 공통 `meta.phase`(화면 `results_newdata.block_phase` · `check_contract.py` 3번 같은 규칙, 10-01). 응답으로 넘기려면 `results_newdata.block()` 키 튜플에 `phase` 추가(풀스택 1줄) |
 | `date` | 필수 | `MM-DD` |
 | `title`, `question` | 필수 | 제목('A vs B' 로 읽히게), 목적 |
 | `iv` | 필수 | 독립변수(목록) |
@@ -561,7 +561,7 @@ run 응답:
 | 최상위 | `days` | list | 날짜 내림차순 |
 | day | `date` | str | `YYYY-MM-DD`. **따옴표로 저장**(손 편집으로 따옴표가 빠지면 일지 동기화가 그날을 비움) |
 | day | `note` | str | 선택 |
-| day | `milestones` | [{at, text}] | 선택. 이정표 |
+| day | `milestones` | [{at, text}] | 선택. 화면 이름 '알림'(10-01 부터 날짜별 목록이 아니라 머리줄 '알림' 단추로 여는 창에 보임. 알림만 있고 항목이 없는 날짜는 목록에 안 나옴 → 이야기 흐름은 항목에만 쓴다) |
 | day | `items` | list | |
 | item | `id` | str | 고유. ML 은 `h<MMDD><a..>`(예 `h0930ad`), 화면 새 항목은 `h<MMDD>_<base36>` |
 | item | `s` | str | 상태(필수). `할 일` · `진행` · `완료`. **v3: `아이디어` 는 없앰(전부 할 일)** |
@@ -635,7 +635,7 @@ run 응답:
 | 결과 `results` | 비교 묶음 · 묶음에 없는 실험만 전역 필터로 거름. 점수 카드 · 큐는 필터와 무관하게 전부(사용자 10-01). 실험 배지 `runs[].phase` → `phases` 이름표. 용어 토글 = `terms` | `/api/result_blocks` `/api/queue`(30초) `/api/bench` |
 | 히스토리 `history` | 날짜별 보기 하나(칸반 없음, 7-3) + 상태 카드 + Quick Add + `item` · `phase` 배지 + 전역 필터. B 만 저장 | `/api/history` GET · POST |
 
-- 전역 필터 값: 전체 · 화재 · 배회·침입 · 쓰러짐(2절 표). 데이터 확인 탭은 필터 밖. 상태는 `core.js` 전역 + localStorage `kisa_gf`
+- 전역 필터 값: 전체 · 화재 · 사람 · 쓰러짐(2절 표). 데이터 확인 탭은 필터 밖. 상태는 `core.js` 전역 + localStorage `kisa_gf`
 - 서버 이름표 `#host` 는 `js/host.js`(git 제외)
 
 ### 8-2. 엔드포인트 전체
@@ -830,7 +830,7 @@ SAM2:
 | 1 | `ml_changelog.md` 머리 `미확인:` 의 v1 · v2 항목 읽기(바뀐 것 · 영향 · 옮기기) | 이 문서 4-2 · 7-2 와 같은지 확인 |
 | 2 | `dash_v2/serve_kisa.py`: `HS_ST` 에 `아이디어`, `HS_KEYS` 에 `item` · `phase`, `HS_ITEM` 신설, `_hs_clean` 2줄(`item` ∈ HS_ITEM 또는 없음, `phase` ∈ `result_blocks.yaml phases` 또는 없음), `CONTRACT_VER = 2`(정수) | B 에서 GET `/api/history` → 오늘 day 에 `{id: "hchk_tmp", s: "아이디어", t: "계약 확인용", item: "공통", phase: "grid1"}` → POST(base) → GET 에 `item` · `phase` 살아 있음 → 삭제 → POST |
 | 3 | `dash_v2/results_newdata.py run()`: run 응답에 `phase: meta.get("phase")` 1줄 | `curl -s localhost:8890/api/result_blocks` 에 `phases` 사전과 `runs[판].phase`(1단계 판 = `grid1`, 나머지 null) |
-| 4 | `js/history.js` 날짜별 보기 + 상태 카드 + Quick Add(7-3 · 7-4. 칸반 보기는 만들지 않는다), `js/main.js` · `js/core.js` 전역 필터(화재 · 배회·침입 · 쓰러짐) + `phase` · `item` 배지, `js/review.js` 그룹 이름표(블록 `label` + `phases` 이름표, 9절 문구) | 9절 규칙 위반 0. 은어 · 서술문 없음 |
+| 4 | `js/history.js` 날짜별 보기 + 상태 카드 + Quick Add(7-3 · 7-4. 칸반 보기는 만들지 않는다), `js/main.js` · `js/core.js` 전역 필터(화재 · 사람 · 쓰러짐) + `phase` · `item` 배지, `js/review.js` 그룹 이름표(블록 `label` + `phases` 이름표, 9절 문구) | 9절 규칙 위반 0. 은어 · 서술문 없음 |
 | 5 | A 대시보드 재시작(먼저 `/api/sam2_jobs` 에 `running` · `queued` 없음 확인. pid 로 끄고 `dash_v2/` 에서 `../.venv/bin/python -u serve_kisa.py`, 로그는 `logs/dash/`) → B 로 `dash_v2/*.py` · `js/*.js` · `dashboard.html` 복사(`host.js` 제외) → B `dash.sh stop` → `dash.sh start` → `dash.sh status` | 두 서버 모두 `/api/history` 응답에 `readonly` 가 A true · B false |
 | 6 | `ml_changelog.md` v1 · v2 항목 아래 `확인: 2026-MM-DD dash_v2 <커밋 7자>` 줄 + 머리 `미확인:` 정리 → `git add dash_v2 docs/dashboard.md ml_changelog.md` → `[dash]` 커밋 → `git pull --rebase` → 푸시 | `scripts/check_contract.py` 가 `CONTRACT_VER` 경고 없이 통과(ML 이 돌림) |
 | 7 | ML 에 알림: "B 가 v2 서버. 기존 항목 `item` 소급 가능"(`ml_changelog.md` 요청 절 또는 채팅) | ML 이 B API 로 소급 → A 복사 · 커밋 |

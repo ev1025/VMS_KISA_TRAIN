@@ -53,8 +53,9 @@ def check_metas(metas, phases):
 
 
 def check_blocks(blocks_doc, metas):
-    """3. 블록마다 control ∈ runs. 블록 단계 = 블록의 phase(선택 키), 없으면 대조군 meta.phase (표: 블록 id → 단계 또는 없음)
-    2단계 블록은 대조군이 1단계 판이라 블록에 phase 를 적는다. 적은 값은 phases 코드여야 한다"""
+    """3. 블록마다 control ∈ runs. 블록 단계 = 블록의 phase(선택 키), 없으면 견주는 실험(대조군 제외) meta.phase 가 모두 같을 때 그 값
+    (표: 블록 id → 단계 또는 없음). 화면 규칙 dash_v2 results_newdata.block_phase 와 같다(10-01). 대조군은 앞 단계 판일 수 있어 쓰지 않는다.
+    적은 phase 는 phases 코드여야 하고, 견주는 실험의 공통 단계와 다르면 위반"""
     phases = blocks_doc.get("phases") if isinstance(blocks_doc.get("phases"), dict) else {}
     bad = []
     for b in blocks_doc.get("blocks") or []:
@@ -63,7 +64,11 @@ def check_blocks(blocks_doc, metas):
             bad.append(f"블록 {bid}: control={ctrl!r} 가 runs 에 없음")
         if b.get("phase") is not None and b["phase"] not in phases:
             bad.append(f"블록 {bid}: phase={b['phase']!r} 는 phases 에 없음")
-        ph = b.get("phase") or (metas.get(ctrl) or {}).get("phase")
+        own = {(metas.get(x) or {}).get("phase") for x in (b.get("runs") or {}) if x != ctrl}
+        common = own.pop() if len(own) == 1 else None
+        if b.get("phase") and common and b["phase"] != common:
+            bad.append(f"블록 {bid}: phase={b['phase']!r} 인데 견주는 실험의 단계는 {common!r}")
+        ph = b.get("phase") or common
         print(f"  {str(bid):40} {ph or '없음'}")
     return bad
 
@@ -192,6 +197,9 @@ def selfcheck():
         assert check_blocks({"blocks": [{"id": "b", "control": "zz", "runs": {"r1": ""}}]}, ok_metas), "control ∉ runs 를 못 잡음"
         assert check_blocks({"phases": phases, "blocks": [{"id": "b", "phase": "grid9", "control": "r1", "runs": {"r1": ""}}]}, ok_metas), "블록의 모르는 phase 를 못 잡음"
         assert not check_blocks({"phases": phases, "blocks": [{"id": "b", "phase": "grid1", "control": "r1", "runs": {"r1": ""}}]}, ok_metas), "블록 phase 가 멀쩡한데 걸림"
+        m2 = {"c": {"phase": "grid1"}, "x": {"phase": "grid2"}}
+        assert check_blocks({"phases": {"grid1": "1", "grid2": "2"}, "blocks": [{"id": "b", "phase": "grid1", "control": "c", "runs": {"c": "", "x": ""}}]}, m2), "견주는 실험 단계와 다른 블록 phase 를 못 잡음"
+        assert not check_blocks({"phases": {"grid1": "1", "grid2": "2"}, "blocks": [{"id": "b", "control": "c", "runs": {"c": "", "x": ""}}]}, m2), "대조군이 앞 단계인 2단계 묶음이 걸림"
         assert check_history(hist({"id": "a", "s": "진행", "dec": "채택", "t": "x"}), phases), "완료 아닌 항목의 dec 를 못 잡음"
         assert check_history(hist({"id": "a", "s": "완료", "dec": "확인 중", "t": "x"}), phases), "HS_DEC 밖 dec 를 못 잡음"
         assert check_history(hist({"id": "a", "s": "할 일", "t": "x"}, {"id": "a", "s": "할 일", "t": "y"}), phases), "id 중복을 못 잡음"
