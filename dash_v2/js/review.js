@@ -242,8 +242,27 @@ function renderCenter(row, opt) {
   const overlay = t => review ? drawZoneRv(zoneov, row, rv, t) : drawZone(zoneov, row, t);
 
   const ctrl = el("div", "ctrl");
-  const pp = el("button", "", "▶"); pp.onclick = () => v.paused ? v.play() : v.pause();
-  v.onplay = () => pp.textContent = "❚❚"; v.onpause = () => pp.textContent = "▶";
+  const pp = el("button", "", "▶");
+  // 검수 탭은 판정기처럼 초당 6장만 보여 준다(2026-10-01 사용자). 영상은 멈춰 두고 1/6초 칸(시작 0)으로 차례로 옮긴다.
+  // 배속은 영상 시간이 흐르는 빠르기만 바꾼다(그만큼 칸을 건너뜀). 옮기기가 밀리면 벽시계 기준으로 따라잡는다(느려지지 않게)
+  const FPS6 = 6, st = { on: false, t0: 0, w0: 0, timer: 0, ours: false };
+  const anchor = () => { st.t0 = v.currentTime; st.w0 = performance.now(); };
+  const stopStep = () => { st.on = false; clearTimeout(st.timer); pp.textContent = "▶"; };
+  const stepTick = () => {
+    if (!st.on || !document.body.contains(v)) return;
+    const dur = v.duration || total || 0, target = st.t0 + (performance.now() - st.w0) / 1000 * wantRate;
+    const k = Math.floor(target * FPS6 + 1e-6) / FPS6;
+    if (dur && k >= dur - 1e-3) { stopStep(); return; }
+    const next = () => { const due = st.w0 + ((k + 1 / FPS6) - st.t0) / wantRate * 1000; st.timer = setTimeout(stepTick, Math.max(0, due - performance.now())); };
+    if (Math.abs(v.currentTime - (k + 0.001)) < 1e-4) { next(); return; }
+    st.ours = true;
+    v.addEventListener("seeked", () => { st.ours = false; next(); }, { once: true });
+    v.currentTime = k + 0.001;                                   // 칸 시작보다 살짝 뒤로: 앞 프레임이 걸리지 않게
+  };
+  const startStep = () => { if (!v.duration) return; v.pause(); st.on = true; anchor(); pp.textContent = "❚❚"; stepTick(); };
+  v.addEventListener("seeking", () => { if (st.on && !st.ours) anchor(); });   // 정답 · 예측 단추나 재생바로 옮기면 그 자리부터 다시
+  if (review) { pp.onclick = () => st.on ? stopStep() : startStep(); }
+  else { pp.onclick = () => v.paused ? v.play() : v.pause(); v.onplay = () => pp.textContent = "❚❚"; v.onpause = () => pp.textContent = "▶"; }
   const now = el("span", "now", "0:00");
   ctrl.appendChild(pp); ctrl.appendChild(now);
   if (gt != null) { const j = el("button", "jmp gt", "GT " + fmt(gt)); j.onclick = () => v.currentTime = Math.max(0, gt - 3); ctrl.appendChild(j); }
@@ -253,6 +272,7 @@ function renderCenter(row, opt) {
   [1, 2, 4, 8].forEach(x => {
     const b = el("button", x === 1 ? "on" : "", x + "x");
     b.onclick = () => {
+      if (st.on) anchor();                               // 6장 재생 중 배속을 바꾸면 지금 자리부터 새 배속으로
       wantRate = x; v.playbackRate = x;
       rate.querySelectorAll("button").forEach(z => z.classList.remove("on")); b.classList.add("on");
     };
@@ -261,6 +281,7 @@ function renderCenter(row, opt) {
   // 브라우저가 seek·로드 후 배속을 1로 되돌리는 경우가 있어, 선택한 배속을 다시 강제한다
   v.addEventListener("ratechange", () => { if (Math.abs(v.playbackRate - wantRate) > 0.01) v.playbackRate = wantRate; });
   v.addEventListener("play", () => { v.playbackRate = wantRate; });
+  if (review) { const f6 = el("span", "", "초당 6장"); f6.style.cssText = "margin-left:auto;font-size:var(--fs-xs);color:var(--mut);white-space:nowrap"; ctrl.appendChild(f6); rate.style.marginLeft = "8px"; }
   ctrl.appendChild(rate);
   if (review) {                                          // 검수 탭: 모델은 왼쪽에서 고른다. 여기는 이름만
     const m = rvModel(), tag = el("span", "", "");
