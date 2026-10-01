@@ -120,8 +120,8 @@
 | 전역 항목 필터 | `js/core.js` `GF_DEF` · `GF`, 단추 = `js/main.js buildMode()` | 전체 · 화재 · 배회·침입 · 쓰러짐. 모든 탭에 적용, `localStorage kisa_gf` 에 기억. 계층별 이름(meta.item · 검수 item · 점수 카드 · 라벨 모드)은 `GF_DEF` 한 곳 |
 | 데이터 확인 탭 | `js/data.js buildDatasetSrc()` | 원본 목록을 라벨 모드로 거름. 여러 항목이 섞인 배포 검증영상은 늘 보임 |
 | 영상 검수 탭 | `js/review.js buildSrc()` · `serve_kisa.py review_models()` | 검수 항목 = 필터 안에서만. 그룹 이름표 = 블록 `[날짜] 제목` + 대조군 `meta.phase` 의 `phases` 이름표 |
-| 결과 탭 | `js/main.js nrDraw()` · `results_newdata.run()` | 점수 카드 · 블록 · 블록 밖 실험을 필터로 거름. 실험마다 모델 · 단계 배지, 단계 고르기(`localStorage nr_ph`). `runs[판].phase` = `meta.phase` |
-| 히스토리 탭 | `js/history.js` · `serve_kisa.py _hs_clean()` | 칸반 4열(아이디어 → 할 일 → 진행 → 완료), 카드 끌어 옮기기 = 상태 변경(완료 밖으로 가면 판정 지움), 맨 위 Quick Add = `{id, s: 아이디어, t}`(+ 필터 항목이면 `item`). `item` · `phase` 배지, 날짜별 보기는 단추로 전환(`localStorage hs_view`) |
+| 결과 탭 | `js/main.js nrDraw()` · `results_newdata.run()` | 비교 묶음 · 묶음 밖 실험을 필터로 거름(점수 카드 · 큐는 늘 전부). 실험마다 모델 · 단계 배지, 단계 고르기(`localStorage nr_ph`). `runs[판].phase` = `meta.phase` |
+| 히스토리 탭 | `js/history.js` · `serve_kisa.py _hs_clean()` | 날짜별 보기 하나(칸반은 10-01 넣었다가 같은 날 뺌). 상태 카드 = 전체 · 아이디어 · 할 일 · 진행 중 · 완료, 맨 위 Quick Add = `{id, s: 아이디어, t}`(+ 필터 항목이면 `item`). `item` · `phase` 배지 |
 | 히스토리 검증 | `_hs_clean()` | `item` ∈ 방화 · 사람 · 쓰러짐 · 공통(없으면 공통), `phase` ∈ `result_blocks.yaml phases` 코드 |
 | 단계 이름표 | GET `/api/history` 응답 `phases`, `/api/result_blocks` 응답 `phases` | `configs/result_blocks.yaml phases` 값 그대로. 응답에만 실리고 `history.yaml` 에는 안 들어감 |
 

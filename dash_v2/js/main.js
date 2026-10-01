@@ -294,7 +294,7 @@ function nrDraw(D, q) {                           // 전역 항목 필터 · 단
     `<option value="_none"${NR_PH === "_none" ? " selected" : ""}>단계 없음</option></select></div>`;
   const blocks = D.blocks.filter(b => gfMeta(b.item) && [b.control, ...b.members].some(x => nrPhOk(D.runs[x])));
   const body = blocks.map(b => nrBlock(b, D, q)).join("") + nrOthers(D, q);
-  c.innerHTML = `<div class="nr"><div class="nr-top">${nrScoreCard((D.score || []).filter(s => GF === "all" || gf().card.includes(s.item)))}<div class="nr-queue" id="nrQ">${nrQueueHtml(q)}</div>` +   // 위에 고정: 항목별 최고 점수 · 큐(항상 펼침) · 용어 정리
+  c.innerHTML = `<div class="nr"><div class="nr-top">${nrScoreCard(D.score || [])}<div class="nr-queue" id="nrQ">${nrQueueHtml(q)}</div>` +   // 위에 고정: 항목별 최고 점수 · 큐(항상 펼침) · 용어 정리
     nrTerms(D.terms || []) + phf + `</div>` + (body || '<div class="empty">이 조건인 실험 없음</div>') + "</div>";
   nrScoreBind(c);
   $("#nrPh").onchange = e => { NR_PH = e.target.value; try { localStorage.setItem("nr_ph", NR_PH); } catch (x) {} nrDraw(D, q); };

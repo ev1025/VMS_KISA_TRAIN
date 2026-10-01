@@ -1,11 +1,10 @@
 // ---------- 히스토리 탭(2026-09-30): 모델 개선 기록. 원본 = configs/history.yaml(GET/POST /api/history)
 // 상태(일이 끝났나) = 아이디어 · 할 일 · 진행 · 완료, 판정(결과를 쓸 건가, 완료만) = 채택 · 기각 · 보류. 사용자가 여기서 고치고 Claude 는 연구일지를 쓸 때 고친다
-// 2026-10-01 계약 v2: 칸반 4열(아이디어 → 할 일 → 진행 → 완료) + 맨 위 Quick Add + item · phase 배지 + 전역 항목 필터(core.js GF). 날짜별 보기는 그대로 남긴다
+// 2026-10-01 계약 v2: 상태 아이디어 + 맨 위 Quick Add + item · phase 배지 + 전역 항목 필터(core.js GF). 칸반 보기는 넣었다가 같은 날 뺐다(사용자), 날짜별 보기 하나
 const HS_ST = ["아이디어", "할 일", "진행", "완료"], HS_DEC = ["채택", "기각", "보류"], HS_ITEM = ["방화", "사람", "쓰러짐", "공통"];
 const HS_LBL = { "아이디어": "아이디어", "할 일": "할 일", "진행": "진행 중", "완료": "완료" };
 const hsCls = s => ({ "아이디어": "idea", "할 일": "todo", "진행": "run" }[s] || "ok");
-const HS = { doc: null, f: null, df: null, edit: null, open: new Set(), view: "kanban" };        // 문서 · 상태 필터 · 판정 필터 · 고치는 항목 id · 펼친 날짜 · 보기(칸반 / 날짜별)
-try { if (localStorage.getItem("hs_view") === "days") HS.view = "days"; } catch (e) {}
+const HS = { doc: null, f: null, df: null, edit: null, open: new Set() };        // 문서 · 상태 필터 · 판정 필터 · 고치는 항목 id · 펼친 날짜
 const hsEsc = s => String(s == null ? "" : s).replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 const HS_WD = "일월화수목금토";
 const hsDay = d => { const t = new Date(d + "T00:00:00+09:00"); return `${d.slice(5)} (${HS_WD[t.getDay()]})`; };
@@ -59,12 +58,11 @@ function hsForm(it) {                                // 항목 고치기 칸(그
     <label>기록 위치<input name="ref" value="${hsEsc(it.ref)}" placeholder="커밋 · 결과 파일"></label>
     <div class="hs-fbtn"><button class="hs-save">저장</button><button class="hs-cancel">취소</button><button class="hs-del">삭제</button></div></div>`;
 }
-function hsRow(it, date) {                           // date 를 주면 칸반 카드(날짜 태그가 붙는다)
+function hsRow(it) {
   if (HS.edit === it.id && !HS.doc.readonly) return hsForm(it);
   const phl = (HS.doc.phases || {})[it.phase];
   const bdg = `<span class="hs-bdg">${hsEsc(it.item || "공통")}</span>` + (phl ? `<span class="hs-bdg ph">${hsEsc(phl)}</span>` : "");   // 단계 이름표는 phases 값 그대로, 없으면 표시 안 함
-  const tags = [...(date ? [`<span class="hs-tag">${date.slice(5)}</span>`] : []),
-    ...(it.carry ? [`<span class="hs-tag hs-tag-carry">${hsEsc(it.carry)}</span>`] : []),     // 기록 위치 · 넘어감 = 본문 아래 태그(오른쪽 끝에 두면 시선이 흩어지고 제목 줄이 깨졌다)
+  const tags = [...(it.carry ? [`<span class="hs-tag hs-tag-carry">${hsEsc(it.carry)}</span>`] : []),     // 기록 위치 · 넘어감 = 본문 아래 태그(오른쪽 끝에 두면 시선이 흩어지고 제목 줄이 깨졌다)
     ...String(it.ref || "").split(" · ").filter(Boolean).map(r => `<span class="hs-tag">${hsEsc(r)}</span>`)];
   return `<div class="hs-it"><span class="hs-pill hs-p-${hsCls(it.s)}">${HS_LBL[it.s] || hsEsc(it.s)}</span>
     <div class="hs-body"><div class="hs-bdgs">${bdg}</div><div class="hs-ttl">${hsEsc(it.t)}</div>
@@ -74,15 +72,7 @@ function hsRow(it, date) {                           // date 를 주면 칸반 �
       ${tags.length ? `<div class="hs-tags">${tags.join("")}</div>` : ""}</div>
     ${HS.doc.readonly ? "<span></span>" : `<button class="hs-pen" data-id="${hsEsc(it.id)}" title="고치기" aria-label="고치기">✎</button>`}</div>`;
 }
-function hsKanban(D) {                               // 4열. 열 안은 최근 날짜 먼저. 판정 필터는 완료 열에만 먹는다
-  const keep = it => hsGf(it) && (!HS.df || it.s !== "완료" || it.dec === HS.df) || HS.edit === it.id;
-  return '<div class="hs-kb">' + HS_ST.map(s => {
-    const its = D.days.flatMap(d => d.items.filter(i => i.s === s && keep(i)).map(i => [i, d.date]));
-    return `<section class="hs-col" data-s="${s}"><h3 class="hs-colh hs-c-${hsCls(s)}">${HS_LBL[s]}<span>${its.length}</span></h3>` +
-      (its.map(([i, d]) => `<div class="hs-kc" data-id="${hsEsc(i.id)}"${D.readonly || HS.edit ? "" : ' draggable="true"'}>${hsRow(i, d)}</div>`).join("") || '<div class="hs-empty">없음</div>') + "</section>";
-  }).join("") + "</div>";
-}
-function hsDays(D, all) {                            // 날짜별 보기(09-30 화면 그대로)
+function hsDays(D, all) {
   const keep = it => hsGf(it) && (!HS.f || it.s === HS.f) && (!HS.df || it.dec === HS.df) || HS.edit === it.id;
   // 할 일 · 보류를 누르면 날짜 상관없이 오래된 것부터 모아 위에(결정할 것 · 해야 할 것)
   const pool = HS.f === "할 일" ? all.filter(i => i.s === "할 일") : HS.df === "보류" ? all.filter(i => i.dec === "보류") : null;
@@ -104,17 +94,15 @@ function hsDays(D, all) {                            // 날짜별 보기(09-30 �
   return `${open}<div class="hs-tl">${days}</div>`;
 }
 function hsRender() {
-  const c = $("#center"), D = HS.doc, all = D.days.flatMap(d => d.items).filter(hsGf), y = c.scrollTop, kb = HS.view === "kanban";
-  const cards = kb ? "" : '<div class="hs-cards">' + `<button class="hs-card${HS.f ? "" : " on"}" data-s="" aria-pressed="${!HS.f}"><div class="k">전체</div><div class="v">${all.length}</div></button>` + HS_ST.map(s => `<button class="hs-card hs-c-${hsCls(s)}${HS.f === s ? " on" : ""}" data-s="${s}" aria-pressed="${HS.f === s}">
+  const c = $("#center"), D = HS.doc, all = D.days.flatMap(d => d.items).filter(hsGf), y = c.scrollTop;
+  const cards = '<div class="hs-cards">' + `<button class="hs-card${HS.f ? "" : " on"}" data-s="" aria-pressed="${!HS.f}"><div class="k">전체</div><div class="v">${all.length}</div></button>` + HS_ST.map(s => `<button class="hs-card hs-c-${hsCls(s)}${HS.f === s ? " on" : ""}" data-s="${s}" aria-pressed="${HS.f === s}">
       <div class="k">${HS_LBL[s]}</div><div class="v">${all.filter(i => i.s === s).length}</div></button>`).join("") + "</div>";
   const decf = HS_DEC.map(x => `<button class="hs-dfb hs-d-${x}${HS.df === x ? " on" : ""}" data-d="${x}" aria-pressed="${HS.df === x}">${x} ${all.filter(i => i.dec === x).length}</button>`).join("");
   const qa = D.readonly ? "" : `<form class="hs-qa"><input name="t" placeholder="모델 개선 아이디어${GF === "all" ? "" : " · " + gf().label}" aria-label="아이디어 빠른 추가" autocomplete="off"><button>+ 아이디어</button></form>`;   // Quick Add: {id, s: 아이디어, t}(+ 전역 필터 항목)만
-  const view = `<div class="hs-view">${[["kanban", "칸반"], ["days", "날짜별"]].map(([k, l]) => `<button data-v="${k}" class="${HS.view === k ? "on" : ""}" aria-pressed="${HS.view === k}">${l}</button>`).join("")}</div>`;
-  c.innerHTML = `<div class="hs${kb ? " hs-wide" : ""}"><div class="hs-top">${qa}${cards}
-      <div class="hs-meta">${view}<div class="hs-decf">${decf}</div>${D.readonly ? '<span class="hs-ro">보기 전용(고치기는 서버 B 대시보드)</span>' : '<button class="hs-dayadd">+ 날짜</button>'}
-      <span class="sp">마지막 수정 ${hsEsc(D.updated_at)}${D.updated_by ? " · " + hsEsc(D.updated_by) : ""}</span></div></div>${kb ? hsKanban(D) : hsDays(D, all)}</div>`;
+  c.innerHTML = `<div class="hs"><div class="hs-top">${qa}${cards}
+      <div class="hs-meta"><div class="hs-decf">${decf}</div>${D.readonly ? '<span class="hs-ro">보기 전용(고치기는 서버 B 대시보드)</span>' : '<button class="hs-dayadd">+ 날짜</button>'}
+      <span class="sp">마지막 수정 ${hsEsc(D.updated_at)}${D.updated_by ? " · " + hsEsc(D.updated_by) : ""}</span></div></div>${hsDays(D, all)}</div>`;
   c.scrollTop = y;
-  c.querySelectorAll(".hs-view button").forEach(b => b.onclick = () => { HS.view = b.dataset.v; HS.f = null; try { localStorage.setItem("hs_view", HS.view); } catch (e) {} hsRender(); });
   const q = c.querySelector(".hs-qa");
   if (q) q.onsubmit = async e => {
     e.preventDefault();
@@ -124,18 +112,6 @@ function hsRender() {
     d.items.unshift(Object.assign({ id: hsNewId(date), s: "아이디어", t }, GF === "all" ? {} : { item: gf().meta }));
     await hsSave();
   };
-  c.querySelectorAll(".hs-kc[draggable]").forEach(k => k.ondragstart = e => e.dataTransfer.setData("text/plain", k.dataset.id));   // 카드를 끌어 열을 옮기면 상태가 바뀐다
-  if (kb && !D.readonly) c.querySelectorAll(".hs-col").forEach(col => {
-    col.ondragover = e => { e.preventDefault(); col.classList.add("over"); };
-    col.ondragleave = () => col.classList.remove("over");
-    col.ondrop = async e => {
-      e.preventDefault(); col.classList.remove("over");
-      const [d, i] = hsItem(e.dataTransfer.getData("text/plain")); if (!d || d.items[i].s === col.dataset.s) return;
-      d.items[i].s = col.dataset.s;
-      if (col.dataset.s !== "완료") delete d.items[i].dec;             // 판정은 완료 항목에만
-      await hsSave();
-    };
-  });
   c.querySelectorAll(".hs-card").forEach(b => b.onclick = () => { HS.f = HS.f === b.dataset.s ? null : (b.dataset.s || null); hsRender(); });
   c.querySelectorAll(".hs-dfb").forEach(b => b.onclick = () => { HS.df = HS.df === b.dataset.d ? null : b.dataset.d; hsRender(); });
   c.querySelectorAll(".hs-day").forEach(e => e.ontoggle = () => { if (!HS.f && !HS.df) { e.open ? HS.open.add(e.dataset.date) : HS.open.delete(e.dataset.date); } });

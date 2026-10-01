@@ -250,27 +250,14 @@ video{width:100%;aspect-ratio:16/9;object-fit:fill;display:block;background:#000
 .hs-fbtn{display:flex;gap:6px}
 .hs-fbtn button{border:1px solid var(--line);border-radius:var(--r);padding:4px 14px;font-weight:700;cursor:pointer;background:var(--panel);color:var(--tx)}
 .hs-fbtn .hs-save{background:var(--blue);border-color:var(--blue);color:#06090f}.hs-fbtn .hs-del{margin-left:auto;color:#ff7b72}
-/* 계약 v2(2026-10-01): 칸반 4열 · Quick Add · item/phase 배지 */
-.hs.hs-wide{max-width:1560px}
+/* 계약 v2(2026-10-01): Quick Add · item/phase 배지 */
 .hs-qa{display:flex;gap:8px;margin-bottom:10px}
 .hs-qa input{flex:1;min-width:0;background:var(--panel);color:var(--tx);border:1px solid var(--line);border-radius:var(--r);padding:7px 10px;font:inherit}
 .hs-qa button{background:var(--blue);border:1px solid var(--blue);color:#06090f;border-radius:var(--r);padding:0 14px;font-weight:700;cursor:pointer;white-space:nowrap}
-.hs-view{display:flex}.hs-view button{background:var(--panel);color:var(--mut);border:1px solid var(--line);margin-left:-1px;padding:2px 10px;font-size:var(--fs-xs);font-weight:700;cursor:pointer}
-.hs-view button:first-child{border-radius:999px 0 0 999px;margin-left:0}.hs-view button:last-child{border-radius:0 999px 999px 0}
-.hs-view button.on{color:var(--tx);border-color:var(--blue);background:var(--panel2);position:relative;z-index:1}
-.hs-kb{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px;margin-top:16px;align-items:start}
-.hs-col{background:var(--panel);border:1px solid var(--line);border-radius:var(--r-lg);min-width:0}
-.hs-col.over{border-color:var(--blue)}
-.hs-colh{margin:0;padding:9px 12px;font-size:var(--fs-md);font-weight:800;display:flex;justify-content:space-between;border-bottom:1px solid var(--line)}
-.hs-colh.hs-c-ok{color:var(--hs-ok)}.hs-colh.hs-c-run{color:var(--hs-run)}.hs-colh.hs-c-todo{color:var(--hs-todo)}.hs-colh.hs-c-idea{color:var(--hs-idea)}
-.hs-colh span{font-variant-numeric:tabular-nums}
-.hs-kc+.hs-kc{border-top:1px solid var(--line)}.hs-kc[draggable=true]{cursor:grab}
-.hs-kb .hs-it{grid-template-columns:minmax(0,1fr) 28px;padding:12px;gap:6px;border-top:0}.hs-kb .hs-pill{display:none}.hs-kb .hs-form{border-top:0}
 .hs-bdgs{display:flex;flex-wrap:wrap;gap:4px;margin-bottom:5px}
 .hs-bdg{font-size:var(--fs-2xs);font-weight:700;color:var(--mut);border:1px solid var(--line);border-radius:999px;padding:0 8px;line-height:1.7}
 .hs-bdg.ph{color:var(--blue);border-color:#58a6ff55}
-@media (max-width:1100px){.hs-kb{grid-template-columns:repeat(2,minmax(0,1fr))}}
-@media (max-width:760px){.hs-it{grid-template-columns:56px minmax(0,1fr) 28px}.hs-cards{grid-template-columns:repeat(5,minmax(0,1fr))}.hs-prog{display:none}.hs-kb{grid-template-columns:minmax(0,1fr)}}
+@media (max-width:760px){.hs-it{grid-template-columns:56px minmax(0,1fr) 28px}.hs-cards{grid-template-columns:repeat(5,minmax(0,1fr))}.hs-prog{display:none}}
 </style></head><body>
 <div class="top">
  <div class="brand" title="처음 화면으로" style="cursor:pointer" onclick="try{localStorage.removeItem('kisa_last_view')}catch(e){};location.href='/'">KISA 검수</div>
