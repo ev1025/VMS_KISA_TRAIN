@@ -41,7 +41,7 @@ async function buildDatasetSrc() {
   // 드롭다운은 고른 쪽만
   if (DS_KIND === "raw") {
     $(".srcbox label").hidden = true;   // 드롭다운만 봐도 알아볼 수 있어 이름표를 안 둔다
-    SOURCES.forEach(x => {
+    SOURCES.filter(x => GF === "all" || /배포/.test(x.key) || ((DATASETS[x.key] || {}).mode || catModeAuto(x.key)) === gf().mode).forEach(x => {
       const o = el("option"); o.value = "raw:" + x.key;
       o.textContent = x.count ? `${x.key} (영상 ${x.count}편)` : x.key;
       sel.appendChild(o);

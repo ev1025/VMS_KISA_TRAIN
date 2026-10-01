@@ -109,3 +109,21 @@
 * 맨 위 = 옛 결과 탭과 같은 큐 상자(실행 중 실험 · 에폭 · 이 에폭 · 속도 · 에폭당 · 예상 종료 · 최근 mAP · GPU + 러너 로그, 30초 갱신). 그 위 요약 줄은 뺐다
 * 사본 서버(서버 B 등, 2026-09-29): `results/` · `dumps/review/` · 끝난 새 데이터 판의 `runs/<실험>/<모델>/`(args.yaml · results.csv · weights/best · last) 를 옮기면 검수 · 결과 탭이 뜬다. meta 의 절대 경로는 `review_cache.local_path()` 가 저장소 기준으로 바꾸고, 결과 탭은 학습 서버가 적어 둔 `results/<실험>/run_info.json`(학습 인자 · 검증셋 · 돈 에폭) 을 읽는다
 * 이 데이터는 git 에 넣지 않는다: 검수 파일에 KISA 영역 다각형 · 정답 시각이 들어 있고 점수 파일에도 편별 정답 시각이 있다(진흥원 자료에서 나온 것). 새 판이 끝나면 학습 서버 → 사본 서버로 직접 옮긴다
+
+---
+
+## 8. 계약 v1 · v2 반영 (2026-10-01)
+계약 원문 = 루트 `sync_context_for_fullstack.md` · `ml_changelog.md`. `serve_kisa.py` 의 `CONTRACT_VER` = 반영한 계약 버전.
+
+| 무엇 | 어디 | 규칙 |
+| :--- | :--- | :--- |
+| 전역 항목 필터 | `js/core.js` `GF_DEF` · `GF`, 단추 = `js/main.js buildMode()` | 전체 · 화재 · 배회·침입 · 쓰러짐. 모든 탭에 적용, `localStorage kisa_gf` 에 기억. 계층별 이름(meta.item · 검수 item · 점수 카드 · 라벨 모드)은 `GF_DEF` 한 곳 |
+| 데이터 확인 탭 | `js/data.js buildDatasetSrc()` | 원본 목록을 라벨 모드로 거름. 여러 항목이 섞인 배포 검증영상은 늘 보임 |
+| 영상 검수 탭 | `js/review.js buildSrc()` · `serve_kisa.py review_models()` | 검수 항목 = 필터 안에서만. 그룹 이름표 = 블록 `[날짜] 제목` + 대조군 `meta.phase` 의 `phases` 이름표 |
+| 결과 탭 | `js/main.js nrDraw()` · `results_newdata.run()` | 점수 카드 · 블록 · 블록 밖 실험을 필터로 거름. 실험마다 모델 · 단계 배지, 단계 고르기(`localStorage nr_ph`). `runs[판].phase` = `meta.phase` |
+| 히스토리 탭 | `js/history.js` · `serve_kisa.py _hs_clean()` | 칸반 4열(아이디어 → 할 일 → 진행 → 완료), 카드 끌어 옮기기 = 상태 변경(완료 밖으로 가면 판정 지움), 맨 위 Quick Add = `{id, s: 아이디어, t}`(+ 필터 항목이면 `item`). `item` · `phase` 배지, 날짜별 보기는 단추로 전환(`localStorage hs_view`) |
+| 히스토리 검증 | `_hs_clean()` | `item` ∈ 방화 · 사람 · 쓰러짐 · 공통(없으면 공통), `phase` ∈ `result_blocks.yaml phases` 코드 |
+| 단계 이름표 | GET `/api/history` 응답 `phases`, `/api/result_blocks` 응답 `phases` | `configs/result_blocks.yaml phases` 값 그대로. 응답에만 실리고 `history.yaml` 에는 안 들어감 |
+
+* 배포: 서버 A 는 `dash_v2/` 에서 pid 로 끄고 `nohup ../.venv/bin/python -u serve_kisa.py >> ../logs/dash/serve_kisa.log 2>&1 < /dev/null &`, 서버 B 는 파일 복사(`js/host.js` 제외) 뒤 `./dash.sh stop` · `./dash.sh start` 따로. 둘 다 `/api/sam2_jobs` 가 빈 것을 먼저 확인.
+* 확인: 서버 B 에서 임시 항목(`item` · `phase` 포함) 저장 → 다시 읽기 → 삭제. 서버 A `/api/history` 는 `readonly: true`.

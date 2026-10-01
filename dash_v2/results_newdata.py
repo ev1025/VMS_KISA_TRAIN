@@ -165,7 +165,7 @@ def run(exp, E):
         (G / "results" / exp / "run_info.json").write_text(json.dumps(ri, ensure_ascii=False), encoding="utf-8")
     return {"exp": exp, "item": item, "items": ITEMS[item], "status": st, "new": bool(c) and RC._current(dict(c, item=item)),
             "data": _data(c), "n_train": n, "args": args, "planned": planned, "epochs_run": ep, "val": val,
-            "ended": meta.get("ended"), "scores": sc, "lo": {it: lo_ck(sc, it) for it in ITEMS[item]}}
+            "ended": meta.get("ended"), "phase": meta.get("phase"), "scores": sc, "lo": {it: lo_ck(sc, it) for it in ITEMS[item]}}
 
 
 def verdict(r, c):

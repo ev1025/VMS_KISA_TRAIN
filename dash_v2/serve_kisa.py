@@ -561,8 +561,19 @@ _RV_NAME = re.compile(r"^[A-Za-z0-9_.\-]+$")
 
 # ---------------------------------------------------------------- 히스토리 탭(2026-09-30): 모델 개선 기록, 사용자가 고친다
 HISTORY = G / "configs/history.yaml"
-HS_ST, HS_DEC = ("완료", "진행", "할 일"), ("채택", "기각", "보류")
-HS_KEYS = ("id", "s", "dec", "t", "why", "sub", "ref", "cond", "carry")
+CONTRACT_VER = 2                                       # ml_changelog.md 맨 위 vN 과 같아야 한다(scripts/check_contract.py 가 대조)
+HS_ST, HS_DEC = ("아이디어", "할 일", "진행", "완료"), ("채택", "기각", "보류")   # 칸반 열 순서(계약 v2)
+HS_ITEM = ("방화", "사람", "쓰러짐", "공통")
+HS_KEYS = ("id", "s", "dec", "t", "why", "sub", "ref", "cond", "carry", "item", "phase")
+
+
+def _phases():
+    """단계 코드 → 화면 이름표(configs/result_blocks.yaml phases). 못 읽으면 빈 사전"""
+    try:
+        import yaml
+        return (yaml.safe_load((G / "configs/result_blocks.yaml").read_text(encoding="utf-8")) or {}).get("phases") or {}
+    except Exception:
+        return {}
 HS_EDIT = os.environ.get("VMS_HISTORY_EDIT") == "1"   # 고칠 수 있는 원본은 한 서버만(서버 B, dash.sh 가 켬). 다른 서버는 보기만 → 두 곳이 갈라지지 않게
 
 
@@ -579,12 +590,13 @@ def history_read():
         days.append(day)
     d["days"] = sorted(days, key=lambda x: x["date"], reverse=True)
     d["readonly"] = not HS_EDIT
+    d["phases"] = _phases()                              # 화면 배지 · 고르기 칸용(파일에는 안 들어간다)
     return d
 
 
 def _hs_clean(doc):
     """저장 전 모양 검사. 모르는 칸은 버리고, 값이 틀리면 ValueError"""
-    days = []
+    days, phases = [], _phases()
     for day in doc.get("days") or []:
         date = str(day.get("date") or "")
         if not re.match(r"^\d{4}-\d{2}-\d{2}$", date):
@@ -598,6 +610,10 @@ def _hs_clean(doc):
                 raise ValueError(f"상태: {it.get('s')}")
             if it.get("dec") and (it["dec"] not in HS_DEC or it["s"] != "완료"):
                 raise ValueError(f"판정은 완료 항목에만(채택 · 기각 · 보류): {it['t'][:30]}")
+            if it.get("item") and it["item"] not in HS_ITEM:
+                raise ValueError(f"item 은 방화 · 사람 · 쓰러짐 · 공통: {it['item']}")
+            if it.get("phase") and it["phase"] not in phases:
+                raise ValueError(f"phase 는 result_blocks.yaml phases 코드: {it['phase']}")
             items.append(it)
         ms = [{"at": str(m.get("at", "")).strip(), "text": str(m.get("text", "")).strip()} for m in day.get("milestones") or [] if m.get("text")]
         out = {"date": date}
@@ -704,10 +720,12 @@ def review_models(tab_item):
     try:
         import yaml
         have = {m["exp"] for m in out}
-        for b in (yaml.safe_load((G / "configs/result_blocks.yaml").read_text(encoding="utf-8")) or {}).get("blocks") or []:
+        cfg = yaml.safe_load((G / "configs/result_blocks.yaml").read_text(encoding="utf-8")) or {}
+        for b in cfg.get("blocks") or []:
             runs = [b["control"], *b["runs"]]
             if have & set(runs):
-                groups.append({"id": b["id"], "label": f"[{b.get('date', '')}] {b.get('title', '')}", "runs": runs})
+                ph = (cfg.get("phases") or {}).get((_rv_json(G / "results" / b["control"] / "meta.json") or {}).get("phase"))   # 블록 단계 = 대조군의 단계
+                groups.append({"id": b["id"], "label": f"[{b.get('date', '')}] {b.get('title', '')}" + (f" · {ph}" if ph else ""), "runs": runs})
     except Exception:
         groups = []
     return {"models": out, "groups": groups}

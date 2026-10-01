@@ -83,11 +83,12 @@ function buildSrc() {
   $(".srcbox label").hidden = false; $(".srcbox label").textContent = "검수 항목";
   { const _rb = document.getElementById("refreshBtn"); if (_rb) _rb.remove(); }   // 데이터 탭이 드롭다운 옆에 붙인 새로고침은 여기엔 안 쓴다
   $("#filtBox").hidden = false;                                                     // 데이터 탭이 숨긴 것을 되살린다
-  for (const k of REVIEW_ITEMS) {
+  const items = REVIEW_ITEMS.filter(k => GF === "all" || gf().review.includes(k));   // 전역 필터
+  for (const k of items) {
     const v = META.items[k]; if (!v) continue;
     const o = el("option"); o.value = k; o.textContent = `${v.title} (${v.rows.length}편)`; sel.appendChild(o);
   }
-  if (!REVIEW_ITEMS.includes(CUR.item)) CUR.item = "fire";
+  if (!items.includes(CUR.item)) { CUR.item = items[0]; CUR.name = null; FILT = "all"; }
   sel.value = CUR.item;
   sel.onchange = () => { CUR.item = sel.value; CUR.name = null; FILT = "all"; rvRefresh(); };
 }

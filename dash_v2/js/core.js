@@ -13,3 +13,16 @@ let FILT = "all", VID = null;
 // 여기 있던 JS 판정 함수(방화·침입·배회·쓰러짐)는 옛 규칙 상수라 채점과 달라 지웠다.
 const vClass = v => ({ "정검": "ok", "오검": "bad", "오탐": "bad", "미검": "miss", "정상": "none", "라벨": "ok", "빈프레임": "none" }[v] || "none");
 
+
+// 전역 항목 필터(계약 v2, 2026-10-01): 모든 탭에 적용. 계층마다 항목 이름이 달라 여기 한 곳에서 묶는다
+//   meta = results meta.item · history item, review = 검수 API item, card = 결과 탭 점수 카드, mode = 데이터 확인 탭 라벨 모드
+const GF_DEF = {
+  all: { label: "전체" },
+  fire: { label: "화재", meta: "방화", review: ["fire"], card: ["방화"], mode: "fire" },
+  person: { label: "배회·침입", meta: "사람", review: ["intrusion", "loiter"], card: ["침입", "배회"], mode: "person" },
+  fall: { label: "쓰러짐", meta: "쓰러짐", review: ["fall"], card: ["쓰러짐"], mode: "person" },
+};
+let GF = "all";
+try { const v = localStorage.getItem("kisa_gf"); if (GF_DEF[v]) GF = v; } catch (e) {}
+const gf = () => GF_DEF[GF];
+const gfMeta = v => GF === "all" || v === gf().meta || (GF === "person" && (v === "침입" || v === "배회"));   // 옛 실험은 meta.item 이 침입 · 배회

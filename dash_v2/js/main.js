@@ -16,6 +16,17 @@ function buildMode() {
     };
     box.appendChild(b);
   });
+  const g = $("#gfBox"); g.innerHTML = "";                                        // 전역 항목 필터: 모든 탭에 적용(core.js GF)
+  Object.entries(GF_DEF).forEach(([k, d]) => {
+    const b = el("button", k === GF ? "on" : "", d.label);
+    b.setAttribute("aria-pressed", k === GF);
+    b.onclick = () => {
+      if (GF === k) return;
+      GF = k; try { localStorage.setItem("kisa_gf", k); } catch (e) {}
+      buildMode(); applyMode();
+    };
+    g.appendChild(b);
+  });
 }
 function applyMode() {
   document.onkeydown = null;   // 편집기 밖에선 단축키 끄기
@@ -57,6 +68,14 @@ const nrFmt = v => Array.isArray(v) ? (v.length ? v.join(", ") : "없음") : Str
 const nrMut = s => `<span class="nr-mut">${s}</span>`;
 const nrList = a => (a || []).length ? `<ul class="nr-ul">${a.map(x => `<li>${x}</li>`).join("")}</ul>` : nrMut("-");
 const nrArr = v => v == null ? [] : Array.isArray(v) ? v : [v];
+let NR_PH = "";                                   // 단계 필터: "" 전체 · 단계 코드 · "_none" 단계 없음
+try { NR_PH = localStorage.getItem("nr_ph") || ""; } catch (e) {}
+const nrPhOk = r => !NR_PH || (NR_PH === "_none" ? !r.phase : r.phase === NR_PH);
+const nrPhBdg = (D, ph) => (D.phases || {})[ph] ? `<span class="nr-bdg ph">${nrEsc(D.phases[ph])}</span>` : "";   // 이름표는 phases 값 그대로
+function nrBadges(D, r) {                         // 실험마다 모델 · 단계 배지
+  const m = r.args && r.args.model ? String(r.args.model).replace(/\.pt$/, "").replace(/^yolo/i, "YOLO") : "";
+  return `<div>${m ? `<span class="nr-bdg">${nrEsc(m)}</span>` : ""}${nrPhBdg(D, r.phase)}</div>`;
+}
 function nrJob(q, exp) { return (q.jobs || []).find(j => j.name === exp); }
 const nrOpen = (() => { try { const v = JSON.parse(localStorage.getItem("nr_open") || "null"); if (Array.isArray(v)) return new Set(v); } catch (e) {} return new Set(["_queue"]); })();   // 펼친 블록(새로고침 · 다시 열어도 유지)
 function nrSaveOpen() { try { localStorage.setItem("nr_open", JSON.stringify([...nrOpen])); } catch (e) {} }
@@ -163,7 +182,7 @@ function nrBlock(b, D, q) {
     const delta = !i ? nrMut("-") : v ? Object.entries(v.delta).map(([it, d]) => `<div><span class="nr-it">${NR_KO[it]}</span>${d > 0 ? "+" : ""}${d}</div>`).join("") : nrMut("-");
     const chip = !i ? "" : v ? `<span class="nr-chip ${v.call === "동률" ? "tie" : v.call === "개선" ? "win" : "lose"}">${v.call}</span>`
       : `<span class="nr-chip wait">${r.status === "train" ? "학습 중" : r.status === "queue" ? "대기" : "채점 대기"}</span>`;
-    return `<tr class="${i ? "" : "ctl"}"><td class="nr-exp">${nrEsc(x).replace(/_/g, "_<wbr>")}${i ? "" : '<span class="nr-role">대조군</span>'}${r.new ? "" : '<div class="nr-warn">새 데이터 실험 아님</div>'}</td>` +
+    return `<tr class="${i ? "" : "ctl"}"><td class="nr-exp">${nrEsc(x).replace(/_/g, "_<wbr>")}${i ? "" : '<span class="nr-role">대조군</span>'}${nrBadges(D, r)}${r.new ? "" : '<div class="nr-warn">새 데이터 실험 아님</div>'}</td>` +
       `<td class="nr-chg">${nrChanged(b, r)}</td><td class="nr-st">${nrStatus(r, q)}</td><td class="nr-num">${nrEnded(r, q)}</td>` +
       `<td class="nr-num">${nrScore(r)}</td><td class="nr-r3">${nrRule3(r)}</td>${kc ? `<td>${nrKeys(r, kc)}</td>` : ""}<td class="nr-num">${delta}</td><td>${chip}</td></tr>`;
   }).join("");
@@ -171,16 +190,18 @@ function nrBlock(b, D, q) {
   const chips = b.members.map(x => { const v = b.verdicts[x], r = D.runs[x];     // 접었을 때도 판정이 보이게
     return v ? `<span class="nr-chip ${v.call === "동률" ? "tie" : v.call === "개선" ? "win" : "lose"}">${v.call}</span>`
       : `<span class="nr-chip wait">${r.status === "train" ? "학습 중" : r.status === "queue" ? "대기" : "채점 대기"}</span>`; }).join("");
-  return `<details class="nr-block" data-id="${nrEsc(b.id)}"${nrOpen.has(b.id) ? " open" : ""}><summary class="nr-bt">${nrEsc(b.date ? `[${b.date}] ` : "")}${nrEsc(b.title)}<span class="nr-sum">${chips}</span></summary><div class="nr-body">` +
+  return `<details class="nr-block" data-id="${nrEsc(b.id)}"${nrOpen.has(b.id) ? " open" : ""}><summary class="nr-bt">${nrEsc(b.date ? `[${b.date}] ` : "")}${nrEsc(b.title)}<span class="nr-sum">${nrPhBdg(D, D.runs[b.control].phase)}${chips}</span></summary><div class="nr-body">` +
     (b.question ? `<p class="nr-q"><b>목적:</b> ${nrEsc(b.question)}</p>` : "") + nrCond(b, D) +
     `<div class="nr-tbl"><table>${head}${rows}</table></div>` +
     (concl.length ? `<div class="nr-note"><b>결론</b>${nrList(concl.map(nrEsc))}</div>` : "") + "</div></details>";
 }
 function nrOthers(D, q) {                        // 블록에 아직 안 넣은 새 데이터 실험(끝난 것 · 학습 중인 것)
-  const rows = D.others.map(x => { const r = D.runs[x];
-    return `<tr><td class="nr-exp">${nrEsc(x).replace(/_/g, "_<wbr>")}</td><td>${r.item}</td><td class="nr-num">${nrEsc(r.args.imgsz)} / ${nrEsc(r.args.batch)}</td>` +
+  const os = D.others.filter(x => gfMeta(D.runs[x].item) && nrPhOk(D.runs[x]));
+  if (!os.length) return "";
+  const rows = os.map(x => { const r = D.runs[x];
+    return `<tr><td class="nr-exp">${nrEsc(x).replace(/_/g, "_<wbr>")}${nrBadges(D, r)}</td><td>${r.item}</td><td class="nr-num">${nrEsc(r.args.imgsz)} / ${nrEsc(r.args.batch)}</td>` +
       `<td class="nr-chg"><div class="nr-sub">${r.data.map(nrEsc).join("<br>")}</div></td><td class="nr-st">${nrStatus(r, q)}</td><td class="nr-num">${nrEnded(r, q)}</td><td class="nr-num">${nrScore(r)}</td><td class="nr-r3">${nrRule3(r)}</td></tr>`; }).join("");
-  return `<details class="nr-block" data-id="_others"${nrOpen.has("_others") ? " open" : ""}><summary class="nr-bt">블록에 없는 새 데이터 실험 ${nrMut(D.others.length + "개")}</summary><div class="nr-body">` +
+  return `<details class="nr-block" data-id="_others"${nrOpen.has("_others") ? " open" : ""}><summary class="nr-bt">블록에 없는 새 데이터 실험 ${nrMut(os.length + "개")}</summary><div class="nr-body">` +
     `<p class="nr-q">configs/result_blocks.yaml 에 블록 추가 시 위로 이동</p>` +
     `<div class="nr-tbl"><table><tr><th>실험</th><th>항목</th><th>해상도 / 배치</th><th>학습 데이터</th><th>상태</th><th>학습 종료</th><th>F1 best / last</th><th>3규칙 F1<br>${nrMut("초당 2장 · 시작 0")}</th></tr>${rows}</table></div></div></details>`;
 }
@@ -206,7 +227,7 @@ function nrJudge() {                              // 누른 스코어카드 항�
   const pill = d => `<span class="nr-dec nr-dec-${{채택: "ok", 기각: "no", 보류: "hold"}[d] || "wait"}">${nrEsc(d || "")}</span>`;
   const here = t => !t.variant ? nrMut("–") : !t.here ? nrMut("계산 전") :
     `${s.f1 != null ? s.f1.toFixed(2) + " → " : ""}<b>${t.here["점수"].toFixed(2)}</b> ${nrMut(`정 ${t.here["정검"]} · 미 ${t.here["미검"]} · 오 ${t.here["오검"]}`)}`;
-  const rows = (j.tried || []).map(t => `<tr><th>${nrEsc(t.name)}</th><td>${nrEsc(t.what || "")}</td><td>${pill(t.dec)}</td><td>${nrEsc(t.result || "")}</td><td>${nrEsc(t.why || "")}</td><td class="nr-num">${here(t)}</td></tr>`).join("");
+  const rows = (j.tried || []).map(t => `<tr><th>${nrEsc(t.name)}${t.phase && nrJudge.ph[t.phase] ? `<div><span class="nr-bdg ph">${nrEsc(nrJudge.ph[t.phase])}</span></div>` : ""}</th><td>${nrEsc(t.what || "")}</td><td>${pill(t.dec)}</td><td>${nrEsc(t.result || "")}</td><td>${nrEsc(t.why || "")}</td><td class="nr-num">${here(t)}</td></tr>`).join("");
   return `<div class="nr-judge"><div class="nr-jh">${nrEsc(s.item)} 판정기 설정 (학습 외)${s.exp ? nrMut(` · ${s.exp} · ${s.ck}`) : ""}</div>` +
     `<div class="nr-jc"><b>적용 중</b><ul>${(j.applied || []).map(a => `<li>${nrEsc(a)}</li>`).join("")}</ul></div>` +
     (rows ? `<div class="nr-jc"><b>시험한 기술</b><div class="nr-tbl"><table><tr><th>기술</th><th>내용</th><th>판정</th><th>결과</th><th>이유</th><th>이 모델에 적용<br>${nrMut("채점편, 측정만")}</th></tr>${rows}</table></div></div>` : "") + `</div>`;
@@ -257,16 +278,27 @@ async function buildResults() {
   try { q = await (await fetch("/api/queue")).json(); } catch (e) {}
   if (CUR.mode !== "results") return;
   if (D.error) { c.innerHTML = `<div class="empty">${nrEsc(D.error)}</div>`; return; }
-  c.innerHTML = `<div class="nr"><div class="nr-top">${nrScoreCard(D.score || [])}<div class="nr-queue" id="nrQ">${nrQueueHtml(q)}</div>` +   // 위에 고정: 항목별 최고 점수 · 큐(항상 펼침) · 용어 정리
-    nrTerms(D.terms || []) + `</div>` +
-    D.blocks.map(b => nrBlock(b, D, q)).join("") + (D.others.length ? nrOthers(D, q) : "") + "</div>";
-  nrScoreBind(c);
+  nrDraw(D, q);
   c.scrollTop = y;
-  const tm = c.querySelector(".nr-terms"); if (tm) tm.ontoggle = () => { nrTerms.open = tm.open; };   // 1분 갱신 때 펼친 상태 유지
-  nrQueueBind($("#nrQ")); nrBindToggles(c);
   clearTimeout(window._resQ); if ((q.jobs || []).length) window._resQ = setTimeout(nrQueueTick, 30000);
   clearTimeout(window._resT);                     // 학습 중 · 채점 대기 실험이 있으면 1분마다 다시 읽는다(스크롤 유지)
   if (Object.values(D.runs).some(r => r.status === "train" || r.status === "scoring")) window._resT = setTimeout(() => { if (CUR.mode === "results") buildResults(); }, 60000);
+}
+function nrDraw(D, q) {                           // 전역 항목 필터 · 단계 필터를 걸어 그린다
+  const c = $("#center");
+  nrJudge.ph = D.phases || {};
+  const used = new Set(Object.values(D.runs).map(r => r.phase).filter(Boolean));
+  const phf = `<div class="nr-phf"><label for="nrPh">단계</label><select id="nrPh"><option value="">전체</option>` +
+    Object.entries(D.phases || {}).filter(([k]) => used.has(k)).map(([k, v]) => `<option value="${nrEsc(k)}"${k === NR_PH ? " selected" : ""}>${nrEsc(v)}</option>`).join("") +
+    `<option value="_none"${NR_PH === "_none" ? " selected" : ""}>단계 없음</option></select></div>`;
+  const blocks = D.blocks.filter(b => gfMeta(b.item) && [b.control, ...b.members].some(x => nrPhOk(D.runs[x])));
+  const body = blocks.map(b => nrBlock(b, D, q)).join("") + nrOthers(D, q);
+  c.innerHTML = `<div class="nr"><div class="nr-top">${nrScoreCard((D.score || []).filter(s => GF === "all" || gf().card.includes(s.item)))}<div class="nr-queue" id="nrQ">${nrQueueHtml(q)}</div>` +   // 위에 고정: 항목별 최고 점수 · 큐(항상 펼침) · 용어 정리
+    nrTerms(D.terms || []) + phf + `</div>` + (body || '<div class="empty">이 조건인 실험 없음</div>') + "</div>";
+  nrScoreBind(c);
+  $("#nrPh").onchange = e => { NR_PH = e.target.value; try { localStorage.setItem("nr_ph", NR_PH); } catch (x) {} nrDraw(D, q); };
+  const tm = c.querySelector(".nr-terms"); if (tm) tm.ontoggle = () => { nrTerms.open = tm.open; };   // 1분 갱신 때 펼친 상태 유지
+  nrQueueBind($("#nrQ")); nrBindToggles(c);
 }
 
 
