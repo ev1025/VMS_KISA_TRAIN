@@ -33,15 +33,17 @@ const p2Mods = () => (P2.mods || []).filter(m => m.kind === "module");     // �
 const P2_COND = [[/fog|안개/i, "안개"], [/snow|눈/i, "눈"], [/night|야간/i, "야간"], [/흑백|gray/i, "흑백(IR)"]];
 const P2_SRC = [[/coco/i, "COCO"], [/fasdd/i, "FASDD"], [/aihub|AI허브/i, "AI허브"], [/wildfire|산불/i, "산불"], [/azimjaan/i, "azimjaan"],
   [/kisa/i, "KISA 영상"], [/우리 영상|_own_|handset/i, "우리 영상"], [/손라벨/, "손라벨"], [/전파/, "확인 전파"], [/헛불|_hn_/i, "헛불 억제"]];
-function p2Tags(name) {
-  const m = P2.by[name] || { name, label: "", role: "" }, s = m.name + " " + m.label, out = [];
-  if (m.role === "pos") out.push(["양성", "r-pos"]); else if (m.role === "mixed") out.push(["양성 + 배경", "r-mix"]); else if (m.role === "neg") out.push(["배경", "r-neg"]);
+// 화면 이름(10-02 사용자): data_modules.yaml label 에서 괄호 설명을 떼고 양성 · 음성 말을 바꾼다. 모듈 키는 마우스를 올리면
+const p2Label = name => { const m = P2.by[name]; return !m || !m.label ? name : m.label.replace(/\s*\([^)]*\)/g, "").replace(/\s*양성/g, "").replace(/음성/g, "빈 사진").replace(/\s+/g, " ").trim(); };
+function p2Tags(name) {                                   // 태그 = 원래 label · 키에서 뽑되, 화면 이름에 이미 있는 말은 뺀다(괄호에서 떼어 낸 설명만 남는다)
+  const m = P2.by[name] || { name, label: "" }, s = m.name + " " + m.label, lab = p2Label(name), out = [];
   const cond = P2_COND.filter(([re]) => re.test(s)).map(x => x[1]), syn = /합성|aug/i.test(s);
   if (syn && cond.length === 1) out.push([cond[0] + " 합성", "c"]);
   else { cond.forEach(c => out.push([c, "c"])); if (syn) out.push(["합성", "c"]); }
   P2_SRC.forEach(([re, t]) => { if (re.test(s) && !out.some(x => x[0] === t)) out.push([t, "s"]); });
   if (/공개/.test(m.label) && !out.some(x => ["COCO", "FASDD", "azimjaan"].includes(x[0]))) out.push(["공개셋", "s"]);
-  return out.map(([t, k]) => `<span class="p2-tag ${k}">${nrEsc(t)}</span>`).join("");
+  return out.filter(([t]) => !t.replace(/\(.*?\)/g, "").split(/\s+/).every(w => lab.includes(w)))
+    .map(([t, k]) => `<span class="p2-tag ${k}">${nrEsc(t)}</span>`).join("");
 }
 const P2_LV = { l: "약", m: "중", h: "강" };
 function p2Var(p) {                                       // 합성 변형: 파일 이름 꼬리 _fogh · _snowm → {base, ext, v: '안개 강'}
@@ -166,10 +168,10 @@ function p2Sorted(item) {
 function p2ModHtml(m) {
   const c = P2.cnt[m.name], nx = p2ExN(m.name), nf = p2FxN(m.name);
   const sl = c && !c.error ? p2SusLeft(m.name, c.sus) : 0;
-  const sus = c ? (c.error ? `<span class="p2-sus wait" title="${nrEsc(c.error)}">사진 없음</span>` : `<span class="p2-sus${sl ? "" : " zero"}" title="서버 의심 ${p2N(c.sus)} · 점검 끝 ${p2N(c.sus - sl)}">의심 ${p2N(sl)}</span>`)
+  const sus = c ? (c.error ? "" : `<span class="p2-sus${sl ? "" : " zero"}" title="서버 의심 ${p2N(c.sus)} · 점검 끝 ${p2N(c.sus - sl)}">의심 ${p2N(sl)}</span>`)
     : P2.pending.includes(m.name) ? '<span class="p2-sus wait">세는 중</span>' : "";
-  return `<button type="button" class="p2-mod${m.name === P2.focus ? " on" : ""}" data-n="${nrEsc(m.name)}"><span class="p2-mb"><span class="p2-ml">${nrEsc(m.label)}</span>` +
-    `<span class="p2-nm">${p2Nm(m.name)}</span><span class="p2-tags">${p2Tags(m.name)}</span></span>` +
+  return `<button type="button" class="p2-mod${m.name === P2.focus ? " on" : ""}" data-n="${nrEsc(m.name)}" title="${nrEsc(m.name)}"><span class="p2-mb"><span class="p2-ml">${nrEsc(p2Label(m.name))}</span>` +
+    `<span class="p2-tags">${p2Tags(m.name)}</span></span>` +
     `<span class="p2-mr">${sus}<span class="p2-cnt">${p2N(c && c.total != null ? c.total : m.count)}장</span>${nx ? `<span class="p2-exn">제외 ${nx}</span>` : ""}${nf ? `<span class="p2-fxn">고침 ${nf}</span>` : ""}</span></button>`;
 }
 function p2DrawLeft() {
@@ -216,15 +218,14 @@ async function p2Load(at) {
   p2DrawCenter();
 }
 function p2Head(r) {
-  const m = P2.by[P2.focus] || { label: P2.focus };
   const seg = `<div class="dt-seg p2-seg" role="group" aria-label="보기">` + [["sus", "의심", r && p2SusLeft(P2.focus, r.sus)], ["all", "전체", r && r.total]].map(([k, l, n]) =>
     `<button type="button" class="${P2.flag === k ? "on" : ""}" data-flag="${k}" aria-pressed="${P2.flag === k}">${l}${n != null ? ` <small>${p2N(n)}</small>` : ""}</button>`).join("") + "</div>";
   const why = r ? [...TV_STRONG, ...TV_SOFT].filter(k => r.counts[k]).map(k =>
     `<button type="button" class="tv-chip ${TV_STRONG.includes(k) ? "s" : "w"}${P2.flag === k ? " on" : ""}" data-flag="${k}" aria-pressed="${P2.flag === k}">${nrEsc(r.labels[k])} <b>${p2N(r.counts[k])}</b></button>`).join("") : "";
   const ok = Object.values(P2X.ok).filter(s => s === P2.focus).length;
-  const nav = r ? `<div class="p2-progress">${p2SusView() ? `남은 의심 <b>${p2N(P2.flag === "sus" ? p2SusLeft(P2.focus, r.sus) : r.items.length)}</b>` : `<b>${p2N(P2.off + P2.cur + 1)}</b> / ${p2N(r.sel)}`}` +
+  const nav = r ? `<div class="p2-progress">${P2.flag === "sus" ? "" : p2SusView() ? `남은 의심 <b>${p2N(P2.flag === "sus" ? p2SusLeft(P2.focus, r.sus) : r.items.length)}</b>` : `<b>${p2N(P2.off + P2.cur + 1)}</b> / ${p2N(r.sel)}`}` +
     `<span class="p2-mut">통과 ${p2N(ok)} · 제외 ${p2N(p2ExN(P2.focus))}</span></div>` : "";
-  return `<div class="p2-galh"><div class="p2-gt"><b>${nrEsc(m.label)}</b><span class="p2-nm">${p2Nm(P2.focus)}</span><span class="p2-tags">${p2Tags(P2.focus)}</span></div>` +
+  return `<div class="p2-galh"><div class="p2-gt"><b title="${nrEsc(P2.focus)}">${nrEsc(p2Label(P2.focus))}</b><span class="p2-tags">${p2Tags(P2.focus)}</span></div>` +
     (r ? `<div class="p2-gc">${seg}${why ? `<div class="tv-chips">${why}</div>` : ""}${nav}</div>` : "") + "</div>";
 }
 function p2CellHtml(it, i) {                              // 아래 줄 한 칸: 의심 = 빨간 점, 통과 = 초록 점, 제외 = 흐림 + 표시
@@ -234,7 +235,7 @@ function p2CellHtml(it, i) {                              // 아래 줄 한 칸:
 }
 function p2BigHtml(it) {                                  // 크게: 라벨 박스 그대로 + 클래스 이름표 · 의심 사유 · 같은 원본 묶음
   const r = P2.data, ex = P2X.ex[it.p], ok = P2X.ok[it.p], pt = p2PhotoTags(it);
-  return `<div class="p2-big${ex ? " ex" : ""}" data-p="${nrEsc(it.p)}"><div class="p2-stage"><div class="p2-vt">${p2Tools(it)}</div><span class="p2-bimg"><img alt="" src="${p2Thumb(it.p, 1280)}"><span class="p2-ov">${p2Boxes(it, true)}</span></span></div>${p2SibsHtml(it)}` +
+  return `<div class="p2-big${ex ? " ex" : ""}" data-p="${nrEsc(it.p)}"><div class="p2-stage"><div class="p2-vt">${p2Tools(it)}</div><span class="p2-bimg${P2AR[it.p] ? " fit" : ""}"${P2AR[it.p] ? ` style="--ar:${P2AR[it.p]}"` : ""}><img alt="" src="${p2Thumb(it.p, 1280)}"><span class="p2-ov">${p2Boxes(it, true)}</span></span></div>${p2SibsHtml(it)}` +
     `<div class="p2-binfo"><div class="p2-tags">${ex ? '<span class="p2-tag r-flt p2-st">학습 제외</span>' : ok ? '<span class="p2-tag r-pos p2-st">통과</span>' : ""}${p2Why(it, r)}` +
     `${pt.map(t => `<span class="p2-tag c">${nrEsc(t)}</span>`).join("")}<span class="p2-tag s">박스 ${it.boxes.length}</span></div>` +
     `<div class="p2-file" title="${nrEsc(it.p)}"><b>${p2Nm(it.p.split("/").pop())}</b><span class="p2-dir"><bdi>${nrEsc(it.p.split("/").slice(0, -1).join("/"))}</bdi></span></div></div></div>`;   // 경로는 앞을 '…' 로 줄이고 마우스를 올리면 전체
@@ -265,6 +266,7 @@ function p2SibsHtml(it) {                                 // 같은 원본: 원�
     sibs.map(([x, i, w]) => `<button type="button" class="p2-sib${x.p === it.p ? " on" : ""}" data-i="${i}"><span class="tv-img"><img alt="" src="${p2Thumb(x.p, 320)}">${p2Boxes(x)}</span><span>${w.v}</span></button>`).join("") + "</div>";
 }
 const P2Z = { z: 1, tx: 0, ty: 0 };                      // 큰 사진 확대 · 위치. 모듈을 바꾸면 푼다
+const P2AR = {};                                         // 사진 경로 → 가로/세로 비(받은 뒤 기억). 넘길 때 칸 크기가 한 번에 맞게
 let p2SwapSeq = 0;                                        // 사진 바꾸기 순번(늦게 받은 옛 사진이 새 사진을 덮지 않게)
 function p2ZoomApply(b) {
   const w = b.offsetWidth, h = b.offsetHeight;
@@ -275,8 +277,13 @@ function p2ZoomApply(b) {
 }
 function p2ZoomBind() {                                   // 큰 사진에 휠 확대 · 끌어 이동 · 두 번 눌러 원래대로(10-02 사용자: 전처리와 같게)
   const st = document.querySelector("#p2Big .p2-stage"), b = st && st.querySelector(".p2-bimg"); if (!b) return;
-  const img = b.querySelector("img"); if (img && !img.complete) img.addEventListener("load", () => p2ZoomApply(b), { once: true });
-  p2ZoomApply(b);
+  const img = b.querySelector("img"), p = (b.closest(".p2-big") || {}).dataset;
+  const fit = () => {                                      // 작은 사진(COCO 500px 등)도 사진 칸 높이까지 키운다
+    if (img && img.naturalWidth) { const ar = (img.naturalWidth / img.naturalHeight).toFixed(4); if (p) P2AR[p.p] = ar; b.style.setProperty("--ar", ar); b.classList.add("fit"); }
+    p2ZoomApply(b);
+  };
+  if (img && !img.complete) img.addEventListener("load", fit, { once: true });
+  fit();
   st.onwheel = e => {
     e.preventDefault();
     const r = b.getBoundingClientRect(), cx = e.clientX - (r.left - P2Z.tx), cy = e.clientY - (r.top - P2Z.ty), z0 = P2Z.z;   // 커서 밑 지점(확대 전 좌표)
@@ -345,7 +352,7 @@ function p2Show() {                                       // 고른 사진 · �
   $("#p2Acts").outerHTML = p2ActsHtml(it);
   const my = ++p2SwapSeq, pre = new Image();                // 새 사진을 다 받은 뒤 바꿔 끼운다(10-02: 넘길 때 사진 칸이 잠깐 비던 것)
   const swap = () => { if (my !== p2SwapSeq || !big.isConnected) return; big.innerHTML = p2BigHtml(it); p2ZoomBind(); };
-  pre.onload = pre.onerror = swap; pre.src = p2Thumb(it.p, 1280); if (pre.complete) swap();
+  pre.onerror = swap; pre.onload = () => { if (pre.naturalWidth) P2AR[it.p] = (pre.naturalWidth / pre.naturalHeight).toFixed(4); swap(); }; pre.src = p2Thumb(it.p, 1280); if (pre.complete) swap();
   p2StripScroll(); p2Preload(); p2DrawLeftMarks();
 }
 function p2DrawLeftMarks() {                              // 제외 수만 바꾼다(목록 순서 · 스크롤은 그대로)
@@ -438,7 +445,7 @@ function p2ExList() {                                     // 학습 제외 목�
   const by = {};
   Object.entries(P2X.ex).forEach(([p, v]) => (by[v.set] = by[v.set] || []).push([p, v]));
   pop.innerHTML = `<div class="p2-poph"><b>학습 제외 ${p2N(Object.keys(P2X.ex).length)}</b>${P2.exOk ? "" : '<span class="p2-mut">서버 반영 전</span>'}<span class="p2-grow"></span><button type="button" class="p2-sbtn" data-pclose="1">닫기</button></div>` +
-    (Object.keys(by).length ? Object.entries(by).map(([s, rows]) => `<div class="p2-exg"><div class="p2-exh">${nrEsc((P2.by[s] || {}).label || s)}<span class="p2-nm">${p2Nm(s)}</span><span class="p2-mut">${rows.length}</span></div>` +
+    (Object.keys(by).length ? Object.entries(by).map(([s, rows]) => `<div class="p2-exg"><div class="p2-exh" title="${nrEsc(s)}">${nrEsc(p2Label(s))}<span class="p2-mut">${rows.length}</span></div>` +
       rows.map(([p, v]) => `<div class="p2-exr"><img alt="" loading="lazy" src="${p2Thumb(p, 320)}"><span class="p2-exf"><b>${p2Nm(p.split("/").pop())}</b><span class="p2-tags">${(v.why || []).map(w => `<span class="p2-tag r-flt">${nrEsc(w)}</span>`).join("")}<span class="p2-mut">${nrEsc(v.at || "")}</span></span></span>` +
         `<button type="button" class="p2-sbtn" data-unex="${nrEsc(p)}">되돌리기</button></div>`).join("") + "</div>").join("") : p2Empty("제외한 사진 없음"));
   if (!pop.matches(":popover-open")) pop.showPopover();
@@ -460,7 +467,7 @@ function p2FixList() {                                    // 라벨 고침 목�
   all.forEach(([k, v]) => (by[v.set] = by[v.set] || []).push([k, v]));
   const cls = (s, c) => ((P2_CLS[(P2.by[s] || {}).item] || [])[c] || ["번호 " + c])[0];
   pop.innerHTML = `<div class="p2-poph"><b>라벨 고침 ${p2N(all.length)}</b><span class="p2-mut">지운 박스</span>${P2.fixOk ? "" : '<span class="p2-mut">서버 반영 전</span>'}<span class="p2-grow"></span><button type="button" class="p2-sbtn" data-pclose="1">닫기</button></div>` +
-    (all.length ? Object.entries(by).map(([s, rows]) => `<div class="p2-exg"><div class="p2-exh">${nrEsc((P2.by[s] || {}).label || s)}<span class="p2-nm">${p2Nm(s)}</span><span class="p2-mut">${rows.length}</span></div>` +
+    (all.length ? Object.entries(by).map(([s, rows]) => `<div class="p2-exg"><div class="p2-exh" title="${nrEsc(s)}">${nrEsc(p2Label(s))}<span class="p2-mut">${rows.length}</span></div>` +
       rows.map(([k, v]) => `<div class="p2-exr"><span class="tv-img"><img alt="" loading="lazy" src="${p2Thumb(v.path, 320)}"><svg class="tv-svg" viewBox="0 0 1 1" preserveAspectRatio="none" aria-hidden="true">` +
         `<rect x="${v.box[1] - v.box[3] / 2}" y="${v.box[2] - v.box[4] / 2}" width="${v.box[3]}" height="${v.box[4]}" fill="none" stroke="#f85149" stroke-width="2" stroke-dasharray="5 4" vector-effect="non-scaling-stroke"/></svg></span>` +
         `<span class="p2-exf"><b>${p2Nm(v.path.split("/").pop())}</b><span class="p2-tags"><span class="p2-tag s">${nrEsc(cls(s, v.box[0]))}</span>${(v.why || []).map(w => `<span class="p2-tag r-flt">${nrEsc(w)}</span>`).join("")}<span class="p2-mut">${nrEsc(v.at || "")}</span></span></span>` +

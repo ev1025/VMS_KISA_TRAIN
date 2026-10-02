@@ -1303,7 +1303,7 @@ function buildFrameBar(f, status) {
       const lab = el("button", null, label); lab.title = `지금 프레임을 ${label} 프레임으로`;   // 글자를 누르면 지금 프레임이 시작/종료가 된다
       lab.style.cssText = "width:auto;height:auto;padding:2px 6px;margin-left:2px;font-size:var(--fs-xs);font-weight:700;color:var(--mut);background:transparent;border:1px solid var(--line);border-radius:var(--r);cursor:pointer";
       lab.onclick = () => { SMb[key] = f.t; if (SMb.a != null && SMb.b != null && SMb.a > SMb.b) { const t = SMb.a; SMb.a = SMb.b; SMb.b = t; } if (ED && ED.fillShots) ED.fillShots(); };
-      const inp = el("input"); inp.type = "text"; inp.inputMode = "numeric"; inp.placeholder = "자동";
+      const inp = el("input"); inp.type = "text"; inp.inputMode = "numeric"; inp.placeholder = "자동"; inp.setAttribute("aria-label", label + " 프레임");
       inp.style.cssText = "width:48px;align-self:stretch;box-sizing:border-box;background:var(--panel);color:var(--tx);border:1px solid var(--line);border-radius:var(--r);text-align:center;font:700 12px ui-monospace,Menlo,monospace;padding:0 4px";
       inp.value = SMb[key] == null ? "" : _disp(SMb[key]);
       inp.onchange = () => { const v = inp.value.trim(); SMb[key] = v === "" ? null : _undisp(+v); if (SMb.a != null && SMb.b != null && SMb.a > SMb.b) { const t = SMb.a; SMb.a = SMb.b; SMb.b = t; } inp.blur(); if (ED && ED.fillShots) ED.fillShots(); };
@@ -1340,7 +1340,7 @@ function buildFrameBar(f, status) {
   bar.appendChild(btn("◀◀10", -10, "10칸 뒤로"));
   bar.appendChild(btn("◀", -1, "1칸 뒤로"));
   const num = el("input");
-  num.type = "text"; num.inputMode = "numeric"; num.value = _disp(f.t);   // type=number 는 브라우저가 위아래 화살표를 붙인다 → text + 숫자 키패드
+  num.type = "text"; num.inputMode = "numeric"; num.value = _disp(f.t); num.setAttribute("aria-label", "프레임 번호");   // type=number 는 브라우저가 위아래 화살표를 붙인다 → text + 숫자 키패드
   num.style.cssText = "width:56px;align-self:stretch;box-sizing:border-box;background:var(--panel);color:var(--tx);border:1px solid var(--line);border-radius:var(--r);padding:2px 8px;font-size:var(--fs-lg);font-weight:400;line-height:1;font-variant-numeric:tabular-nums;text-align:center";
   num.onchange = () => { num.blur(); openFrameAt(f.clip, _undisp(+num.value)); };   // 사람은 정수 프레임번호 입력 → 초로 환산. 포커스를 풀어 숫자키가 객체 전환으로 가게
   const slWrap = el("div", "frbar");

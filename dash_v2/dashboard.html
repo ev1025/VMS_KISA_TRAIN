@@ -732,7 +732,9 @@ body.p2in #center{padding:0 var(--s4) var(--s6)}
 .p2-prog{margin-left:auto;font-size:12px;font-variant-numeric:tabular-nums}
 .p2-lb{flex:1;min-height:0;overflow-y:auto;padding:0 var(--s3) var(--s6);
   -webkit-mask-image:linear-gradient(to bottom,#000 calc(100% - 24px),transparent);mask-image:linear-gradient(to bottom,#000 calc(100% - 24px),transparent)}
-.p2-ih{margin:var(--s4) var(--s1) var(--s2);font-size:var(--fs-lg);font-weight:700;line-height:20px}
+.p2-ih{position:sticky;top:0;z-index:1;margin:var(--s4) 0 var(--s2);padding:var(--s3) var(--s2) var(--s2);background:var(--bg);border-bottom:1px solid var(--line-ctl);font-size:16px;font-weight:700;line-height:22px;color:#fff}   /* 묶음 머리(사람 · 방화): 모듈 이름(14px)보다 크게 · 밑줄 · 스크롤해도 위에 붙음(10-02 사용자) */
+.p2-ih:first-child{margin-top:var(--s1)}
+.p2-tags:empty{display:none}
 .p2-mods{display:flex;flex-direction:column;gap:var(--s1)}
 .p2-mod{display:grid;grid-template-columns:minmax(0,1fr) auto;column-gap:var(--s3);align-items:start;width:100%;padding:var(--s3) var(--s2);background:none;border:0;border-radius:var(--r);color:var(--tx);font:inherit;text-align:left;cursor:pointer}
 .p2-mod:hover{background:var(--panel)}
@@ -772,8 +774,8 @@ body.p2in #center{padding:0 var(--s4) var(--s6)}
 .p2-progress .p2-mut{margin-left:var(--s2);font-size:12px}
 /* 큰 사진(라벨 박스 그대로 · 클래스 이름표) + 오른쪽 같은 원본 묶음 + 아래 사유 · 파일 */
 #p2Big{margin-top:var(--s3)}
-.p2-big{--bigh:calc(100vh - 414px);display:grid;grid-template-columns:minmax(0,1fr) auto;column-gap:var(--s3)}
-.p2-stage{position:relative;display:flex;justify-content:center;align-items:center;min-height:240px;background:#000;border-radius:var(--r-lg);overflow:hidden}
+.p2-big{--bigh:calc(100vh - 404px);display:grid;grid-template-columns:minmax(0,1fr) auto;column-gap:var(--s3)}
+.p2-stage{position:relative;display:flex;justify-content:center;align-items:center;height:var(--bigh);min-height:240px;background:#000;border-radius:var(--r-lg);overflow:hidden}
 .p2-vt{position:absolute;top:var(--s2);right:var(--s2);z-index:2;display:flex;align-items:center;gap:2px;padding:3px;background:#0d1117cc;border:1px solid #ffffff1f;border-radius:var(--r);cursor:default}
 .p2-vb{display:inline-flex;align-items:center;justify-content:center;gap:6px;min-width:28px;height:28px;padding:0 8px;background:transparent;border:0;border-radius:4px;color:var(--tx2);font:600 13px/1 var(--font);cursor:pointer}
 .p2-vb:hover:not(:disabled){background:#ffffff1a;color:var(--tx)}.p2-vb:disabled{opacity:.45;cursor:default}
@@ -784,6 +786,7 @@ body.p2in #center{padding:0 var(--s4) var(--s6)}
 .p2-bimg{position:relative;display:inline-block;line-height:0}
 .p2-stage.zoomed{cursor:grab}.p2-stage.zoomed:active{cursor:grabbing}   /* 확대 중엔 끌어 이동(input.js p2ZoomBind) */
 .p2-bimg img{display:block;max-width:100%;max-height:var(--bigh)}
+.p2-bimg.fit{width:min(100%,calc(var(--bigh) * var(--ar)))}.p2-bimg.fit img{width:100%;height:auto;max-height:none}
 .p2-big.ex .p2-bimg img{opacity:.4}
 .p2-bl{position:absolute;transform:translateY(-100%);padding:0 4px;border-radius:3px 3px 0 0;color:#06090f;font:700 12px/16px var(--font);white-space:nowrap;pointer-events:none}
 .p2-bl.in{transform:none;border-radius:0 0 3px 0}
@@ -809,9 +812,9 @@ body.p2in #center{padding:0 var(--s4) var(--s6)}
 .p2-nav{width:44px;height:44px;padding:0;background:var(--panel);color:var(--tx);border:1px solid var(--line-ctl);border-radius:var(--r);font-size:var(--fs-xl);line-height:1;cursor:pointer}
 .p2-okb,.p2-exb,.p2-undo{display:inline-flex;align-items:center;justify-content:center;height:var(--ctl-h);padding:0 var(--s3);border:1px solid transparent;border-radius:var(--r);font-size:var(--fs-md);font-weight:600;cursor:pointer;white-space:nowrap}
 .p2-okb,.p2-exb{min-width:172px;height:48px;padding:0 var(--s6);font-size:var(--fs-xl);font-weight:700}
-.p2-okb{background:#2ea043;border-color:#2ea043;color:#fff}
+.p2-okb{background:#238636;border-color:#238636;color:#fff}             /* 흰 글자 대비 4.6:1(옛 #2ea043 = 3.4:1) */
 .p2-exb{background:#da3633;border-color:#da3633;color:#fff}
-.p2-okb:hover{background:#3fb950;border-color:#3fb950}
+.p2-okb:hover{background:#2c974b;border-color:#2c974b}
 .p2-exb:hover{background:#f85149;border-color:#f85149}
 .p2-exb.on,.p2-undo{background:var(--panel);border-color:var(--line-ctl);color:var(--tx)}
 .p2-actr{position:absolute;right:var(--s4);display:flex;gap:var(--s2)}          /* 오른쪽: 박스 지우기 · 되돌리기 */
@@ -821,7 +824,7 @@ body.p2in #center{padding:0 var(--s4) var(--s6)}
 /* 아래 줄: 의심 = 빨간 점 · 옅은 빨강 테두리, 통과 = 초록 점 · 초록 테두리(통과가 이긴다), 제외 = 흐림 + 표시 */
 .p2-strip{display:flex;gap:6px;margin-top:auto;padding:var(--s2);overflow-x:auto;background:var(--panel);border:1px solid var(--line);border-radius:var(--r-lg);
   -webkit-mask-image:linear-gradient(to right,transparent,#000 24px,#000 calc(100% - 24px),transparent);mask-image:linear-gradient(to right,transparent,#000 24px,#000 calc(100% - 24px),transparent)}
-.p2-cell{position:relative;flex:0 0 112px;display:flex;flex-direction:column;min-width:0;padding:2px;background:var(--panel);border:1px solid var(--line);border-radius:var(--r);color:var(--tx);font:inherit;text-align:left;cursor:pointer}
+.p2-cell{position:relative;flex:0 0 112px;display:flex;flex-direction:column;justify-content:center;height:88px;overflow:hidden;min-width:0;padding:2px;background:var(--panel);border:1px solid var(--line);border-radius:var(--r);color:var(--tx);font:inherit;text-align:left;cursor:pointer}
 .p2-cell:hover{border-color:var(--line-hover)}
 .p2-cell.cur{border-color:var(--blue);box-shadow:0 0 0 1px var(--blue)}
 .p2-cell.sus:not(.cur){border-color:#d2992280}
@@ -978,7 +981,7 @@ body.p2in #center{padding:0 var(--s4) var(--s6)}
  <div class="left">
   <div class="srcbox">
    <label>데이터 원본</label>
-   <select id="srcSel"></select>
+   <select id="srcSel" aria-label="데이터 원본"></select>
    <div class="filt" id="filtBox"></div>
   </div>
   <div class="list" id="list"></div>
