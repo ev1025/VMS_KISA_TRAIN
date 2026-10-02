@@ -1,5 +1,5 @@
 # 그리드 2단계 방화 요인 7판(2026-10-01). 대조군 = 1단계 승자 f960_bgtest_bg28_b160_20260928, 09-28 그리드 계획 2단계 표의 방화 열.
-# nightpos = 야간 양성 보강 x4 · rsmall = 손라벨 x8 + azimjaan + 안개 음성 없음 · scale = 확대 0.5 ~ 2.5 · hand2 = 손라벨 x2(눈 배경 없음, nosnowbg 와 짝)
+# nightpos = 야간 양성 보강 x4 · rsmall = 손라벨 x8 + 안개 음성 없음(azimjaan 은 10-02 사용자 결정으로 뺌, 학습 금지) · scale = 확대 0.5 ~ 2.5 · hand2 = 손라벨 x2(눈 배경 없음, nosnowbg 와 짝)
 # snowaug = 실제 눈 강설 합성 x2 · nosnowbg = 눈 배경 합성 빼기 · ms = multi_scale 0.333(혼자 돈다, 1280 사본을 읽음).
 # 실행: queue_check.py 통과 뒤 exp_queue.py run 이 파일 --jobs 2 --wait-tmux grid2a (사람 큐가 끝난 뒤). 채점 = 작업 PC fire_watch12(초당 2장 공식 + 6장 참고). 만든 스크립트 /NHNHOME/make_grid2f_1001.py
 # 10-02: 맨 앞에 방화 1단계 1280 두 판(f1280_grid_b170 · b85, phase grid1)을 넣음. 운영계획의 1단계 해상도에서 빠져 있던 것. 1280 이 이기면 2단계 대조군을 바꾼다
@@ -109,7 +109,6 @@ experiments:
   extras:
   - fasdd_snowfog
   - fasdd_yolo
-  - azimjaan_yolo
   - wildfire_pos_yolo
   - fire_snowbg_흑백불_20260926
   oversample:

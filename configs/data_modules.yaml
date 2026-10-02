@@ -25,4 +25,3 @@ modules:
   - {name: fasdd_snowfog, item: 방화, kind: module, role: mixed, count: 3579, label: "공개 FASDD 눈 · 안개 장면"}
   - {name: wildfire_pos_yolo, item: 방화, kind: module, role: pos, count: 59474, label: "공개 산불 양성"}
   - {name: wildfire_fog_neg, item: 방화, kind: module, role: neg, count: 12007, label: "공개 산불 안개 배경(헛불 억제)"}
-  - {name: azimjaan_yolo, item: 방화, kind: module, role: mixed, count: 10739, label: "공개 azimjaan 화재"}

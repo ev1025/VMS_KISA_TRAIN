@@ -36,8 +36,8 @@ open_azimjaan_fire:
   media: image
   mode: fire
   note: 원본 0=구름(버림) 1=불 2=연기. 라이선스 CDLA-Permissive-1.0 (Kaggle azimjaan21, 2026-09-19
-    확인) = 상업 이용 가능
-  use: train
+    확인) = 상업 이용 가능. 2026-10-02 사용자 결정 "azimjaan 은 학습에 쓰면 안 된다" → off
+  use: "off"
 open_coco:
   classes: {0: 0}
   gt: yolo_txt
