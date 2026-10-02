@@ -3,6 +3,7 @@
 # ctl_s1 = 대조군 시드 1(학습 시드만 다름 → 같은 설정 두 번의 검증 F1 차 = 잡음, 2단계 채택 문턱 0.01 확인) · 11n · 11m = 모델 크기 요인(EXPERIMENTS 4.21)
 # 판정 = EXPERIMENTS 4.23(검증 라벨 F1, 최적 에폭). save_period 5. 사람 4단계(결선) 판은 이 큐 앞에 넣는다(대기 중 러너를 끄고 고친 뒤 다시 띄움)
 # 실행: exp_queue.py run 이 파일 --jobs 2 --wait-tmux grid2f. 채점 = 작업 PC 감시(SCORE_ON_THOR) · 서버 B 검증 F1(relay_watch)
+# 2026-10-02 19시: 방화 두 판(대조군 시드 1 · 11m)의 바탕을 배경 10%(f960_bgtest_bg10_b160_20260928 과 같은 구성)로. 방화 대조군 = 배경 10% 판(사용자 "일단 10%로 바꾸고")
 name: queue_grid2b_20261002
 defaults:
   val_small: 600
@@ -42,10 +43,10 @@ experiments:
   names:
   - fire
   - smoke
-  base: aihub71751_48k
+  base: aihub71751_48k_pos_20260928
   extras:
   - fasdd_snowfog
-  - fasdd_yolo
+  - fasdd_yolo_pos_20260928
   - wildfire_pos_yolo
   - wildfire_fog_neg
   - fire_snowbg_흑백불_20260926
@@ -115,10 +116,10 @@ experiments:
   names:
   - fire
   - smoke
-  base: aihub71751_48k
+  base: aihub71751_48k_pos_20260928
   extras:
   - fasdd_snowfog
-  - fasdd_yolo
+  - fasdd_yolo_pos_20260928
   - wildfire_pos_yolo
   - wildfire_fog_neg
   - fire_snowbg_흑백불_20260926
