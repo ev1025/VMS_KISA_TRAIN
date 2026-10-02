@@ -12,21 +12,28 @@ import cv2
 import kisa_paths as KP            # 저장소 루트는 여기 한 곳에서만 정의한다
 V = KP.V
 sys.path.insert(0, str(V / "dash_v2")); import gt_adapters as GTA
-ap = argparse.ArgumentParser(); ap.add_argument("mode", choices=["fire", "person"]); ap.add_argument("--name", default=None)
+ap = argparse.ArgumentParser(); ap.add_argument("mode", choices=["fire", "person", "intrusion", "loitering"]); ap.add_argument("--name", default=None)
 ap.add_argument("--bg", type=int, default=10, help="클립마다 화재 발생 전 구간에서 뽑을 배경 프레임 수(0=안 뽑음)")
 ap.add_argument("--bg-margin", type=float, default=5.0, help="발생 시각 앞 여유(초). 이 안쪽은 배경으로 안 쓴다(불씨가 보일 수 있다)")
 a = ap.parse_args()
 RAW = V / "data/원본데이터"; D = GTA.Datasets(V / "configs/datasets.yaml", RAW)
 NAME = a.name or f"evalset_{a.mode}"; OUT = V / "data/학습데이터" / NAME
 NAMES = ["fire", "smoke"] if a.mode == "fire" else ["person"]
+LABELS = "fire" if a.mode == "fire" else "person"          # 손라벨 파일(fire_labels.json · person_labels.json)
+# 항목별 평가셋(2026-10-02): intrusion · loitering 는 그 항목 폴더 영상만, person = 침입 + 배회. 쓰러짐은 넣지 않는다
+# (사용자 10-02 "쓰러짐은 배포_검증영상에서 빼자": 쓰러짐은 자세 모델 · 분류기 · 경보 시각 단계별 지표로 본다)
+WANT = {"fire": {"fire"}, "intrusion": {"intrusion"}, "loitering": {"loitering"}, "person": {"intrusion", "loitering"}}[a.mode]
 stats = collections.Counter()
 
 
 EVAL_CATS = sorted(c for c, cfg in D.all().items() if cfg.get("use") == "eval")
-def _clip_mode(p):                                  # 채점 카테고리는 항목별 하위 폴더(방화/침입/배회/쓰러짐)가 섞여 있다 → 폴더 이름으로 모드
+def _clip_item(p):                                  # 채점 카테고리는 항목별 하위 폴더(방화/침입/배회/쓰러짐)가 섞여 있다 → 폴더 이름으로 항목
     s = str(p)
-    return "fire" if "방화" in s else ("person" if any(k in s for k in ("침입", "배회", "쓰러짐")) else D.get(p.relative_to(RAW).parts[0]).get("mode"))
-EVAL_MP4 = {p.stem: p for c in EVAL_CATS for p in (RAW / c).rglob("*.mp4") if _clip_mode(p) == a.mode}   # 채점 전용 카테고리 안만 한 번 훑는다
+    for k, v in (("방화", "fire"), ("침입", "intrusion"), ("배회", "loitering"), ("쓰러짐", "falldown")):
+        if k in s:
+            return v
+    return None
+EVAL_MP4 = {p.stem: p for c in EVAL_CATS for p in (RAW / c).rglob("*.mp4") if _clip_item(p) in WANT}   # 채점 전용 카테고리 안만 한 번 훑는다
 
 
 def eval_clip(stem):
@@ -59,7 +66,7 @@ def sam_cls(obj):                                   # SAM 저장소 객체 번�
 frames = {}                                         # (stem, t) → [(cls, [x,y,w,h])]   (빈 목록 = 배경)
 src = {}
 # 1) 손라벨 eval 행
-rows = json.load(io.open(V / f"data/학습데이터/손라벨/{a.mode}_labels.json", encoding="utf-8"))
+rows = json.load(io.open(V / f"data/학습데이터/손라벨/{LABELS}_labels.json", encoding="utf-8"))
 for r in rows:
     if r["clip"] not in EVAL_MP4:                    # 채점 클립인가로 판단(eval 표시는 보조. 표시가 빠진 행도 놓치지 않게)
         continue
@@ -118,7 +125,7 @@ for c in caps.values():
 (OUT / "val.txt").write_text("\n".join(lst) + "\n")
 (OUT / "data.yaml").write_text(f"path: {OUT}\ntrain: {OUT}/val.txt\nval: {OUT}/val.txt\nnc: {len(NAMES)}\nnames: {NAMES}\n")   # 검증 전용. train 칸은 ultralytics 형식 때문에 채울 뿐 학습에 쓰지 않는다
 clips = sorted({s for s, _ in frames})
-meta = {"name": NAME, "mode": a.mode, "built": time.strftime("%F %T"), "frames": len(lst), "clips": clips,
+meta = {"name": NAME, "mode": a.mode, "items": sorted(WANT), "excluded": "쓰러짐(10-02, 단계별 지표로 따로 평가)", "built": time.strftime("%F %T"), "frames": len(lst), "clips": clips,
         "boxes": sum(len(b) for b in frames.values()), "bg_per_clip": a.bg, "bg_margin_s": a.bg_margin,
         "source": "손라벨 eval 행 > SAM 전파(채점 전용 클립) > 발생 전 배경 표본", "use": "검증 전용. 학습 금지", "stats": dict(stats)}
 (OUT / "meta.json").write_text(json.dumps(meta, ensure_ascii=False, indent=1), encoding="utf-8")
