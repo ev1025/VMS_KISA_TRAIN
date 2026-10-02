@@ -48,6 +48,8 @@ def set_dir(name):
         return None
     for root in ROOTS + [r / sub for r in EXTRA_ROOTS for sub in ("학습데이터", "원본데이터")]:
         d = root / name
+        if (d / "list.txt").is_file():                                 # 목록 모듈(mod_*) · 걸러 내기(flt_*) = 사진 폴더 없이 list.txt(계약 v4)
+            return d
         for sub in ("images/train", "images"):
             if (d / sub).is_dir():
                 return d
@@ -55,6 +57,9 @@ def set_dir(name):
 
 
 def list_images(d):
+    lt = d / "list.txt"
+    if lt.is_file():                                                   # 목록 모듈 = 이미지 절대 경로 줄. 걸러 내기는 이름만이라 사진을 짚을 수 없어 빈 목록
+        return [x for x in (ln.strip() for ln in lt.read_text(encoding="utf-8").splitlines()) if x.startswith("/")]
     for sub in ("images/train", "images"):
         s = d / sub
         if s.is_dir():
@@ -184,7 +189,8 @@ def _queue_entries():
         dft = d.get("defaults") or {}
         for e in d.get("experiments") or []:
             if e.get("name"):
-                out[e["name"]] = {"base": e.get("base", dft.get("base", "aihub71751_48k")), "base_frac": e.get("base_frac", dft.get("base_frac", 1.0)),
+                cp = e.get("compose")                                  # 조합 판(계약 v4)은 base · extras · oversample 대신 compose
+                out[e["name"]] = {"compose": cp, "base": None if cp else e.get("base", dft.get("base", "aihub71751_48k")), "base_frac": e.get("base_frac", dft.get("base_frac", 1.0)),
                                   "oversample": dict(dft.get("oversample") or {}, **(e.get("oversample") or {})), "extras": list(e.get("extras") or []),
                                   "item": e.get("item", dft.get("item")), "phase": e.get("phase"), "queue": q.name}
     return out
@@ -199,10 +205,10 @@ def exps(limit=60):
             m = json.loads(f.read_text(encoding="utf-8"))
         except Exception:
             continue
-        if not m.get("base"):
+        if not (m.get("base") or m.get("compose")):
             continue
         out.append({"exp": f.parent.name, "item": m.get("item"), "phase": m.get("phase"), "status": m.get("status"), "when": m.get("started") or "",
-                    "base": m["base"], "base_frac": m.get("base_frac", 1.0), "oversample": m.get("oversample") or {}, "extras": m.get("extras") or [],
+                    "compose": m.get("compose"), "base": m.get("base"), "base_frac": m.get("base_frac", 1.0), "oversample": m.get("oversample") or {}, "extras": m.get("extras") or [],
                     "n_train": m.get("n_train")})
         seen.add(f.parent.name)
     fresh = {q.name for q in (G / "configs").glob("queue*.yaml") if time.time() - q.stat().st_mtime < 2 * 86400}
@@ -215,9 +221,17 @@ def exps(limit=60):
             out.append(dict(e, exp=x, status="학습 중" if busy else "대기", when="9999" if busy else "9998", n_train=None))
     out.sort(key=lambda r: r["when"], reverse=True)
     for r in out[:limit]:
-        sets = [{"name": r["base"], "role": "베이스", "k": 1, "frac": r["base_frac"]}]
-        sets += [{"name": s, "role": "반복", "k": int(k)} for s, k in r["oversample"].items()]
-        sets += [{"name": s, "role": "추가", "k": 1} for s in r["extras"]]
+        cp = r.get("compose")
+        if cp:                                                         # 조합 판: 쓴 모듈(반복 배율) · use 밖 반복 · 걸러 내기 · 배경 우선 목록
+            use, rp = cp.get("use") or [], cp.get("repeat") or {}
+            sets = [{"name": s, "role": "모듈", "k": int(rp.get(s, 1))} for s in use]
+            sets += [{"name": s, "role": "반복", "k": int(k)} for s, k in rp.items() if s not in use]
+            sets += [{"name": s, "role": "빼기", "k": 1} for s in cp.get("exclude") or []]
+            sets += [{"name": s, "role": "배경 우선", "k": 1} for s in (cp.get("background") or {}).get("prefer") or []]
+        else:
+            sets = [{"name": r["base"], "role": "베이스", "k": 1, "frac": r["base_frac"]}]
+            sets += [{"name": s, "role": "반복", "k": int(k)} for s, k in r["oversample"].items()]
+            sets += [{"name": s, "role": "추가", "k": 1} for s in r["extras"]]
         r["sets"] = sets
     return {"exps": out[:limit], "eval_clips": len(EVAL)}
 

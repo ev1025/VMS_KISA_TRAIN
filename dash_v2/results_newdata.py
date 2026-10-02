@@ -135,6 +135,14 @@ def _val(exp, e):
 
 
 def _data(c):
+    cp = c.get("compose")
+    if cp:                                                             # 조합 형식(계약 v4): 모듈 · 반복 · 걸러 내기 · 배경 비율(우선 목록)
+        use, rp, bg = cp.get("use") or [], cp.get("repeat") or {}, cp.get("background") or {}
+        out = [f"{m} ×{rp[m]}" if m in rp else m for m in use] + [f"{m} ×{k}" for m, k in rp.items() if m not in use]
+        out += [f"빼기 {x}" for x in cp.get("exclude") or []]
+        if bg.get("ratio") is not None:
+            out.append(f"배경 {round(bg['ratio'] * 100)}%" + (f" · 우선 {', '.join(bg['prefer'])}" if bg.get("prefer") else ""))
+        return out
     return [c.get("base")] + list(c.get("extras") or []) + [f"{k} ×{v}" for k, v in (c.get("oversample") or {}).items()]
 
 
