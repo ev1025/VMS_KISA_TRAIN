@@ -1,0 +1,139 @@
+# 서버 A 안전망 큐(2026-10-02, 사용자 "화요일까지 절대 멈추면 안 돼"). grid2f(방화 1단계 1280 + 2단계 7판)가 끝나면 이어 돈다.
+# 대조군 = 사람 p1280_grid_b85_bg10_20260928 · 방화 f960_bgtest_bg28_b160_20260928. 설정은 대조군 meta 그대로, 바꾼 것만 다르다.
+# ctl_s1 = 대조군 시드 1(학습 시드만 다름 → 같은 설정 두 번의 검증 F1 차 = 잡음, 2단계 채택 문턱 0.01 확인) · 11n · 11m = 모델 크기 요인(EXPERIMENTS 4.21)
+# 판정 = EXPERIMENTS 4.23(검증 라벨 F1, 최적 에폭). save_period 5. 사람 4단계(결선) 판은 이 큐 앞에 넣는다(대기 중 러너를 끄고 고친 뒤 다시 띄움)
+# 실행: exp_queue.py run 이 파일 --jobs 2 --wait-tmux grid2f. 채점 = 작업 PC 감시(SCORE_ON_THOR) · 서버 B 검증 F1(relay_watch)
+name: queue_grid2b_20261002
+defaults:
+  val_small: 600
+  vram_gate_mib: 10000
+  min_free_gb: 150
+  ram_cache_max: 0
+  stagger_sec: 120
+  util_gate_pct: 30
+  util_window_min: 10
+experiments:
+- name: p1280_grid2_ctl_s1_b85_20261002
+  model: yolo11s
+  item: 사람
+  phase: grid2
+  names:
+  - person
+  base: trainset_person_hnfix_full_bg10_20260928
+  extras: []
+  oversample: {}
+  val_set: data/학습데이터/trainset_person_hnfix_20260927/val_domain.txt
+  extra:
+    patience: 0
+    seed: 1
+    save_period: 5
+  train:
+    multi_scale: 0.0
+    epochs: 60
+    cache: false
+    workers: 8
+    imgsz: 1280
+    batch: 85
+  need_mib: 84000
+- name: f960_grid2_ctl_s1_b160_20261002
+  model: yolo11s
+  item: 방화
+  phase: grid2
+  names:
+  - fire
+  - smoke
+  base: aihub71751_48k
+  extras:
+  - fasdd_snowfog
+  - fasdd_yolo
+  - wildfire_pos_yolo
+  - wildfire_fog_neg
+  - fire_snowbg_흑백불_20260926
+  oversample:
+    handset_fire_hand_20260928: 4
+    fire_mask_hn_fog_20260926: 3
+  extra:
+    patience: 0
+    seed: 1
+    save_period: 5
+  train:
+    multi_scale: 0.0
+    epochs: 60
+    cache: false
+    workers: 8
+    imgsz: 960
+    batch: 160
+  need_mib: 90000
+- name: p1280_grid2_11n_b85_20261002
+  model: yolo11n
+  item: 사람
+  phase: grid2
+  names:
+  - person
+  base: trainset_person_hnfix_full_bg10_20260928
+  extras: []
+  oversample: {}
+  val_set: data/학습데이터/trainset_person_hnfix_20260927/val_domain.txt
+  extra:
+    patience: 0
+    seed: 0
+    save_period: 5
+  train:
+    multi_scale: 0.0
+    epochs: 60
+    cache: false
+    workers: 8
+    imgsz: 1280
+    batch: 85
+  need_mib: 84000
+- name: p1280_grid2_11m_b85_20261002
+  model: yolo11m
+  item: 사람
+  phase: grid2
+  names:
+  - person
+  base: trainset_person_hnfix_full_bg10_20260928
+  extras: []
+  oversample: {}
+  val_set: data/학습데이터/trainset_person_hnfix_20260927/val_domain.txt
+  extra:
+    patience: 0
+    seed: 0
+    save_period: 5
+  train:
+    multi_scale: 0.0
+    epochs: 60
+    cache: false
+    workers: 8
+    imgsz: 1280
+    batch: 85
+  need_mib: 168000
+- name: f960_grid2_11m_b160_20261002
+  model: yolo11m
+  item: 방화
+  phase: grid2
+  names:
+  - fire
+  - smoke
+  base: aihub71751_48k
+  extras:
+  - fasdd_snowfog
+  - fasdd_yolo
+  - wildfire_pos_yolo
+  - wildfire_fog_neg
+  - fire_snowbg_흑백불_20260926
+  oversample:
+    handset_fire_hand_20260928: 4
+    fire_mask_hn_fog_20260926: 3
+  extra:
+    patience: 0
+    seed: 0
+    save_period: 5
+  train:
+    multi_scale: 0.0
+    epochs: 60
+    cache: false
+    workers: 8
+    imgsz: 960
+    batch: 160
+  need_mib: 175000
