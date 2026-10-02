@@ -57,17 +57,14 @@ function shotKinds(clip) {
   return by;
 }
 // 객체 하나의 라벨 프레임(오름차순) 사이에서 전파가 못 잡은 빈 구간(10-02 사용자: "전파하면 쭉 생겨야 하는데 중간에 10장씩 빈다").
-// 반환 {i: [[첫 빈 프레임, 장수], ...]} · i = 빈 구간 바로 뒤 라벨 프레임의 번호. 검토완료(빈 라벨 마커) 프레임은 빈 곳으로 안 센다
+// 반환 {i: [[첫 빈 프레임, 장수], ...]} · i = 빈 구간 바로 뒤 라벨 프레임의 번호
+// 검토완료(빈 라벨 마커) 프레임도 빈 곳으로 센다: 중간 프레임 박스를 지우면(Del · 미리보기 ×) 그 마커가 남는데 +1 이 떠야 한다(10-02 사용자)
 const GAP_MIN = 1;   // 한 장만 비어도 표시(10-02 사용자). 짧은 빈 곳이 너무 많으면 2 로
-function labelGaps(all, kinds) {
+function labelGaps(all) {
   const st = _step(), out = {};
   for (let i = 1; i < all.length; i++) {
-    let run = null;
-    const flush = () => { if (run && run[1] >= GAP_MIN) (out[i] = out[i] || []).push(run); run = null; };
-    for (let t = quant(all[i - 1] + st); t < all[i] - st / 2; t = quant(t + st)) {
-      if (kinds[gridKey(t)] === "empty") flush(); else if (run) run[1]++; else run = [t, 1];
-    }
-    flush();
+    const n = Math.round((all[i] - all[i - 1]) / st) - 1;          // 두 라벨 프레임 사이 빈 장수
+    if (n >= GAP_MIN) out[i] = [[quant(all[i - 1] + st), n]];
   }
   return out;
 }
@@ -709,7 +706,7 @@ function renderEditor(f) {
         const sam = Object.entries(SAMMAP[f.clip] || {}).filter(([k, v]) => v && v[String(o)]).map(([k]) => +k);
         const seedAt = t => SM.seeds.find(sd => sd.obj === o && near(sd.t, t));
         const all = [...new Set([...hand, ...sam, ...SM.seeds.filter(sd => sd.obj === o).map(sd => sd.t)])].sort((x, y) => x - y);
-        const gaps = PROP_OBJ(o) ? labelGaps(all, shotKinds(f.stem)) : {};   // 전파하는 객체만(연기는 손으로 띄엄띄엄 친다)
+        const gaps = PROP_OBJ(o) ? labelGaps(all) : {};   // 전파하는 객체만(연기는 손으로 띄엄띄엄 친다)
         const gapList = Object.values(gaps).flat();
         if (gapList.length) {                          // 머리글: 빈 곳 수. 누르면 지금 프레임 다음 빈 곳으로(끝이면 처음으로)
           const gb = el("button", "objgapn", `빈 곳 ${gapList.length}`); gb.type = "button";
