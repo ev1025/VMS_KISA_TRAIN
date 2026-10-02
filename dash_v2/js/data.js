@@ -1,10 +1,11 @@
 // dash_v2/js/data.js — 데이터 확인 탭(원본/학습 데이터 브라우징·이미지·영상). app.js 에서 분리(2026-09-09). 로드 순서: core → review → data → editor → main (dashboard.html)
 // ---------- 데이터 확인 탭 ----------
-let DSMETA = null, DS_CUR = null, DS_ONLY_LABELED = false, DS_SEL = null, DS_KIND = "raw", DS_EDIT = false;   // raw=원본, ds=학습
+let DSMETA = null, DS_CUR = null, DS_ONLY_LABELED = false, DS_SEL = null, DS_KIND = "raw";   // raw=원본, ds=학습
 let SOURCES = null;                           // 원본 카테고리 목록(/api/sources). 한 번 받아 재사용
 const DS_SEL_BY = { raw: null, ds: null };   // 원본/학습 각각 마지막에 고른 항목
 const CONDS_BY = {};                          // 카테고리 → 촬영조건(한 번 받으면 재사용)
 let RAW_CAT = "", SUBSEL = "", COND_REDRAW = null;   // 지금 보는 카테고리 · 하위폴더 드롭다운 값 · 조건칩 다시그리기
+let NAMEQ = "", NAMEQ_OPEN = false;                  // 영상 이름 찾기(돋보기로 열고 닫는다)
 async function buildDatasetSrc() {
   // 학습 데이터셋 목록. DS_KIND 가 "raw" 로 못 박혀 있어 지금은 화면에서 안 쓰지만,
   // 없을 때 터지면 데이터 확인 탭 전체가 안 뜬다. 빈 값으로 넘어간다.
@@ -38,14 +39,14 @@ async function buildDatasetSrc() {
   cb.onclick = async () => { cb.textContent = "\u2026"; try { await fetch("/api/refresh_cache", { method: "POST" }); } catch (e) {} SOURCES = null; DSMETA = null; buildDatasetSrc(); };
   sr.appendChild(cb);
   initPushButton();                               // 보내기 버튼은 이 줄(새로고침 왼쪽)에 붙는다
-  if (typeof tvToggle === "function") { tvToggle(kb); if (TV_ON) { tvEnter(); return; } }   // [원본 데이터 | 학습 데이터](trainview.js)
   sr.style.display = "flex";
   // 드롭다운은 고른 쪽만
   if (DS_KIND === "raw") {
     $(".srcbox label").hidden = true;   // 드롭다운만 봐도 알아볼 수 있어 이름표를 안 둔다
-    SOURCES.forEach(x => {                          // 데이터 확인은 전역 필터와 무관하게 전부 보인다(10-01 사용자)
+    // 데이터 확인은 전역 필터와 무관하다(10-01). 학습에 쓰는 것만(규격 use: train). 학습 금지(none) · 채점 전용(eval)은 숨긴다(10-02 사용자)
+    SOURCES.filter(x => !DATASETS[x.key] || DATASETS[x.key].use === "train").forEach(x => {
       const o = el("option"); o.value = "raw:" + x.key;
-      o.textContent = x.count ? `${x.key} (영상 ${x.count}편)` : x.key;
+      o.textContent = x.key;                        // 편수는 안 쓴다(10-02 사용자)
       sel.appendChild(o);
     });
   } else {
@@ -70,7 +71,6 @@ function pickDataSrc(v) {
 
 // ---------- 원본데이터 둘러보기 (이미지·영상 원재료) ----------
 async function renderRawList(cat) {
-  DS_EDIT = true;   // 카테고리 새로 고르면 편집가능 항목은 라벨편집부터(catMode 가 none 이면 자동으로 재생)
   const box = $("#list"); box.innerHTML = '<div class="empty">불러오는 중…</div>';
   $("#center").innerHTML = '<div class="empty">항목을 선택하세요</div>';
   $("#right").innerHTML = '<div class="empty">—</div>';
@@ -80,30 +80,23 @@ async function renderRawList(cat) {
   if (CUR.mode !== "data") return;               // 받아 오는 사이 다른 탭으로 갔으면 그 탭 목록을 덮지 않는다(09-30 검수 목록에 데이터 목록이 뜨던 원인)
   box.innerHTML = "";
   RAW_CAT = cat; SUBSEL = ""; COND_REDRAW = null;
-  // 목록 맨 위 머리글. 하위폴더 드롭다운과 촬영조건 칩을 한 상자에 넣고 이 상자만 고정한다
-  // (둘을 각각 sticky 로 붙이면 높이가 서로 달라 겹친다).
+  // 목록 머리(항목 탭 · 조건 · 표시 · 이름 찾기). 목록 안이 아니라 드롭다운 바로 아래(.srcbox)에 둔다:
+  // 목록과 같이 스크롤되지 않고, 목록 스크롤 막대에 폭이 밀리지 않아 드롭다운과 끝이 맞는다(10-02 사용자)
+  { const old = document.getElementById("listHead"); if (old) old.remove(); }
   const head = el("div"); head.id = "listHead";
-  head.style.cssText = "position:sticky;top:-6px;z-index:3;background:var(--bg,#0d1117);" +
-    "margin:-6px -6px 6px;padding:8px 6px 6px;border-bottom:1px solid var(--line);" +
-    "display:flex;flex-direction:column;gap:6px";
-  box.appendChild(head);
-  // 하위 폴더가 여럿인 카테고리(kisa_연구개발_사람영상 = 배회·침입·쓰러짐 825편)는
-  // 한 목록에 다 쏟아지면 고르기 어렵다. 폴더별로 추려 보는 드롭다운을 위에 둔다.
+  $(".srcbox").appendChild(head);
+  // 하위 폴더가 여럿인 카테고리(kisa_연구개발_사람영상 = 배회·침입·쓰러짐 825편)는 폴더별 밑줄 탭으로 추린다
   const subs = [...new Set(r.videos.map(v => subOf(cat, v)).filter(Boolean))].sort();
   if (subs.length > 1) {
-    const row = filterRow("항목");         // 드롭다운 대신 칩. 조건·표시 줄과 같은 모양이라 한눈에 읽힌다
-    row.id = "subFilterRow";
+    const tabs = segGroup("dt-tabs", "항목"); tabs.id = "subFilterRow";
     const pretty = sub => sub.replace(/^\d+\.\s*/, "").replace(/\s*\(\d+개\)\s*$/, "");
     const drawSubs = () => {
-      row.wrap.innerHTML = "";
+      tabs.innerHTML = "";
       const pick = v => { SUBSEL = v; drawSubs(); if (COND_REDRAW) COND_REDRAW(); applyCondFilter(box); openFirstVisible(box); };
-      row.wrap.appendChild(filterChip("전체", r.videos.length, SUBSEL === "", () => pick("")));
-      subs.forEach(sub => {
-        const n = r.videos.filter(v => subOf(cat, v) === sub).length;
-        row.wrap.appendChild(filterChip(pretty(sub), n, SUBSEL === sub, () => pick(sub)));
-      });
+      tabs.appendChild(segBtn("전체", SUBSEL === "", () => pick(""), r.videos.length));
+      subs.forEach(sub => tabs.appendChild(segBtn(pretty(sub), SUBSEL === sub, () => pick(sub), r.videos.filter(v => subOf(cat, v) === sub).length)));
     };
-    drawSubs(); head.appendChild(row);
+    drawSubs(); head.appendChild(tabs);
   }
   // 촬영조건 필터(야간·눈·비·안개). 조건 XML 이 있는 카테고리에서만 뜬다.
   if (r.videos.length) {
@@ -113,26 +106,30 @@ async function renderRawList(cat) {
     if (!cd) { try { cd = await (await fetch("/api/clipconds?src=" + encodeURIComponent(cat))).json(); } catch (e) { cd = {}; } CONDS_BY[cat] = cd || {}; }
     {
       CONDS = cd || {}; CLIPFILTER = "";
-      const draw = () => {
-        cf.innerHTML = ""; cf.style.cssText = "display:flex;flex-direction:column;gap:5px";   // 고정은 바깥 #listHead 가 한다
-        const rowC = filterRow("조건"), rowM = filterRow("표시");
+      const draw = () => {                         // 이름표 · 편수 없이 세그먼트 두 줄(10-02 사용자). 조건 줄 끝 = 이름 찾기 돋보기
+        cf.innerHTML = "";
         const cnt = key => { const k0 = CLIPFILTER; CLIPFILTER = key; const n = r.videos.filter(v => (!SUBSEL || subOf(cat, v) === SUBSEL) && passFilter(v.split("/").pop().replace(/\.mp4$/, ""))).length; CLIPFILTER = k0; return n; };
+        const rowC = el("div", "dt-row"), segC = segGroup("dt-seg", "조건");
         [["", "전체"], ["night", "야간"], ["day", "주간"]]   // 눈·비·안개는 편수가 적고, 야간·악천후는 야간과 같은 편이라 뺐다
           .forEach(([key, label]) => {
-            const n = cnt(key);
-            if (key && !n) return;
-            rowC.wrap.appendChild(filterChip(label, n, CLIPFILTER === key,
-              () => { CLIPFILTER = key; draw(); applyCondFilter(box); }));
+            if (key && !cnt(key)) return;              // 그 조건 영상이 없으면 단추를 안 둔다
+            segC.appendChild(segBtn(label, CLIPFILTER === key, () => { CLIPFILTER = key; draw(); applyCondFilter(box); }));
           });
-        // 표시 필터(손·전파·기본). 조건 칩과 같은 기준(하위폴더·조건)으로 센다
-        const mcnt = key => { const k0 = MARKFILTER; MARKFILTER = key; const n = r.videos.filter(v => {
-            const st = v.split("/").pop().replace(/\.mp4$/, "");
-            return (!SUBSEL || subOf(cat, v) === SUBSEL) && passFilter(st) && passMark(st); }).length; MARKFILTER = k0; return n; };
-        [["", "전체"], ["hand", "완료"], ["prop", "전파"], ["base", "기본"], ["smoke", "연기미완"]].forEach(([key, label]) => {
-          rowM.wrap.appendChild(filterChip(label, mcnt(key), MARKFILTER === key,
-            () => { MARKFILTER = key; draw(); applyCondFilter(box); }));
-        });
-        cf.appendChild(rowC); cf.appendChild(rowM);
+        const sb = el("button", "dt-sbtn" + (NAMEQ_OPEN ? " on" : ""), SVG_SEARCH); sb.type = "button";
+        sb.title = "영상 이름 찾기"; sb.setAttribute("aria-label", "영상 이름 찾기"); sb.setAttribute("aria-expanded", NAMEQ_OPEN);
+        sb.onclick = () => { NAMEQ_OPEN = !NAMEQ_OPEN; if (!NAMEQ_OPEN) NAMEQ = ""; draw(); applyCondFilter(box); const i = cf.querySelector(".dt-search"); if (i) i.focus(); };
+        rowC.appendChild(segC); rowC.appendChild(sb);
+        const segM = segGroup("dt-seg", "표시");     // 기본 · 전파 · 완료 순, 연기미완은 뺐다(10-02 사용자)
+        [["", "전체"], ["base", "기본"], ["prop", "전파"], ["hand", "완료"]].forEach(([key, label]) =>
+          segM.appendChild(segBtn(label, MARKFILTER === key, () => { MARKFILTER = key; draw(); applyCondFilter(box); })));
+        cf.appendChild(rowC); cf.appendChild(segM);
+        if (NAMEQ_OPEN) {
+          const i = el("input", "dt-search"); i.type = "search"; i.placeholder = "영상 이름"; i.autocomplete = "off"; i.value = NAMEQ;
+          i.setAttribute("aria-label", "영상 이름 찾기");
+          i.oninput = () => { NAMEQ = i.value.trim().toLowerCase(); applyCondFilter(box); };
+          i.onkeydown = e => { e.stopPropagation(); if (e.key === "Escape") { NAMEQ_OPEN = false; NAMEQ = ""; draw(); applyCondFilter(box); } };   // 편집기 단축키로 새지 않게
+          cf.appendChild(i);
+        }
       };
       draw(); COND_REDRAW = draw;
     }
@@ -144,7 +141,7 @@ async function renderRawList(cat) {
   }
   if (r.images.length) {
     r.images.forEach(rel => {
-      const it = el("div", "item"); it.dataset.rel = rel;   // 강조·배지가 영상과 같은 규칙으로 찾을 수 있게
+      const it = el("div", "item"); it.dataset.rel = rel; it.dataset.mark = markOf(labelKeyOf(rel));   // 강조·배지가 영상과 같은 규칙으로 찾을 수 있게
       { const _b = listBadge("img:" + rel); if (_b) it.appendChild(_b); }   // 영상과 같은 배지
       const nm = el("span", "nm", rel.split("/").pop()); nm.title = rel; nm.style.userSelect = "text"; nm.style.cursor = "text";
       it.appendChild(nm);
@@ -155,7 +152,7 @@ async function renderRawList(cat) {
   }
   if (r.videos.length) {
     r.videos.forEach(rel => {
-      const it = el("div", "item"); it.dataset.rel = rel;
+      const it = el("div", "item"); it.dataset.rel = rel; it.dataset.mark = markOf(labelKeyOf(rel));
       { const _b = listBadge(rel.split("/").pop().replace(/\.mp4$/, ""), rel); if (_b) it.appendChild(_b); }   // [표시 숫자][파일명]
       const nm = el("span", "nm", rel.split("/").pop()); nm.title = rel; nm.style.userSelect = "text"; nm.style.cursor = "text";
       it.appendChild(nm);
@@ -170,15 +167,16 @@ async function renderRawList(cat) {
   }
 }
 
-// 조건 필터를 목록 항목에 적용한다(검색 필터와 겹치지 않게 hidden 만 건드린다).
+// 항목 · 조건 · 표시 · 이름 찾기를 목록 항목에 적용한다(hidden 만 건드린다).
 function applyCondFilter(box) {
   box.querySelectorAll(".item").forEach(it => {
     const nm = it.querySelector(".nm");
     const rel = (nm && (nm.title || nm.textContent)) || "";
-    if (!/\.mp4$/i.test(rel)) return;                 // 이미지 항목은 조건이 없다
+    const okName = !NAMEQ || rel.split("/").pop().toLowerCase().includes(NAMEQ);
+    if (!/\.mp4$/i.test(rel)) { it.hidden = !okName; return; }   // 이미지 항목은 조건이 없다
     const okSub = !SUBSEL || subOf(RAW_CAT, rel) === SUBSEL;
     const stem = rel.split("/").pop().replace(/\.mp4$/, "");
-    it.hidden = !(okSub && passFilter(stem) && passMark(stem));
+    it.hidden = !(okName && okSub && passFilter(stem) && passMark(stem));
   });
 }
 
@@ -220,18 +218,7 @@ async function showRawImage(rel) {
     ov.innerHTML = g + "</svg>";
   };
   img.onload = draw; if (img.complete) draw();
-  const r = $("#right"); r.innerHTML = "";
-  r.appendChild(el("div", "rtitle", "이미지 정보"));
-  const KV = (k, val) => { const dv = el("div", "kv"); dv.appendChild(el("span", "", k)); dv.appendChild(el("b", "", val)); return dv; };
-  // 긴 파일명·경로는 한 줄에 안 들어간다 → 제목 아래에 쌓아서 줄바꿈으로 보여준다
-  const KVstack = (k, val) => {
-    const d = el("div"); d.style.cssText = "padding:6px 0;border-bottom:1px solid var(--line)";
-    const t = el("div", "", k); t.style.cssText = "color:var(--mut);font-size:var(--fs-xs);margin-bottom:2px";
-    const v = el("div", "", val);
-    v.style.cssText = "font-family:ui-monospace,Menlo,monospace;font-size:var(--fs-xs);word-break:break-all;line-height:1.45";
-    d.appendChild(t); d.appendChild(v); return d;
-  };
-  imageRightPanel(rel, false, boxes.length);
+  modeBox().appendChild(catModeRow(rel, () => openImage(rel)));
 }
 // 이미지 항목 열기: 라벨 모드가 '편집 안 함'이 아니면 편집기(기본), 아니면 보기
 function openImage(rel) {
@@ -239,24 +226,13 @@ function openImage(rel) {
   markListItem(rel);                                    // 지금 보는 이미지 표시(영상과 같은 규칙)
   if (catMode(rel) !== "none") openImageEdit(rel); else showRawImage(rel);
 }
-// 이미지 우측 패널: 정보(파일·경로·정답 수) → 라벨 편집/사진 보기 → 라벨 모드
-function imageRightPanel(rel, editing, nGT) {
-  const r = $("#right"); r.innerHTML = "";
-  r.appendChild(el("div", "rtitle", "이미지 정보"));
-  const KV = (k, val) => { const dv = el("div", "kv"); dv.appendChild(el("span", "", k)); dv.appendChild(el("b", "", val)); return dv; };
-  const KVstack = (k, val) => { const d = el("div"); d.style.cssText = "padding:6px 0;border-bottom:1px solid var(--line)"; const t = el("div", "", k); t.style.cssText = "color:var(--mut);font-size:var(--fs-xs);margin-bottom:2px"; const v = el("div", "", val); v.style.cssText = "font-family:ui-monospace,Menlo,monospace;font-size:var(--fs-xs);word-break:break-all;line-height:1.45"; d.appendChild(t); d.appendChild(v); return d; };
-  r.appendChild(KVstack("파일", rel.split("/").pop()));
-  r.appendChild(KVstack("경로", rel.replace(/\/[^/]+$/, "")));
-  r.appendChild(KV("정답(원본)", nGT ? nGT + "박스" : "없음"));
-  const _n = (typeof IMGLABELS !== "undefined" && IMGLABELS) ? IMGLABELS.filter(x => x.clip === "img:" + rel && x.cls >= 0).length : 0;
-  r.appendChild(KV("손라벨", _n ? _n + "박스" : "없음"));
-  if (isScoringCat(catOf(rel))) r.appendChild(KV("주의", "채점 전용 · 라벨해도 학습셋 제외"));
-  const eb = el("button", null, editing ? "\u25B6 사진 보기" : "라벨 편집");
-  eb.style.cssText = "width:100%;margin-top:10px;padding:8px;border-radius:var(--r);cursor:pointer;font-weight:700;font-size:var(--fs-sm);" +
-    (editing ? "background:var(--panel2);color:var(--tx);border:1px solid var(--blue)" : "background:var(--blue);color:#06090f;border:1px solid var(--blue)");
-  eb.onclick = () => { if (editing) { LB.img = null; ED = null; showRawImage(rel); } else openImageEdit(rel); };
-  r.appendChild(eb);
-  r.appendChild(catModeRow(rel, () => openImage(rel)));
+// 표시 · 라벨 모드 칸 = 편집기 도구 줄 오른쪽 끝(프레임 오른쪽 끝과 맞춤). 편집기가 없으면(편집 안 함) 가운데 맨 위. 오른쪽 패널은 없앴다(10-02 사용자)
+function modeBox() {
+  { const old = document.getElementById("edMode"); if (old) old.remove(); }
+  const b = el("div"); b.id = "edMode";
+  const acts = document.getElementById("edActs");
+  if (acts) acts.appendChild(b); else { b.className = "solo"; $("#center").prepend(b); }
+  return b;
 }
 
 // 카테고리(데이터셋)별 라벨 모드. 사용자가 고른 값(서버 catmode.json)이 이름 규칙보다 우선한다.
@@ -284,19 +260,18 @@ async function setCatMode(cat, mode) {             // datasets.yaml 의 mode 를
   DATASETS[cat] = Object.assign(DATASETS[cat] || {}, { mode });
   try { await fetch("/api/datasets", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ cat, mode }) }); } catch (e) {}
 }
-// 우측 패널의 모드 선택 줄: [불·연기 v] [적용]. 적용하면 그 데이터셋 전체에 고정된다.
+// 라벨 모드 줄: [불·연기 v] [적용]. 적용하면 그 데이터셋 전체에 고정된다. 이름표 글자는 없다(10-02 사용자)
 function catModeRow(rel, onApply) {
   const cat = catOf(rel);
-  const row = el("div"); row.style.cssText = "display:flex;gap:6px;align-items:center;margin-top:10px";
-  const lab = el("span", null, "라벨 모드"); lab.style.cssText = "color:var(--mut);font-size:var(--fs-xs);flex:0 0 auto";
-  const sel = el("select");
-  sel.style.cssText = "flex:1;height:var(--ctl-h);background:var(--panel);color:var(--tx);border:1px solid var(--line);border-radius:var(--r);font-size:var(--fs-sm);padding:0 6px";
+  const row = el("div"); row.style.cssText = "display:flex;gap:6px;align-items:center";
+  const sel = el("select"); sel.title = "라벨 모드"; sel.setAttribute("aria-label", "라벨 모드");
+  sel.style.cssText = "flex:0 0 auto;height:var(--ctl-h);background:var(--panel);color:var(--tx);border:1px solid var(--line);border-radius:var(--r);font-size:var(--fs-sm);padding:0 6px";
   [["fire", "불·연기"], ["person", "사람"], ["none", "편집 안 함"]].forEach(([k, t]) => { const o = el("option"); o.value = k; o.textContent = t; sel.appendChild(o); });
   sel.value = catMode(rel);
   const ap = el("button", null, "적용");
   ap.style.cssText = "flex:0 0 auto;width:auto;padding:0 10px;height:var(--ctl-h);background:var(--blue);color:#06090f;border:1px solid var(--blue);border-radius:var(--r);font-weight:700;font-size:var(--fs-sm);cursor:pointer";
   ap.onclick = async () => { ap.textContent = "..."; await setCatMode(cat, sel.value); ap.textContent = "적용"; if (onApply) onApply(); };
-  row.appendChild(lab); row.appendChild(sel); row.appendChild(ap);
+  row.appendChild(sel); row.appendChild(ap);
   return row;
 }
 // ---------- 클립 상태(표시 기본/전파/손 + 전파 구간) ----------
@@ -316,28 +291,15 @@ async function saveClipState(stem, patch) {   // patch 에 넣은 항목만 고�
                                         body: JSON.stringify(Object.assign({ clip: stem }, patch)) }); } catch (e) {}
 }
 let MARKFILTER = "";                   // "" 전체 · hand 손 · prop 전파 · base 기본(표시 없음)
-function passMark(stem) {
-  if (!MARKFILTER) return true;
-  const st = CLIPST[stem] || {};
-  if (MARKFILTER === "smoke") return st.smoke === "todo";   // 연기 미완은 표시와 따로 본다(완료 편에도 붙는다)
-  return (st.mark || "base") === MARKFILTER;
-}
-function filterChip(label, n, on, onclick) {           // 필터 줄에 쓰는 칩. 모양을 한 곳에서 만든다
-  const b = el("button", null, n == null ? label : `${label} ${n}`);
-  b.style.cssText = "flex:0 0 auto;width:auto;padding:3px 9px;font-size:var(--fs-xs);font-weight:700;border-radius:var(--r);cursor:pointer;font-variant-numeric:tabular-nums;white-space:nowrap;" +   // 고정폭 숫자: 825 -> 100 이 돼도 칩 폭이 안 흔들린다
-    (on ? "background:#58a6ff22;color:#cfe4ff;border:1px solid #58a6ff55" : "background:var(--panel);color:var(--mut);border:1px solid var(--line)");
+const markOf = key => (CLIPST[key] || {}).mark || "base";
+function passMark(stem) { return !MARKFILTER || markOf(stem) === MARKFILTER; }
+const SVG_SEARCH = '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><line x1="16.5" y1="16.5" x2="21" y2="21"/></svg>';
+function segGroup(cls, label) { const g = el("div", cls); g.setAttribute("role", "group"); g.setAttribute("aria-label", label); return g; }
+function segBtn(label, on, onclick, n) {              // 탭 · 세그먼트 단추 하나(데이터 확인 왼쪽 위). n 을 주면 옆에 작게 편수
+  const b = el("button", on ? "on" : ""); b.type = "button"; b.textContent = label; b.setAttribute("aria-pressed", on);
+  if (n != null) b.appendChild(el("small", "", String(n)));
   b.onclick = onclick;
   return b;
-}
-function filterRow(title) {                            // [이름표][칩 …] 한 줄. 칩은 넘치면 접힌다
-  const row = el("div");
-  row.style.cssText = "display:flex;align-items:flex-start;gap:6px";
-  const t = el("span", null, title);
-  t.style.cssText = "flex:0 0 26px;padding-top:4px;font-size:var(--fs-xs);font-weight:700;color:var(--mut)";
-  const wrap = el("div");
-  wrap.style.cssText = "flex:1 1 auto;display:flex;flex-wrap:wrap;gap:4px";
-  row.appendChild(t); row.appendChild(wrap); row.wrap = wrap;
-  return row;
 }
 function listBadge(key, rel) {          // 목록 배지 한 덩어리: '전파 32' · '완료' · 기본이면 '32'
   const n = labeledCount(key, rel ? clipMode(rel) : null);   // 그 클립 모드의 라벨만 센다(방화 클립은 불·연기만)
@@ -356,6 +318,7 @@ function listBadge(key, rel) {          // 목록 배지 한 덩어리: '전파 
 function updateListBadge(key) {        // 라디오를 누르거나 프레임이 늘면 그 항목 배지만 다시 그린다
   document.querySelectorAll("#list .item").forEach(it => {
     if (!it.dataset.rel || labelKeyOf(it.dataset.rel) !== key) return;
+    it.dataset.mark = markOf(key);
     const old = it.querySelector(":scope > span.bg"); if (old) old.remove();
     const b = listBadge(key, it.dataset.rel);
     if (b) it.insertBefore(b, it.querySelector(":scope > span.nm"));
@@ -363,10 +326,8 @@ function updateListBadge(key) {        // 라디오를 누르거나 프레임이
 }
 function markRadioRow(stem) {          // 기본/전파/손 라디오. 고르면 바로 서버에 저장하고 목록도 고친다
   const row = el("div");
-  row.style.cssText = "display:flex;flex-wrap:wrap;align-items:center;gap:6px 10px;margin-top:10px;padding-top:10px;border-top:1px solid var(--line)";
-  const lab = el("span", null, "표시");
-  lab.style.cssText = "flex:0 0 auto;font-size:var(--fs-xs);font-weight:700;color:var(--mut)";
-  row.appendChild(lab);
+  row.style.cssText = "display:flex;align-items:center;gap:6px 10px";
+  row.setAttribute("role", "radiogroup"); row.setAttribute("aria-label", "표시");   // 이름표 글자는 없다(10-02 사용자)
   const cur = (CLIPST[stem] || {}).mark || "base";
   [["base", "기본"], ["prop", "전파"], ["hand", "완료"]].forEach(([v, t]) => {
     const w = el("label"); w.style.cssText = "display:inline-flex;align-items:center;gap:4px;white-space:nowrap;cursor:pointer;font-size:var(--fs-sm);font-weight:700;color:"
@@ -398,62 +359,35 @@ function updateRawBadge(key) { updateListBadge(key); }   // 표시와 숫자가 
 // 좌측 영상 클릭: 편집 중이면 그 영상 편집 유지, 아니면 재생
 function openClip(rel) {
   saveSession({ dsKind: DS_KIND, dsSel: DS_SEL, rel: rel, img: null });   // 새로고침 복원용(이미지 기록은 비운다)
-  showRawVideo(rel);   // showRawVideo 가 DS_EDIT 를 보고 에디터/영상 결정
+  showRawVideo(rel);   // 라벨 모드가 '편집 안 함' 이 아니면 편집기, 맞으면 영상 재생
 }
 // 원본 영상 한 편. XML 정답(이벤트 시각)이 있으면 같이 보여준다.
-let _SRV_SEQ = 0;   // 늦게 끝난 이전 호출이 우측 정보를 덮지 않게(새로고침 복원 때 첫 항목과 경쟁)
+let _SRV_SEQ = 0;   // 늦게 끝난 이전 호출이 표시 · 라벨 모드 칸을 덮지 않게(새로고침 복원 때 첫 항목과 경쟁)
 async function showRawVideo(rel) {
   const _my = ++_SRV_SEQ;
   try { saveSession({ dsKind: DS_KIND, dsSel: DS_SEL, rel: rel, img: null }); } catch (e) {}   // 새로고침 복원용(이미지 기록은 비운다)
   const clip = rel.replace(/^data\/원본데이터\//, "").replace(/\.mp4$/, "");
-  let events = [], dur = 0, ci = null;
-  try { ci = await (await fetch("/api/clipinfo?clip=" + encodeURIComponent(clip))).json(); dur = ci.dur || 0; events = ci.fire || []; } catch (e) {}
+  let events = [];
+  try { events = (await (await fetch("/api/clipinfo?clip=" + encodeURIComponent(clip))).json()).fire || []; } catch (e) {}
   if (_my !== _SRV_SEQ) return;
   markListItem(rel);                                    // 지금 보는 영상 표시
   const first = events[0] || {};
   document.onkeydown = null;
   const _mode0 = clipMode(rel);   // 배포 검증영상처럼 한 카테고리에 항목이 섞이면 폴더로 가른다
-  const _editing = DS_EDIT && _mode0 !== "none";
+  const _editing = _mode0 !== "none";               // 데이터 확인은 늘 라벨 편집(SAM2 · 손라벨). 영상 보기 · 예측 박스 고르기는 없앴다(10-02 사용자)
   if (_editing) {
     await openFrameAt(clip, null, _mode0);   // 시작 프레임은 openFrameAt 이 고른다(자동라벨 첫 검출 → 정답 시각 → 0). 기다려야 새로고침 복원이 두 번 열지 않는다
     if (_my !== _SRV_SEQ) return;
   } else {
     ED = null;   // 영상 볼 땐 에디터 재사용상태 초기화(다음 라벨편집이 새로 그리게)
-    // 예측 박스 드롭다운이 쓸 갈래. 라벨 모드를 "편집 안 함"으로 둔 경우는 이름으로 짐작한다
+    // 재생 화면이 쓸 갈래. 라벨 모드를 "편집 안 함"으로 둔 경우는 이름으로 짐작한다
     const _kind0 = (_mode0 === "fire" || _mode0 === "person") ? _mode0 : catModeAuto(catOf(rel));
     renderCenter({ video: rel, name: rel.split("/").pop(), signal_type: "raw", signal: [], zone: [], tracks: null, kind: _kind0,
                    weather: [], tod: null, gt: (first.start != null ? first.start : null), gt_dur: first.dur || 0, sa: null });
   }
-  // 우측 정보(파일/경로/정답)
-  const r = $("#right"); r.innerHTML = "";
-  r.appendChild(el("div", "rtitle", "영상 정보"));
-  const KV = (k, val) => { const dv = el("div", "kv"); dv.appendChild(el("span", "", k)); dv.appendChild(el("b", "", val)); return dv; };
-  const KVstack = (k, val) => {
-    const d = el("div"); d.style.cssText = "padding:6px 0;border-bottom:1px solid var(--line)";
-    const t = el("div", "", k); t.style.cssText = "color:var(--mut);font-size:var(--fs-xs);margin-bottom:2px";
-    const vv = el("div", "", val); vv.style.cssText = "font-family:ui-monospace,Menlo,monospace;font-size:var(--fs-xs);word-break:break-all;line-height:1.45";
-    d.appendChild(t); d.appendChild(vv); return d;
-  };
-  r.appendChild(KVstack("파일", rel.split("/").pop()));
-  r.appendChild(KVstack("경로", rel.replace(/\/[^/]+$/, "")));
-  if (ci) {
-    r.appendChild(KV("길이", `${Math.floor(dur)}초`));
-    r.appendChild(KV("해상도", `${ci.W}x${ci.H} · ${ci.fps}fps`));
-    events.forEach((fs, i) => r.appendChild(KV(events.length > 1 ? `정답 ${i + 1}` : "정답", `${fmt(fs.start)} · ${fs.dur}초간`)));
-    if (!events.length) r.appendChild(KV("정답", "XML 없음"));
-  } else r.appendChild(KV("정답", "정보 없음"));
-  // 라벨 대상 클립이면 버튼: 편집중=영상보기 / 아니면 라벨편집 (영상정보는 그대로). 정답이 있든 없든 편집할 수 있다(정답 원본은 읽기만).
-  const _stem = stemOf(clip);
-  const _btn = (txt, primary) => { const b = el("button", null, txt); b.style.cssText = "width:100%;margin-top:10px;padding:8px;border-radius:var(--r);cursor:pointer;font-weight:700;font-size:var(--fs-sm);" + (primary ? "background:var(--blue);color:#06090f;border:1px solid var(--blue)" : "background:var(--panel2);color:var(--tx);border:1px solid var(--blue)"); return b; };
-  if (isScoringCat(catOf(rel))) r.appendChild(KV("주의", "채점 전용 · 라벨해도 학습셋 제외"));
-  if (_mode0 !== "none") {
-    { const _n = labeledCount(_stem, clipMode(rel)); r.appendChild(KV("학습 라벨", _n ? _n + "프레임" : "없음")); }   // 손라벨 ∪ SAM
-    const _eb = _btn(_editing ? "\u25B6 영상 보기" : "라벨 편집", !_editing);
-    _eb.onclick = () => { DS_EDIT = !_editing; showRawVideo(rel); };
-    r.appendChild(_eb);
-  }
-  if (_mode0 !== "none") r.appendChild(markRadioRow(_stem));   // 이 클립을 무엇으로 채웠나(기본/전파/손) · 고르면 바로 저장
-  r.appendChild(catModeRow(rel, () => { DS_EDIT = true; showRawVideo(rel); }));   // 이 데이터셋을 무엇으로 라벨할지
+  const b = modeBox();
+  if (_mode0 !== "none") b.appendChild(markRadioRow(stemOf(clip)));   // 이 클립을 무엇으로 채웠나(기본/전파/손) · 고르면 바로 저장
+  b.appendChild(catModeRow(rel, () => showRawVideo(rel)));          // 이 데이터셋을 무엇으로 라벨할지
 }
 function renderDatasetList() {
   const box = $("#list"); box.innerHTML = "";

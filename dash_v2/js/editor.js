@@ -160,6 +160,7 @@ async function clipInfo(clip) {
 
 // 그 초의 프레임을 편집기에 띄운다. sec 는 프레임 격자(quant)에 맞춘다.
 async function openFrameAt(clip, sec, mode) {
+  if (ED && !document.getElementById("edActs")) ED = null;   // 편집기 화면이 지워졌으면(목록을 다시 그려 가운데가 비는 등) 새로 그린다. 안 그러면 지워진 편집기에 그려 '항목을 선택하세요' 가 남는다(10-02)
   if (LB.img) { LB.img = null; ED = null; }                 // 이미지 편집에서 영상으로 넘어오면 편집기를 새로 그린다
   if (sec != null && !isFinite(Number(sec))) sec = null;   // NaN 시각 방어(빈 입력·계산 오류) → 시작 프레임 자동 선택
   LB.mode = mode || LB.mode || clipMode(LB.src || ("data/원본데이터/" + clip + ".mp4"));   // 폴더로 가른다(배포 검증영상은 한 카테고리에 네 항목이 섞여 있다)
@@ -291,10 +292,10 @@ function renderEditor(f) {
   if (f.prefill && f.prefill.length && !hasHand(f.saved)) { LB.boxes = f.prefill.map(b => b.slice()); LB.src = "gt"; }   // 데이터셋 정답 박스 = 우리 라벨과 같은 것. 고치면 손라벨로 저장된다
   let SP = [], SMASK = null;                          // 현재 프레임·현재 객체의 점, 마스크
   const c = $("#center"); c.innerHTML = "";
-  const top = el("div"); top.style.cssText = "width:100%;align-self:flex-start;padding:12px 8px 0";   // #center 가 세로 가운데 정렬이라 위로 붙인다
+  const top = el("div", "ed-top"); top.style.cssText = "width:100%;align-self:flex-start;padding:16px";   // #center 가 세로 가운데 정렬이라 위로 붙인다. 배치(2열 격자)는 dashboard.html .ed-top
   c.appendChild(top);
   // 이미지 + 그리기 오버레이 (이미지 위에는 아무 글자도 얹지 않는다)
-  const pane = el("div"); pane.style.cssText = "display:flex;gap:8px;align-items:stretch";   // 왼쪽 = 영상, 오른쪽 = 객체 칩
+  const pane = el("div", "ed-pane"); pane.style.cssText = "display:flex;gap:8px;align-items:stretch";   // 왼쪽 = 영상, 오른쪽 = 객체 칩
   top.appendChild(pane);
   const wrap = el("div"); wrap.style.cssText = "position:relative;overflow:hidden";
   const img = el("img"); img.src = f.url; img.style.cssText = "width:100%;display:block;border-radius:var(--r);-webkit-user-drag:none";
@@ -331,7 +332,7 @@ function renderEditor(f) {
   // ---------- 도구 줄: ↶ ↷ 손라벨참조 정답참조 [전파] 전파지우기 라벨검수 · 상태 · 학습프레임 초기화 ----------
   const status = el("span", "now", "");            // 저장 상태(재생바 안)
   const bar = buildFrameBar(f, status);
-  const rowAct = el("div"); rowAct.style.cssText = "display:flex;align-items:center;gap:8px;margin:0 0 10px;flex-wrap:wrap";
+  const rowAct = el("div"); rowAct.id = "edActs"; rowAct.style.cssText = "display:flex;align-items:center;gap:8px;margin:0 0 10px;flex-wrap:wrap";
   const mkBtn = (txt, title) => { const b = el("button", null, txt); b.title = title; b.style.cssText = "width:auto;padding:0 7px;height:var(--ctl-h);background:var(--panel);color:var(--tx);border:1px solid var(--line);border-radius:var(--r);font-size:var(--fs-sm);font-weight:700;white-space:nowrap;cursor:pointer"; return b; };
   const bUndo = mkBtn("↶", "되돌리기 (Ctrl+Z)"), bRedo = mkBtn("↷", "다시하기 (Ctrl+Shift+Z)"), bRev = mkBtn("라벨 검수", "이 클립의 SAM 전파 결과를 격자로 검수");
   const bGo = mkBtn("전파", "참조샷으로 전파 → SAM 저장소 자동 저장. 결과가 있는 클립에서 지금 프레임에 참조샷이 있으면 '이어서 전파' = 그 프레임부터 종료까지 뒤로만"); bGo.style.cssText += ";color:var(--blue);border-color:var(--blue);font-weight:800;padding:0 12px";
@@ -342,15 +343,15 @@ function renderEditor(f) {
   // 순서: 되돌리기 · 전파 · 검수 · 초기화 · 건수 · 상태
   [bUndo, bRedo, bGo, bClr, bRev, bReset, tstat, pstat].forEach(b => rowAct.appendChild(b));
   const rowObj = el("div"); rowObj.style.cssText = "display:flex;flex-direction:column;gap:6px";   // 스크롤은 바깥 칸(colR)이 맡는다
-  const shots = el("div");
-  const undoBar = el("div"); undoBar.style.cssText = "padding:2px 2px 8px";   // 삭제 직후 되돌리기 버튼이 잠깐 뜨는 자리
+  const shots = el("div", "ed-shots");
+  const undoBar = el("div", "ed-undo"); undoBar.style.cssText = "padding:2px 2px 8px";   // 삭제 직후 되돌리기 버튼이 잠깐 뜨는 자리
   // 순서: 도구 → 화면 → 프레임바 → 미리보기 → 객체.
   // 그림 칸(pane)에는 그림만 둔다. 다른 줄을 그림 칸 안에 두면, 칸이 좁아질 때 줄이 더 접혀 높이를 더 먹고
   // 그래서 칸이 또 좁아지는 되먹임이 생긴다. 전체 폭에 두면 폭이 고정이라 높이가 안 변한다.
   rowAct.style.cssText += ";margin-bottom:6px";
   shots.style.cssText = "height:clamp(64px,10vh,106px)";                  // 미리보기가 늦게 채워져도 자리를 미리 잡는다
   const colL = el("div"); colL.style.cssText = "flex:0 0 auto;min-width:0";              // 영상
-  const colR = el("div"); colR.style.cssText = "flex:1 1 0;min-width:0;position:relative";  // 객체 칩. 속을 절대배치로 띄워 바깥 높이를 안 늘린다
+  const colR = el("div", "ed-objs"); colR.style.cssText = "flex:1 1 0;min-width:0;position:relative";  // 객체 칩. 속을 절대배치로 띄워 바깥 높이를 안 늘린다
   const colRin = el("div"); colRin.style.cssText = "position:absolute;inset:0;overflow-y:auto;padding-right:2px";
   colRin.appendChild(rowObj); colR.appendChild(colRin);
   colL.appendChild(wrap);
@@ -359,19 +360,20 @@ function renderEditor(f) {
   [bar, shots, undoBar].forEach(x => top.appendChild(x));                 // 프레임바는 전체 폭(프레임을 짚어야 한다), 미리보기는 영상 폭
   // 프레임 칸 크기를 창에 맞춘다. 아래 줄들(도구·프레임바·미리보기·객체)이 실제로 쓰는 높이를 재서
   // 남는 높이에 그림 비율을 맞춘다. 400px 을 고정으로 빼두면 창이 낮을 때 그림만 작아지고 좌우가 텅 빈다.
-  const CHIP_W = 176;                                          // 객체 칸에 최소한 남겨 둘 폭
+  const CHIP_W = 200;                                          // 객체 칸에 최소한 남겨 둘 폭(테두리 · 안쪽 여백 포함)
   let _fitw = 0;
   const fit = () => {
     if (!colL.isConnected) return;
     for (let i = 0; i < 3; i++) {                                // 폭을 바꾸면 아래 줄 수가 바뀐다. 붙을 때까지 다시 잰다
       const rest = top.offsetHeight - wrap.offsetHeight;         // 그림을 뺀 나머지 줄들이 쓰는 높이(도구 줄 포함)
       const room = c.clientHeight - rest - 8;                    // 그림에 줄 수 있는 높이
-      const wide = c.clientWidth - 16 - 8 - CHIP_W;              // 좌우 여백 · 두 칸 사이 · 객체 칸
+      const ts = getComputedStyle(top);
+      const wide = c.clientWidth - parseFloat(ts.paddingLeft) - parseFloat(ts.paddingRight) - (parseFloat(ts.columnGap) || 0) - CHIP_W;   // 좌우 여백 · 두 칸 사이 · 객체 칸(CSS 값을 잰다)
       const w = Math.round(Math.max(420, Math.min(f.W, room * f.W / f.H, wide)));
       if (Math.abs(w - _fitw) <= 1) break;                       // 1px 안쪽이면 다 맞춘 것
       _fitw = w;
       colL.style.width = w + "px";
-      shots.style.maxWidth = w + "px";                           // 미리보기는 영상과 같은 폭
+      top.style.setProperty("--edw", w + "px");                // 격자 왼쪽 열 = 영상 폭: 도구 줄 · 재생바 · 미리보기 줄이 영상 끝에 맞는다
     }
   };
   new ResizeObserver(fit).observe(c);      // 창 크기·좌우 패널이 바뀔 때
@@ -1213,7 +1215,7 @@ function openShot(f, items, idx) {
 function buildFrameBar(f, status) {
   const bar = el("div", "ctrl labbar");
   autoStop();                           // 다른 클립으로 넘어왔으면 돌던 자동 넘기기를 멈춘다
-  bar.style.cssText = "margin-top:8px;border:1px solid var(--line);border-radius:var(--r-lg)";
+  bar.style.cssText = "margin-top:12px;border:1px solid var(--line);border-radius:var(--r-lg)";
   const btn = (txt, d, title) => {
     const b = el("button", null, txt);
     b.title = title; b.style.width = "auto"; b.style.padding = "0 9px";
@@ -1319,8 +1321,8 @@ async function openImageEdit(rel) {
   saveSession({ img: rel, rel: null });
   const g = GTMAP[key], fr = (g.frames || {})["0.0"] || {}, cls = g.imgcls || [];
   const prefill = Object.keys(fr).map((k, i) => [isFire() ? (cls[i] === 1 ? 1 : 0) : 0, ...fr[k]]);   // 정답 클래스: 0 불 · 1 연기(화재) / 사람은 전부 0
-  if (typeof imageRightPanel === "function") imageRightPanel(rel, true, prefill.length);
   renderEditor({ clip: key, stem: key, src: rel, t: 0, last: 0, W: im.naturalWidth, H: im.naturalHeight, url, saved: existingBoxes(key, 0), image: true, prefill });
+  modeBox().appendChild(catModeRow(rel, () => openImage(rel)));   // 라벨 모드 = 도구 줄 오른쪽 끝(편집기를 그린 뒤라야 자리가 있다)
 }
 // 그 프레임의 손라벨 기록을 마커 없이 지운다(되돌리기로 초안 상태로 돌아갈 때). 없던 것처럼 된다.
 const clearLabel = (clip, t) => postLabel(clip, t, 0, 0, [], null, true);

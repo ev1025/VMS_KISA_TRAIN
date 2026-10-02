@@ -30,6 +30,8 @@ function buildMode() {
 }
 function applyMode() {
   document.onkeydown = null;   // 편집기 밖에선 단축키 끄기
+  document.body.classList.toggle("dm", CUR.mode === "data");   // 데이터 확인 배치(오른쪽 패널 없음 · 왼쪽 330 · 목록 점). dashboard.html body.dm
+  { const lh = document.getElementById("listHead"); if (lh) lh.remove(); }   // 드롭다운 아래 둔 목록 머리(항목 · 조건 · 표시). 데이터 확인이면 목록을 다시 받으며 새로 그린다
   { const sr = document.getElementById("srcRow"); if (sr) sr.style.display = "flex"; }   // 학습 데이터 보기가 숨긴 드롭다운 줄을 되살린다(검수 탭도 이 줄을 쓴다)
   const wide = CUR.mode === "results" || CUR.mode === "history";   // 결과 · 히스토리 탭은 가운데만
   $("#right").hidden = wide;
@@ -378,7 +380,6 @@ async function restoreLast(last) {
     if (document.querySelector("#list .item")) break;
   }
   try {
-    DS_EDIT = true;
     await showRawVideo(last.rel);                         // 편집기 열기(시작 프레임까지 열고 돌아온다)
     const mode = last.lmode || catMode(last.rel);        // 모드는 저장값, 없으면 카테고리로(방화 클립이 사람 모드로 열리지 않게)
     if (last.sec != null && LB.clip && mode !== "none") await openFrameAt(LB.clip, last.sec, mode);

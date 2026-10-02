@@ -401,15 +401,33 @@ summary:focus-visible{outline:2px solid var(--blue);outline-offset:2px;border-ra
 .item > span.bg{background:var(--t-mut) !important}
 .item > span.bg:has(> span:only-child[style*="#3fb950"]){background:var(--t-ok) !important}
 .item > span[style*="color: rgb(248, 81, 73)"],.item .bg span[style*="#f85149"]{color:var(--bad-tx) !important}
-/* 데이터 확인: 선택 줄과 칩 줄을 한 덩어리로(가운데 줄 하나를 뺀다) */
-.srcbox:has(+ .list > #listHead){padding-bottom:0;border-bottom-color:transparent}
-#listHead{top:calc(var(--s2) * -1) !important;margin:calc(var(--s2) * -1) calc(var(--s3) * -1) var(--s2) !important;
-  padding:var(--s2) var(--s3) var(--s3) !important;gap:var(--s2) !important}
-#condFilterRow{gap:var(--s2) !important}
-#listHead div[style*="align-items: flex-start"]{gap:var(--s2) !important}
-#listHead span{padding-top:0 !important;line-height:var(--ctl-s);font-weight:600 !important}
-#listHead button{height:var(--ctl-s) !important;padding:0 var(--s2) !important;font-weight:600 !important;line-height:1}
-#listHead button[style*="rgba(88, 166, 255, 0.133)"]{background:var(--sel) !important;border-color:var(--blue) !important;color:var(--tx) !important}
+/* 데이터 확인(1단계 전처리, 10-02 사용자 확정): 오른쪽 패널 없음 · 드롭다운 아래 목록 머리(항목 탭 · 조건 · 표시 · 이름 찾기)
+   · 목록 = 상태 점 + 이름 + 배지. 줄 높이 34 하나, 오른쪽 정사각 단추(새로고침 · 돋보기) 34 로 위아래 끝을 맞춘다 */
+body.dm .right{display:none}
+body.dm .left{width:330px}
+body.dm .srcbox{padding:var(--s4) var(--s4) var(--s3)}
+body.dm #srcSel{height:34px;padding:0 var(--s2);background:var(--panel2);font-size:var(--fs-lg);font-weight:700}
+body.dm #refreshBtn{flex:0 0 34px !important;height:34px}
+#listHead,#condFilterRow{display:flex;flex-direction:column;gap:var(--s2)}
+.dt-row{display:flex;gap:var(--s2)}
+.dt-tabs{display:flex;margin:0 calc(var(--s4) * -1) var(--s1);padding:0 var(--s4);border-bottom:1px solid var(--line-ctl)}
+.dt-tabs button{flex:1 1 0;min-width:0;height:32px;margin-bottom:-1px;padding:0 4px;background:none;border:0;border-bottom:2px solid transparent;border-radius:0;
+  color:var(--mut);font-size:13px;font-weight:600;white-space:nowrap;cursor:pointer}
+.dt-tabs button:hover,.dt-tabs button.on{color:var(--tx)}.dt-tabs button.on{border-bottom-color:var(--blue)}
+.dt-tabs small{margin-left:4px;font-size:11px;font-weight:500;color:var(--mut);font-variant-numeric:tabular-nums}
+.dt-seg{flex:1;display:flex;gap:2px;height:34px;padding:3px;background:var(--panel2);border-radius:var(--r)}
+.dt-seg button{flex:1 1 0;height:28px;padding:0;background:none;border:0;border-radius:4px;color:var(--mut);font-size:12px;font-weight:600;white-space:nowrap;cursor:pointer}
+.dt-seg button:hover{color:var(--tx)}.dt-seg button.on{background:var(--panel);color:var(--tx);box-shadow:0 0 0 1px var(--line-ctl)}
+.dt-sbtn{flex:0 0 34px;display:inline-flex;align-items:center;justify-content:center;height:34px;padding:0;background:var(--panel);color:var(--mut);border:1px solid var(--line-ctl);border-radius:var(--r);cursor:pointer}
+.dt-sbtn:hover,.dt-sbtn.on{color:var(--tx);border-color:var(--blue)}.dt-sbtn.on{background:var(--sel)}
+.dt-search{display:block;width:100%;height:34px;padding:0 var(--s2);background:var(--bg);color:var(--tx);border:1px solid var(--line-ctl);border-radius:var(--r);font:inherit;font-size:12px}
+.dt-search:focus{outline:0;border-color:var(--blue)}
+body.dm #list{padding:var(--s3) var(--s3) var(--s4)}
+body.dm #list .item{position:relative;min-height:36px;margin-bottom:2px;padding:0 var(--s2) 0 22px;border-radius:var(--r)}
+body.dm #list .item::before{content:"";position:absolute;left:9px;top:50%;width:7px;height:7px;margin-top:-3.5px;border-radius:50%;background:var(--line-hover)}
+body.dm #list .item[data-mark="hand"]::before{background:var(--ok)}
+body.dm #list .item[data-mark="prop"]::before{background:var(--bad)}
+body.dm #list .item.on{outline:0;background:var(--sel);box-shadow:inset 3px 0 0 var(--blue)}
 
 /* ---------- 6. 가운데: 재생 줄 · 라벨 편집기 ---------- */
 .ctrl{gap:var(--s2);padding:var(--s2) var(--s3);background:var(--bg)}
@@ -431,7 +449,7 @@ summary:focus-visible{outline:2px solid var(--blue);outline-offset:2px;border-ra
   font:400 var(--fs-md)/1 var(--font) !important;font-variant-numeric:tabular-nums !important}
 .ctrl.labbar .now{font-size:12px}
 /* 도구 줄(되돌리기 · 전파 · 라벨 검수 · 프레임 초기화) */
-#center > div[style*="align-self: flex-start"] > div:first-child{margin-bottom:var(--s2) !important}
+#center > div[style*="align-self: flex-start"] > div:first-child{margin-bottom:var(--s3) !important}
 #center > div[style*="align-self: flex-start"] > div:first-child > button{min-width:var(--ctl-h);padding:0 var(--s3) !important;
   font-size:12px !important;font-weight:600 !important}
 #center > div[style*="align-self: flex-start"] > div:first-child > button[title^="되돌리기"],
@@ -439,6 +457,28 @@ summary:focus-visible{outline:2px solid var(--blue);outline-offset:2px;border-ra
 #center > div[style*="align-self: flex-start"] > div:last-child > button{height:var(--ctl-s);padding:0 var(--s2) !important}
 #center button[style*="height: 22px"]{height:var(--ctl-s) !important}
 #center button[style*="border-radius: 999px"]{min-height:var(--ctl-s);border-radius:var(--r) !important}
+/* 라벨 편집기 배치(10-02 사용자): 2열 격자. 왼쪽 열 = 영상 폭(--edw, editor.js fit 이 잰다): 도구 줄 · 영상 · 재생바 · 미리보기
+   오른쪽 열 = 객체 칸(영상 위 끝 ~ 미리보기 아래 끝). 잘리는 끝은 테두리 안에서 흐리거나(객체 칸) 막힌 칸 « » 밑으로(미리보기) */
+.ed-top{display:grid;grid-template-columns:var(--edw,auto) minmax(0,1fr);column-gap:var(--s3);align-items:start}
+.ed-top > *{grid-column:1}
+.ed-pane{display:contents !important}
+#edActs{grid-row:1}
+.ed-pane > :first-child{grid-column:1;grid-row:2}
+.ed-top .ed-objs{grid-column:2;grid-row:2 / 5;align-self:stretch;background:var(--panel);border:1px solid var(--line);border-radius:var(--r-lg)}
+.ed-top > .labbar{grid-row:3}
+.ed-top > .ed-shots{grid-row:4}
+.ed-top > .ed-undo{grid-row:5}
+.ed-objs > div{inset:var(--s2) var(--s1) 0 var(--s2) !important;padding:0 var(--s1) var(--s4) 0 !important;
+  -webkit-mask-image:linear-gradient(to bottom,#000 calc(100% - 20px),transparent);mask-image:linear-gradient(to bottom,#000 calc(100% - 20px),transparent)}
+.ed-shots{box-sizing:content-box;margin-top:var(--s3);padding:var(--s2) 0 !important;overflow-y:hidden !important;background:var(--panel);border:1px solid var(--line);border-radius:var(--r-lg)}
+.ed-shots > button:first-child,.ed-shots > button:last-child{align-self:stretch;width:32px !important;margin:calc(var(--s2) * -1) 0 !important;padding:0 !important;
+  background:var(--panel) !important;border:0 !important;color:var(--tx2) !important;font-size:var(--fs-lg) !important}
+.ed-shots > button:first-child{border-radius:var(--r-lg) 0 0 var(--r-lg) !important;box-shadow:6px 0 8px -2px var(--panel)}
+.ed-shots > button:last-child{border-radius:0 var(--r-lg) var(--r-lg) 0 !important;box-shadow:-6px 0 8px -2px var(--panel)}
+.ed-shots > button:first-child:hover,.ed-shots > button:last-child:hover{color:var(--tx) !important}
+/* 표시 · 라벨 모드 칸(data.js modeBox): 도구 줄 오른쪽 끝. 편집기가 없으면(편집 안 함) 가운데 맨 위 오른쪽 */
+#edMode{display:flex;align-items:center;gap:var(--s3);margin-left:auto}
+#edMode.solo{justify-content:flex-end;margin:var(--s3) var(--s4) 0}
 
 /* ---------- 7. 오른쪽 정보 패널 ---------- */
 .right{padding:var(--s3)}
