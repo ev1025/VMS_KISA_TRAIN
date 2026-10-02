@@ -91,6 +91,8 @@ if a.bg > 0:
         mp4 = eval_clip(stem)
         if not mp4:
             continue
+        if _clip_item(mp4) == "falldown":           # 넘어지기 전에도 그 사람이 걸어 다닌다(081 은 5명). '사람 없음' 으로 못 쓴다(2026-10-02)
+            stats["배경 생략:쓰러짐 편"] += 1; continue
         st = fire_start(mp4)
         if st is None:
             stats["배경 생략:발생시각 없음"] += 1; continue
