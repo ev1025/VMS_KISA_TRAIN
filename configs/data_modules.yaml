@@ -14,6 +14,8 @@ modules:
   - {name: flt_coco_crowd_20260930, item: 사람, kind: filter, role: "군중", count: 4703, label: "COCO 군중 영역 사진"}
   - {name: flt_coco_tiny12_20260930, item: 사람, kind: filter, role: "작은 사람", count: 4959, label: "COCO 키 12px 미만 사람 사진"}
   - {name: flt_coco_fence_20261001, item: 사람, kind: filter, role: "울타리류 배경(prefer)", count: 1577, label: "COCO 울타리 · 난간 · 철문 · 기둥 빈 사진"}
+  - {name: flt_train_exclude_20261002, item: 사람, kind: filter, role: "학습 제외(사용자 표시)", count: 29, label: "대시보드 입력 데이터 탭에서 사용자가 뺀 사진(COCO 라벨 누락 등)"}
+  - {name: flt_evalclips_20261002, item: 사람, kind: filter, role: "평가 편", count: 189, label: "배포 검증영상 80편 프레임(쓰러짐 채점편 4편이 사람 학습에 들어가 있던 것, 4단계부터 뺌)"}
   # ---- 방화 (보통 학습셋 폴더 그대로가 모듈. 장수는 10-01 러너 기준)
   - {name: aihub71751_48k, item: 방화, kind: module, role: mixed, count: 39003, label: "AI허브 화재 영상 프레임(클립당 12장)"}
   - {name: aihub71751_night_20260928, item: 방화, kind: module, role: pos, count: 1536, label: "AI허브 야간 불꽃 프레임"}
