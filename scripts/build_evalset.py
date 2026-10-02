@@ -59,6 +59,22 @@ def fire_start(mp4):
     return min(st) if st else None
 
 
+FALL_WIN = (-2.0, 10.0)                             # 쓰러짐 편은 정답 시각 기준 이 창 안 프레임만(KISA 채점 창, 2026-10-02 사용자)
+
+
+def fall_keep(stem, t):
+    """쓰러짐 편이면 정답 -2 ~ +10초 안일 때만 True. 다른 항목은 늘 True.
+    창 밖 손라벨('사람 없음' 행 포함) · SAM 전파는 버린다(넘어지기 전 · 일어난 뒤 장면은 쓰러짐 평가가 아니다)."""
+    mp4 = EVAL_MP4.get(stem)
+    if not mp4 or _clip_item(mp4) != "falldown":
+        return True
+    st = fire_start(mp4)
+    if st is not None and st + FALL_WIN[0] <= t <= st + FALL_WIN[1]:
+        return True
+    stats["제외:쓰러짐 창 밖"] += 1
+    return False
+
+
 def sam_cls(obj):                                   # SAM 저장소 객체 번호 → 클래스(대시보드 규약: 화재 1=불(0) 2=연기(1), 사람 0)
     return max(0, min(1, int(obj) - 1)) if a.mode == "fire" else 0
 
@@ -71,6 +87,8 @@ for r in rows:
     if r["clip"] not in EVAL_MP4:                    # 채점 클립인가로 판단(eval 표시는 보조. 표시가 빠진 행도 놓치지 않게)
         continue
     key = (r["clip"], round(float(r["t"]) * 2) / 2)
+    if not fall_keep(*key):
+        continue
     frames.setdefault(key, []); src[key] = "hand"
     if int(r.get("cls", -1)) >= 0:
         frames[key].append((int(r["cls"]), [r["x"], r["y"], r["w"], r["h"]]))
@@ -82,7 +100,7 @@ for f in sorted((V / "data/학습데이터/자동라벨/sam2").glob("*.json")):
     d = json.load(io.open(f, encoding="utf-8"))
     for k, objs in (d.get("frames") or {}).items():
         key = (stem, round(float(k) * 2) / 2)
-        if key in frames or not objs:
+        if key in frames or not objs or not fall_keep(*key):
             continue
         frames[key] = [(sam_cls(o), list(b)) for o, b in objs.items()]; src[key] = "sam"
 # 3) 배경 프레임: 정답 화재 발생 시각 앞 구간에서 균등 표본
