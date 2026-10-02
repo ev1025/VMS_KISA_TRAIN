@@ -10,6 +10,7 @@
 SAM: /api/sam2_mask(한 프레임 점·박스 → 마스크), 전파 방식 PROP_DEFAULT_MODE(separate·joint)
 데이터 확인: /api/sources · raw · clips · clipconds · clipinfo · frameat · warmframes · dsimg · dslabel · rawlabel · vid
 입력 데이터: /api/data_modules · tv_summary · tv_set · tv_thumb · train_exclude(GET · POST, data/학습데이터/손라벨/train_exclude.json)
+           · train_fix(GET · POST, data/학습데이터/손라벨/train_label_fix.json = 지울 박스 기록. 모듈 라벨 파일은 고치지 않는다)
 결과: /api/meta · dataset · results · queue
 """
 import json, os, re, shutil, threading, time, urllib.parse
@@ -69,26 +70,54 @@ def train_exclude_file():
     return data_path("data/학습데이터/손라벨/train_exclude.json", "train_exclude.json")
 
 
-def train_exclude_write(b):
-    """{set, path, why, on} 하나를 넣거나(on 참) 뺀다(on=false). 형식 {"items": [{set, path, name, why, by, at}]}, 경로마다 한 줄"""
+def _train_item(b):
+    """학습 제외 · 라벨 고침 한 줄의 공통 칸 검사 → (set, path, on, 공통 칸). 넣을 때만 셋 · 경로를 본다(빼기는 목록에서 지우기만 해서 쓰는 값이 없다)"""
     import trainview as _TV
     from datetime import datetime, timedelta, timezone
     st, path, on = str(b.get("set") or ""), str(b.get("path") or ""), b.get("on", True) is not False
     if on and _TV.set_dir(st) is None:
         raise ValueError(f"모르는 셋: {st}")
-    if on and _TV.allowed(path) is None:                 # 넣을 때만 본다. 빼기는 목록에서 지우기만 해서 쓰는 값이 없다
+    if on and _TV.allowed(path) is None:
         raise ValueError(f"허용된 폴더 밖이거나 사진이 아님: {path}")
     why = [str(x)[:60] for x in b.get("why") or [] if x][:10] if isinstance(b.get("why"), list) else []
+    return st, path, on, {"set": st, "path": path, "name": Path(path).name, "why": why, "by": str(b.get("by") or "사용자")[:40],
+                          "at": datetime.now(timezone(timedelta(hours=9))).strftime("%Y-%m-%d %H:%M:%S")}
+
+
+def _train_list_edit(fl, same, item):
+    """손라벨 옆 목록 파일 {"items": [...]} 고치기: same(줄) 인 줄을 빼고 item 이 있으면 넣는다. 손라벨 저장과 같은 잠금 · 그날 첫 저장 전 백업"""
     with _SAVE_LOCK:
-        fl = train_exclude_file()
         _backup_labels(fl)
         d = read_json(fl, {})
-        items = [x for x in (d.get("items") if isinstance(d, dict) else None) or [] if x.get("path") != path]
-        if on:
-            items.append({"set": st, "path": path, "name": Path(path).name, "why": why, "by": str(b.get("by") or "사용자")[:40],
-                          "at": datetime.now(timezone(timedelta(hours=9))).strftime("%Y-%m-%d %H:%M:%S")})
+        items = [x for x in (d.get("items") if isinstance(d, dict) else None) or [] if not same(x)]
+        if item:
+            items.append(item)
         write_json(fl, {"items": items})
     return {"ok": True, "items": items}
+
+
+def train_exclude_write(b):
+    """{set, path, why, on} 하나를 넣거나(on 참) 뺀다(on=false). 형식 {"items": [{set, path, name, why, by, at}]}, 경로마다 한 줄"""
+    st, path, on, item = _train_item(b)
+    return _train_list_edit(train_exclude_file(), lambda x: x.get("path") == path, item if on else None)
+
+
+def train_fix_file():
+    """라벨 고침 기록(입력 데이터 탭 '박스 지우기'). 손라벨 파일들 옆. 이 박스를 학습 라벨에서 빼 달라는 기록이고, 모듈 라벨 파일은 고치지 않는다(ML 규칙: 모듈 불변)"""
+    return data_path("data/학습데이터/손라벨/train_label_fix.json", "train_label_fix.json")
+
+
+def train_fix_write(b):
+    """{set, path, box: [cls, cx, cy, w, h], why, on} 하나를 넣거나(on 참) 뺀다(on=false). 형식 {"items": [{set, path, name, box, why, by, at}]}.
+    box = 라벨 파일 줄 값 그대로, 같은 박스 = 같은 path + box(소수 5자리)면 한 줄"""
+    import math
+    box = b.get("box")
+    if not (isinstance(box, list) and len(box) == 5 and all(isinstance(v, (int, float)) and not isinstance(v, bool) and math.isfinite(v) for v in box)):
+        raise ValueError("box 는 숫자 5개 [cls, cx, cy, w, h]")
+    st, path, on, item = _train_item(b)
+    rk = lambda bx: [round(float(v), 5) for v in bx] if isinstance(bx, list) and len(bx) == 5 else None
+    key = rk(box)
+    return _train_list_edit(train_fix_file(), lambda x: x.get("path") == path and rk(x.get("box")) == key, dict(item, box=box) if on else None)
 
 
 def clip_state_file():
@@ -1842,10 +1871,10 @@ class H(BaseHTTPRequestHandler):
             except Exception as e:
                 self._bytes(json.dumps({"err": str(e)}).encode(), "application/json; charset=utf-8", 500)
             return
-        if p == "/api/train_exclude":           # 입력 데이터 탭: 학습 제외 넣기 · 빼기(손라벨 저장과 같은 잠금)
+        if p in ("/api/train_exclude", "/api/train_fix"):   # 입력 데이터 탭: 학습 제외 · 박스 지우기 넣기 · 빼기(손라벨 저장과 같은 잠금)
             try:
                 n = int(self.headers.get("Content-Length", 0))
-                r = train_exclude_write(json.loads(self.rfile.read(n) or b"{}"))
+                r = (train_exclude_write if p == "/api/train_exclude" else train_fix_write)(json.loads(self.rfile.read(n) or b"{}"))
             except Exception as e:
                 r = {"ok": False, "err": f"{type(e).__name__}: {e}"}
             self._bytes(json.dumps(r, ensure_ascii=False).encode(), "application/json; charset=utf-8"); return
@@ -2282,8 +2311,9 @@ class H(BaseHTTPRequestHandler):
             except Exception as ex:
                 body = {"error": f"{type(ex).__name__}: {ex}"}
             self._bytes(json.dumps(body, ensure_ascii=False).encode(), "application/json; charset=utf-8"); return
-        if p == "/api/train_exclude":             # 입력 데이터 탭 학습 제외 목록(POST 로 고친다)
-            self._bytes(json.dumps(read_json(train_exclude_file(), {"items": []}), ensure_ascii=False).encode(), "application/json; charset=utf-8"); return
+        if p in ("/api/train_exclude", "/api/train_fix"):   # 입력 데이터 탭 학습 제외 · 라벨 고침 목록(POST 로 고친다)
+            fl = train_exclude_file() if p == "/api/train_exclude" else train_fix_file()
+            self._bytes(json.dumps(read_json(fl, {"items": []}), ensure_ascii=False).encode(), "application/json; charset=utf-8"); return
         if p in ("/api/tv_exps", "/api/tv_set", "/api/tv_thumb", "/api/tv_summary", "/api/data_modules"):   # 학습 데이터 보기(2026-10-01) · 입력 데이터 탭(10-02). 읽기만. 계산은 dash_v2/trainview.py
             q = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
             g = lambda k, d="": (q.get(k) or [d])[0]

@@ -751,6 +751,8 @@ body.p2in #center{padding:0 var(--s4) var(--s6)}
 .p2-sus.zero,.p2-sus.wait{background:var(--t-mut);color:var(--p2-sub);font-weight:600}
 .p2-cnt{color:var(--p2-sub);font-size:12px;line-height:16px;font-variant-numeric:tabular-nums;white-space:nowrap}
 .p2-exn{color:var(--bad-tx);font-size:12px;line-height:16px;font-weight:600;white-space:nowrap}
+.p2-fxn{color:var(--miss);font-size:12px;line-height:16px;font-weight:600;white-space:nowrap}
+.p2-fxbtn b{color:var(--miss)}
 /* 가운데 머리: 이름 · 태그 · [의심 | 전체] · 사유 칩 · 몇 번째 */
 .p2-one{display:flex;flex-direction:column;min-height:100%}
 .p2-galh{display:flex;flex-direction:column;gap:var(--s3);padding:var(--s4) 0 var(--s3);background:var(--bg);border-bottom:1px solid var(--line)}
@@ -778,6 +780,12 @@ body.p2in #center{padding:0 var(--s4) var(--s6)}
 .p2-big.ex .p2-bimg img{opacity:.4}
 .p2-bl{position:absolute;transform:translateY(-100%);padding:0 4px;border-radius:3px 3px 0 0;color:#06090f;font:700 12px/16px var(--font);white-space:nowrap;pointer-events:none}
 .p2-bl.in{transform:none;border-radius:0 0 3px 0}
+/* 박스 지우기(input.js p2Boxes): 의심 박스 = 빨강 굵게 + 사유 이름표, 지운 박스 = 빨간 점선 + ×, 고른 박스 = 흰 점선. 누르기는 .p2-stage onclick 이 좌표로 고른다 */
+.p2-ov{position:absolute;inset:0;pointer-events:none}
+.p2-stage:not(.zoomed) .p2-bimg{cursor:pointer}
+.p2-bl.bad{background:#f85149;color:#fff}
+.p2-bl.del{text-decoration:line-through;opacity:.85}
+.p2-bx{position:absolute;transform:translate(-50%,-50%);color:#f85149;font:700 24px/1 var(--font);text-shadow:0 0 3px #000,0 0 3px #000}
 .p2-binfo{grid-column:1 / -1;display:flex;flex-wrap:wrap;align-items:flex-start;gap:var(--s2) var(--s4);margin-top:var(--s3)}
 .p2-binfo > .p2-tags{flex:0 1 auto}
 .p2-st{font-weight:700}
@@ -799,7 +807,7 @@ body.p2in #center{padding:0 var(--s4) var(--s6)}
 .p2-okb:hover{background:#3fb950;border-color:#3fb950}
 .p2-exb:hover{background:#f85149;border-color:#f85149}
 .p2-exb.on,.p2-undo{background:var(--panel);border-color:var(--line-ctl);color:var(--tx)}
-.p2-undo{position:absolute;right:var(--s4)}
+.p2-actr{position:absolute;right:var(--s4);display:flex;gap:var(--s2)}          /* 오른쪽: 박스 지우기 · 되돌리기 */
 .p2-msg{position:absolute;left:var(--s4);max-width:calc(50% - 220px);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--bad-tx);font-size:12px;font-weight:600}
 .p2-acts kbd{display:inline-block;margin-left:6px;padding:0 4px;min-width:16px;border:1px solid currentColor;border-radius:3px;font:600 11px/14px var(--mono);opacity:.7;text-align:center}
 .p2-okb kbd,.p2-exb:not(.on) kbd{opacity:.85;border-color:#ffffffaa}
@@ -824,6 +832,7 @@ body.p2in #center{padding:0 var(--s4) var(--s6)}
 .p2-exh{display:flex;align-items:baseline;gap:var(--s2);flex-wrap:wrap;margin-bottom:var(--s1);font-size:var(--fs-md);font-weight:700}
 .p2-exr{display:grid;grid-template-columns:96px minmax(0,1fr) auto;gap:var(--s3);align-items:center;padding:var(--s2) 0;border-top:1px solid var(--line)}
 .p2-exr img{width:96px;border-radius:var(--r-sm);background:#000}
+.p2-exr .tv-img{width:96px}
 .p2-exf{display:flex;flex-direction:column;gap:var(--s1);min-width:0}
 .p2-exf b{font-family:var(--mono);font-size:12px;font-weight:600;overflow-wrap:break-word}
 .p2-exf .p2-mut{font-size:12px;line-height:20px}
