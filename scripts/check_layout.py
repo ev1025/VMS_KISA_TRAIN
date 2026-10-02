@@ -9,6 +9,7 @@
 사용
     .venv/bin/python scripts/check_layout.py           # 어긴 것만 출력
     .venv/bin/python scripts/check_layout.py --all     # 통과한 항목도 같이
+    .venv/bin/python scripts/check_layout.py --selfcheck   # 검사 규칙 자체 점검(임시 폴더)
 
 되돌아오는 값: 어긴 것이 하나라도 있으면 1, 없으면 0.
 """
@@ -29,6 +30,11 @@ ROOT_PY = {"model.py", "score_kisa.py", "config.py"}
 RESULTS_FILES = {"MODELS.json", "loocv_results.json", "BASELINE.json", "SUMMARY.md"}
 # 학습 가중치가 아닌 산출물이 들어가는 runs 폴더(SeqNet 등). best.pt 가 없는 게 정상이다.
 RUNS_EXCEPT = {"fall_track", "fall_seq", "_eval", "_archive"}
+# 루트에 둘 수 있는 폴더 · 파일(docs/file_path.md 2절). 캡처 사진 · 백업 폴더가 루트에 쌓이는 것을 잡는다
+# (2026-10-02: 루트에 _*.jpg 12장 · weights_배포원본/ 이 있었는데 위 검사는 .py 만 봐서 못 잡았다)
+ROOT_DIRS = {".git", ".venv", "__pycache__", "_exp", "_kisa_port", "configs", "dash_v2", "data", "docs", "dumps",
+             "feats", "logs", "model", "results", "runs", "scripts"}
+ROOT_FILES = ROOT_PY | {".gitignore", "CLAUDE.md", "README.md", "ml_changelog.md", "sync_context_for_fullstack.md"}
 
 bad, ok = [], []
 
@@ -48,6 +54,48 @@ def running_jobs():
     return names
 
 
+def root_stray(root):
+    """루트에서 허용 목록 밖의 이름"""
+    return sorted(p.name for p in root.iterdir() if p.name not in (ROOT_DIRS if p.is_dir() else ROOT_FILES))
+
+
+def empty_results(rd):
+    """기록(score.txt · meta.json)이 없는 결과 폴더. 빼는 것:
+    '_' 로 시작하는 폴더(실험이 아닌 기준 자료, 예 _exam_ref = 시험 PC 결과 기준, scripts/exam_ingest.py)
+    SCORE_ON_THOR 하나만 있는 폴더(러너가 큐를 걸 때 미리 만든 표시. 아직 안 돈 판이다)"""
+    out = []
+    for d in rd.iterdir():
+        if not d.is_dir() or d.name.startswith("_") or (d / "score.txt").is_file() or (d / "meta.json").is_file():
+            continue
+        if {x.name for x in d.iterdir()} == {"SCORE_ON_THOR"}:
+            continue
+        out.append(d.name)
+    return sorted(out)
+
+
+def selfcheck():
+    """일부러 어긴 것과 멀쩡한 것을 임시 폴더에 만들어 두 규칙을 확인한다"""
+    import tempfile
+    t = Path(tempfile.mkdtemp())
+    for d in ("scripts", "results", "docs"):
+        (t / d).mkdir()
+    for f in ("model.py", "CLAUDE.md", "_캡처.jpg"):
+        (t / f).write_text("x")
+    (t / "weights_옛").mkdir()
+    assert root_stray(t) == ["_캡처.jpg", "weights_옛"], root_stray(t)
+    r = t / "results"
+    for d in ("done", "queued", "_ref", "broken"):
+        (r / d).mkdir()
+    (r / "done" / "meta.json").write_text("{}")
+    (r / "queued" / "SCORE_ON_THOR").write_text("")
+    (r / "_ref" / "a.xml").write_text("")
+    (r / "broken" / "SCORE_ON_THOR").write_text(""); (r / "broken" / "x.log").write_text("")
+    (r / "bare").mkdir()
+    assert empty_results(r) == ["bare", "broken"], empty_results(r)
+    print("자체 점검 통과")
+    return 0
+
+
 def check(cond, label, detail=""):
     (ok if cond else bad).append(f"{label}{(' — ' + detail) if detail and not cond else ''}")
 
@@ -55,7 +103,14 @@ def check(cond, label, detail=""):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--all", action="store_true", help="통과한 항목도 출력")
+    ap.add_argument("--selfcheck", action="store_true", help="검사 규칙 자체 점검")
     a = ap.parse_args()
+    if a.selfcheck:
+        return selfcheck()
+
+    # 0) 루트에 허용 목록 밖의 것(캡처 · 백업 폴더 등)이 없나
+    odd_root = root_stray(V)
+    check(not odd_root, "루트 구성", f"허용 밖 {len(odd_root)}개: {', '.join(odd_root[:8])} → 캡처 · 메모는 logs/_archive/<날짜>/, 가중치는 model/")
 
     # 1) 루트에 새 스크립트를 만들지 않았나
     stray = sorted(p.name for p in V.glob("*.py") if p.name not in ROOT_PY)
@@ -66,8 +121,7 @@ def main():
     check(not loose, "results/ 루트 파일", f"{len(loose)}개: {', '.join(loose[:6])} → results/<실험>/ 안으로")
 
     # 3) 결과 폴더에 기록이 하나라도 있나(score.txt 또는 meta.json)
-    empty = sorted(d.name for d in (V / "results").iterdir()
-                   if d.is_dir() and not (d / "score.txt").is_file() and not (d / "meta.json").is_file())
+    empty = empty_results(V / "results")
     check(not empty, "결과 폴더 기록", f"{len(empty)}개가 비었다: {', '.join(empty[:6])}")
 
     # 4) runs 폴더에 가중치가 있나 (지금 도는 잡은 아직 저장 전이라 제외)

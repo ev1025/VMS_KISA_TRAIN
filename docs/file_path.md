@@ -43,6 +43,8 @@ KP.DEFAULT_IMGSZ    # 기본 입력 크기 (640)
 | `scripts/` | 파이프라인 스크립트 | 새 스크립트는 이곳에 생성 (루트 생성 금지) |
 | `scripts/_archive/<날짜>/` | 일회성·탐색 스크립트 보관 | 삭제 대신 이곳으로 이동 |
 | `scripts/data_prep/` | 데이터 준비 단계 스크립트 |  |
+| `model/` | 운영 고정 가중치(루트) · 기준 모델(`model/pretrained/`, yolo11s 등. 단 루트의 `yolo11x-pose.pt` · `person_v2/v3.pt` · `fall_track.pt` 는 제출 도구 `_kisa_port/weights/kisa/` 가 바로가기로 가리키므로 옮기지 않는다, 2026-10-02 옮겼다가 끊겨 되돌림) · 옛 배포 가중치 원본(`model/배포원본_20260923/`, README 에 계보) | Git 제외. 가중치를 루트 · 다른 폴더에 두지 않는다 |
+| `feats/` | 쓰러짐 자세 특징 캐시(`fall_kpts*` · `fall_seq` · `fire_seq`) | Git 제외. `scripts/fall_*.py` 가 쓰고 읽는다. 지워도 다시 만든다 |
 | `configs/` | 큐 yaml, 데이터 계약(`datasets.yaml`), 결과 탭 비교 블록(`result_blocks.yaml`) |  |
 | `dash_v2/` | 대시보드 서버 및 프론트엔드 | 로그/데이터 파일 보관 금지 |
 | `docs/` | 프로젝트 문서 |  |
@@ -68,10 +70,11 @@ KP.DEFAULT_IMGSZ    # 기본 입력 크기 (640)
 * 학습 하이퍼파라미터: `runs/<실험>/args.yaml`
 * 실행 과정 로그: `logs/queue/<실행>.log`
 * 규칙 설정 교차검증(LOOCV): `results/loocv_results.json` (`scripts/loocv_all.py` 가 씀. 실험 하나에 매이지 않아 `results/` 바로 아래 둡니다)
+* 시험 PC 결과 기준(진흥원 결과 XML): `results/_exam_ref/<항목>/` (`scripts/exam_ingest.py`. 실험이 아니라 이름이 `_` 로 시작한다. KISA 파생이라 Git 제외)
 * 실험 결과 한 장 요약: `results/SUMMARY.md` (`scripts/build_summary.py` · `exp_queue.py` 가 실험이 끝날 때마다 다시 씀. 실험 하나에 매이지 않아 `results/` 바로 아래 둡니다)
 * 규칙 훑기 결과(한 실험의 덤프로 침입·배회 규칙을 훑은 표, LOOCV 포함): `results/<실험>/rules.txt` (`scripts/rule_eval.py` 가 씁니다. 실험에 매이므로 그 실험 폴더 안에 둡니다. 2026-09-18)
 
-배치가 이 규칙과 맞는지는 `.venv/bin/python scripts/check_layout.py --all` 로 확인합니다.
+배치가 이 규칙과 맞는지는 `.venv/bin/python scripts/check_layout.py --all` 로 확인합니다. 루트에는 2절 표의 폴더와 `CLAUDE.md` · `README.md` · `.gitignore` · 두 인수인계 `.md` · 진입점 `.py` 만 둡니다(캡처 사진 · 메모는 `logs/_archive/<날짜>/`, 2026-10-02 검사 추가).
 
 ### 모델 계보 관리 (`results/MODELS.json`)
 
