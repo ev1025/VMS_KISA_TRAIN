@@ -12,7 +12,7 @@ import cv2
 import kisa_paths as KP            # 저장소 루트는 여기 한 곳에서만 정의한다
 V = KP.V
 sys.path.insert(0, str(V / "dash_v2")); import gt_adapters as GTA
-ap = argparse.ArgumentParser(); ap.add_argument("mode", choices=["fire", "person", "intrusion", "loitering"]); ap.add_argument("--name", default=None)
+ap = argparse.ArgumentParser(); ap.add_argument("mode", choices=["fire", "person", "intrusion", "loitering", "falldown"]); ap.add_argument("--name", default=None)
 ap.add_argument("--bg", type=int, default=10, help="클립마다 화재 발생 전 구간에서 뽑을 배경 프레임 수(0=안 뽑음)")
 ap.add_argument("--bg-margin", type=float, default=5.0, help="발생 시각 앞 여유(초). 이 안쪽은 배경으로 안 쓴다(불씨가 보일 수 있다)")
 a = ap.parse_args()
@@ -20,9 +20,9 @@ RAW = V / "data/원본데이터"; D = GTA.Datasets(V / "configs/datasets.yaml", 
 NAME = a.name or f"evalset_{a.mode}"; OUT = V / "data/학습데이터" / NAME
 NAMES = ["fire", "smoke"] if a.mode == "fire" else ["person"]
 LABELS = "fire" if a.mode == "fire" else "person"          # 손라벨 파일(fire_labels.json · person_labels.json)
-# 항목별 평가셋(2026-10-02): intrusion · loitering 는 그 항목 폴더 영상만, person = 침입 + 배회. 쓰러짐은 넣지 않는다
-# (사용자 10-02 "쓰러짐은 배포_검증영상에서 빼자": 쓰러짐은 자세 모델 · 분류기 · 경보 시각 단계별 지표로 본다)
-WANT = {"fire": {"fire"}, "intrusion": {"intrusion"}, "loitering": {"loitering"}, "person": {"intrusion", "loitering"}}[a.mode]
+# 항목별 평가셋(2026-10-02): intrusion · loitering · falldown 은 그 항목 폴더 영상만, person = 침입 + 배회 + 쓰러짐(예전과 같음)
+WANT = {"fire": {"fire"}, "intrusion": {"intrusion"}, "loitering": {"loitering"}, "falldown": {"falldown"},
+        "person": {"intrusion", "loitering", "falldown"}}[a.mode]
 stats = collections.Counter()
 
 
@@ -125,7 +125,7 @@ for c in caps.values():
 (OUT / "val.txt").write_text("\n".join(lst) + "\n")
 (OUT / "data.yaml").write_text(f"path: {OUT}\ntrain: {OUT}/val.txt\nval: {OUT}/val.txt\nnc: {len(NAMES)}\nnames: {NAMES}\n")   # 검증 전용. train 칸은 ultralytics 형식 때문에 채울 뿐 학습에 쓰지 않는다
 clips = sorted({s for s, _ in frames})
-meta = {"name": NAME, "mode": a.mode, "items": sorted(WANT), "excluded": "쓰러짐(10-02, 단계별 지표로 따로 평가)", "built": time.strftime("%F %T"), "frames": len(lst), "clips": clips,
+meta = {"name": NAME, "mode": a.mode, "items": sorted(WANT), "built": time.strftime("%F %T"), "frames": len(lst), "clips": clips,
         "boxes": sum(len(b) for b in frames.values()), "bg_per_clip": a.bg, "bg_margin_s": a.bg_margin,
         "source": "손라벨 eval 행 > SAM 전파(채점 전용 클립) > 발생 전 배경 표본", "use": "검증 전용. 학습 금지", "stats": dict(stats)}
 (OUT / "meta.json").write_text(json.dumps(meta, ensure_ascii=False, indent=1), encoding="utf-8")
