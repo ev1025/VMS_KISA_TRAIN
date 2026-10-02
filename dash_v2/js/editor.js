@@ -56,6 +56,21 @@ function shotKinds(clip) {
   if (S) S.filter(r => r.clip === clip).forEach(r => { const k = gridKey(r.t); by[k] = (by[k] === "box" || r.cls >= 0) ? "box" : "empty"; });
   return by;
 }
+// 객체 하나의 라벨 프레임(오름차순) 사이에서 전파가 못 잡은 빈 구간(10-02 사용자: "전파하면 쭉 생겨야 하는데 중간에 10장씩 빈다").
+// 반환 {i: [[첫 빈 프레임, 장수], ...]} · i = 빈 구간 바로 뒤 라벨 프레임의 번호. 검토완료(빈 라벨 마커) 프레임은 빈 곳으로 안 센다
+const GAP_MIN = 2;   // ponytail: 이 장수 이상 연달아 빈 곳만 표시. 한 장짜리까지 보려면 1
+function labelGaps(all, kinds) {
+  const st = _step(), out = {};
+  for (let i = 1; i < all.length; i++) {
+    let run = null;
+    const flush = () => { if (run && run[1] >= GAP_MIN) (out[i] = out[i] || []).push(run); run = null; };
+    for (let t = quant(all[i - 1] + st); t < all[i] - st / 2; t = quant(t + st)) {
+      if (kinds[gridKey(t)] === "empty") flush(); else if (run) run[1]++; else run = [t, 1];
+    }
+    flush();
+  }
+  return out;
+}
 let SAMFR = {};    // stem → SAM 전파 프레임 시각 목록(/api/sam2frames). 목록 배지 = 손라벨 ∪ SAM = 학습데이터 수
 function labeledCount(clip, mode) {   // mode 를 주면 그 모드 손라벨만 센다(방화 클립은 불·연기, 사람 클립은 사람)
   if (clip.startsWith("img:")) return (IMGLABELS || []).some(r => r.clip === clip && r.cls >= 0) ? 1 : 0;   // 이미지 = 프레임 하나
@@ -694,9 +709,23 @@ function renderEditor(f) {
         const sam = Object.entries(SAMMAP[f.clip] || {}).filter(([k, v]) => v && v[String(o)]).map(([k]) => +k);
         const seedAt = t => SM.seeds.find(sd => sd.obj === o && near(sd.t, t));
         const all = [...new Set([...hand, ...sam, ...SM.seeds.filter(sd => sd.obj === o).map(sd => sd.t)])].sort((x, y) => x - y);
+        const gaps = PROP_OBJ(o) ? labelGaps(all, shotKinds(f.stem)) : {};   // 전파하는 객체만(연기는 손으로 띄엄띄엄 친다)
+        const gapList = Object.values(gaps).flat();
+        if (gapList.length) {                          // 머리글: 빈 곳 수. 누르면 지금 프레임 다음 빈 곳으로(끝이면 처음으로)
+          const gb = el("button", "objgapn", `빈 곳 ${gapList.length}`); gb.type = "button";
+          gb.title = `전파가 못 잡은 구간 ${gapList.length}곳(${GAP_MIN}장 이상 연달아 빔). 누르면 다음 빈 곳으로`;
+          gb.onclick = ev => { ev.stopPropagation(); const nx = gapList.find(g => g[0] > f.t + 1e-6) || gapList[0]; SM.cur = o; openFrameAt(f.clip, nx[0], LB.mode); };
+          head.appendChild(gb);
+        }
         if (!folded) {                                 // 접힘: 머리글만 남긴다
         const grid = el("div"); grid.style.cssText = "display:grid;grid-template-columns:repeat(auto-fill,minmax(44px,1fr));gap:4px";
-        all.forEach(t => {
+        all.forEach((t, idx) => {
+          (gaps[idx] || []).forEach(([g0, n]) => {     // 앞 라벨 프레임과 이 프레임 사이 빈 구간 = 빨간 점선 칸(빈 장수). 누르면 첫 빈 프레임으로
+            const gc = el("div", "objgap", `+${n}`);
+            gc.title = `빈 ${n}장(전파가 못 잡음): ${_disp(g0)} ~ ${_disp(quant(g0 + (n - 1) * _step()))}. 누르면 첫 빈 프레임으로`;
+            gc.onclick = () => { SM.cur = o; openFrameAt(f.clip, g0, LB.mode); };
+            grid.appendChild(gc);
+          });
           const sd = seedAt(t), now = near(t, f.t);
           const cell = el("div", "objcell", _disp(t));
           cell.title = `${_disp(t)} 프레임으로 이동`;

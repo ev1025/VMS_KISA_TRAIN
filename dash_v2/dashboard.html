@@ -476,6 +476,10 @@ body.dm #list .item.on{outline:0;background:var(--sel);box-shadow:inset 3px 0 0 
 .ed-shots > button:first-child{border-radius:var(--r-lg) 0 0 var(--r-lg) !important;box-shadow:6px 0 8px -2px var(--panel)}
 .ed-shots > button:last-child{border-radius:0 var(--r-lg) var(--r-lg) 0 !important;box-shadow:-6px 0 8px -2px var(--panel)}
 .ed-shots > button:first-child:hover,.ed-shots > button:last-child:hover{color:var(--tx) !important}
+/* 객체 칸: 전파가 못 잡은 빈 구간(editor.js labelGaps). 빨간 점선 칸 = 빈 장수(누르면 첫 빈 프레임), 머리글 '빈 곳 N' = 다음 빈 곳으로 */
+.objgap{display:flex;align-items:center;justify-content:center;height:22px;border:1px dashed var(--bad);border-radius:var(--r-sm);color:var(--bad-tx);font-size:var(--fs-xs);font-weight:700;cursor:pointer}
+.objgap:hover{background:var(--t-bad)}
+.objgapn{margin-left:auto;height:22px;padding:0 8px;border:1px solid var(--bad);border-radius:var(--r-pill);background:var(--t-bad);color:var(--bad-tx);font-size:var(--fs-2xs);font-weight:700;cursor:pointer}
 /* 표시 · 라벨 모드 칸(data.js modeBox): 도구 줄 오른쪽 끝. 편집기가 없으면(편집 안 함) 가운데 맨 위 오른쪽 */
 #edMode{display:flex;align-items:center;gap:var(--s3);margin-left:auto}
 #edMode.solo{justify-content:flex-end;margin:var(--s3) var(--s4) 0}
