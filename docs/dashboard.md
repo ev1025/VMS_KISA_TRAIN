@@ -160,7 +160,7 @@
 | 실험 구성 | `dash_v2/trainview.py exps()` · GET `/api/tv_exps` | `results/<실험>/meta.json` 의 base · base_frac · oversample · extras. meta 가 없으면 큐 yaml(학습 중 = `_exp/<실험>/train.txt` 가 3일 안, 대기 = 2일 안에 고친 큐) |
 | 셋 찾기 · 사진 목록 | `set_dir()` · `list_images()` | `scripts/exp_queue.py` 와 같은 순서(학습데이터 → 원본데이터 → 줄인 사본), `images/train` 또는 `images` |
 | 라벨 | `label_of()` | 경로의 마지막 `/images/` → `/labels/`, 확장자 `.txt`(ultralytics 규칙, 심링크 안 따라감) |
-| 수상한 점 | `check()` · GET `/api/tv_set?name=&flag=&offset=&limit=` | 오류 의심 = 채점 영상 섞임(dash_meta 검수 80편 이름이 파일 이름에 있음) · 좌표 범위 밖 · 클래스 번호 이상 · 겹친 중복 박스(같은 클래스 IoU 0.6 이상) · 라벨 파일 없음. 확인 권장 = 아주 작은 박스(0.8% 미만) · 화면 대부분 박스(85% 초과) · 박스 30개 이상 |
+| 수상한 점 | `check()` · GET `/api/tv_set?name=&flag=&offset=&limit=` | 오류 의심 = 채점 영상 섞임(학습 항목의 채점편 이름이 파일 이름에 있음: 사람 셋 = 침입 · 배회 60편, 방화 셋 = 방화 10편 + 카메라 146. 쓰러짐 채점편 사본은 사람 학습 허용(사용자 09-24 · 09-26), 10-02 `item_of` · `EVAL[항목]`) · 좌표 범위 밖 · 클래스 번호 이상 · 겹친 중복 박스(같은 클래스 IoU 0.6 이상) · 라벨 파일 없음. 확인 권장 = 아주 작은 박스(0.8% 미만) · 화면 대부분 박스(85% 초과) · 박스 30개 이상 |
 | 축소 사진 | GET `/api/tv_thumb?p=&w=` | data/ · 줄인 사본 폴더 안만 내줌 |
 
 * 셋마다 처음 열 때 라벨을 모두 읽는다(7만 7천 장 셋 약 27초). 그 뒤는 서버 메모리에 기억(최근 6셋)

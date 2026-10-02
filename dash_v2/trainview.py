@@ -31,12 +31,26 @@ _TAIL = re.compile(r"_(fog|snow)[lmh]$")
 
 
 def _eval_clips():
-    """채점 영상(배포 검증 영상) 이름. dash_meta.json 의 검수 항목 행 이름"""
+    """채점 영상(배포 검증 영상) 이름을 학습 항목별로. dash_meta.json 의 검수 항목 행 이름.
+    학습하는 항목의 채점 영상만 '섞임' 으로 본다(사용자 09-24 · 09-26 확정): 사람 셋 = 침입 · 배회 채점편(쓰러짐 채점편 사본은 사람 학습 허용),
+    방화 셋 = 방화 채점편 + 같은 카메라 146(C00_146_)"""
     try:
-        m = json.loads((HERE / "dash_meta.json").read_text(encoding="utf-8"))
-        return sorted({r["name"] for k, v in m.get("items", {}).items() if k != "labelset" for r in v.get("rows", []) if r.get("name")})
+        m = json.loads((HERE / "dash_meta.json").read_text(encoding="utf-8")).get("items", {})
     except Exception:
-        return []
+        m = {}
+    by = lambda ks: sorted({r["name"] for k in ks for r in (m.get(k) or {}).get("rows", []) if r.get("name")})
+    return {"사람": by(("intrusion", "loiter")), "방화": by(("fire",)) + ["C00_146_"]}
+
+
+def item_of(name):
+    """셋 이름 → 학습 항목(사람 | 방화). configs/data_modules.yaml 의 item, 없으면 이름으로"""
+    try:
+        for m in (yaml.safe_load((G / "configs" / "data_modules.yaml").read_text(encoding="utf-8")) or {}).get("modules") or []:
+            if m.get("name") == name and m.get("item") in ("사람", "방화"):
+                return m["item"]
+    except Exception:
+        pass
+    return "사람" if re.search(r"person|coco|hnfix|사람", name, re.I) else "방화"
 
 
 EVAL = _eval_clips()
@@ -83,11 +97,11 @@ def _iou(a, b):
     return inter / u if u > 0 else 0.0
 
 
-def check(img, boxes, has_label, ncls):
-    """수상한 점 목록(FLAGS 키). boxes = [[cls, cx, cy, w, h]] 정규화"""
+def check(img, boxes, has_label, ncls, item="사람"):
+    """수상한 점 목록(FLAGS 키). boxes = [[cls, cx, cy, w, h]] 정규화. item = 이 셋이 학습하는 항목(채점 영상 섞임은 그 항목 것만)"""
     f = []
     stem = _TAIL.sub("", Path(img).stem)
-    if any(c in stem for c in EVAL):
+    if any(c in stem for c in EVAL[item]):
         f.append("eval")
     if not has_label:
         f.append("nolabel")
@@ -106,7 +120,7 @@ def check(img, boxes, has_label, ncls):
     return f
 
 
-def _read(img, ncls):
+def _read(img, ncls, item):
     lp = Path(label_of(img))
     boxes, has = [], lp.is_file()
     if has:
@@ -117,15 +131,17 @@ def _read(img, ncls):
                     boxes.append([float(x) for x in w[:5]])
         except Exception:
             pass
-    return [img, boxes, check(img, boxes, has, ncls)]
+    return [img, boxes, check(img, boxes, has, ncls, item)]
 
 
-def _ncls(d):
+def _ncls(d, item):
     try:
         names = (yaml.safe_load((d / "data.yaml").read_text(encoding="utf-8")) or {}).get("names")
-        return len(names) if names else 2
+        if names:
+            return len(names)
     except Exception:
-        return 2
+        pass
+    return 1 if item == "사람" else 2                                 # data.yaml 없는 목록 모듈(mod_*): 사람 = person 하나, 방화 = 불 · 연기
 
 
 def rows(name):
@@ -139,9 +155,10 @@ def rows(name):
         c = _CACHE.get(name)
         if c and c[0] == sig:
             return d, c[1]
-    ncls = _ncls(d)
+    item = item_of(name)
+    ncls = _ncls(d, item)
     with ThreadPoolExecutor(32) as ex:                                 # 라벨 파일 수만 개를 Lustre 에서 읽는다
-        out = list(ex.map(lambda p: _read(p, ncls), imgs, chunksize=256))
+        out = list(ex.map(lambda p: _read(p, ncls, item), imgs, chunksize=256))
     with _LOCK:
         _CACHE[name] = (sig, out)
         while len(_CACHE) > 6:
@@ -233,7 +250,7 @@ def exps(limit=60):
             sets += [{"name": s, "role": "반복", "k": int(k)} for s, k in r["oversample"].items()]
             sets += [{"name": s, "role": "추가", "k": 1} for s in r["extras"]]
         r["sets"] = sets
-    return {"exps": out[:limit], "eval_clips": len(EVAL)}
+    return {"exps": out[:limit], "eval_clips": sum(len(v) for v in EVAL.values())}
 
 
 def thumb(path, w=320):
@@ -260,4 +277,9 @@ if __name__ == "__main__":
     assert "cls" in check("x/images/a.jpg", [[1, 0.5, 0.5, 0.1, 0.1]], True, 1)
     assert check("x/images/a.jpg", [], False, 1) == ["nolabel"]
     assert label_of("/a/images/train/b.jpg") == "/a/labels/train/b.txt"
-    print("ok", len(EVAL), "eval clips")
+    if EVAL["사람"]:                                                   # 서버(dash_meta.json 있는 곳)에서만
+        assert "eval" in check("x/images/C00_005_0001_00010.jpg", [], True, 1, "사람")            # 침입 채점편 = 섞임
+        assert "eval" not in check("x/images/fall_C00_146_0004_00010.jpg", [], True, 1, "사람")   # 쓰러짐 채점편 사본 = 사람 학습 허용
+        assert "eval" in check("x/images/C00_146_0001_00010.jpg", [], True, 2, "방화")            # 방화 = 같은 카메라 146 도
+    assert item_of("mod_person_coco_pos_20260927") == "사람" and item_of("fasdd_yolo") == "방화"
+    print("ok", {k: len(v) for k, v in EVAL.items()}, "eval clips")
