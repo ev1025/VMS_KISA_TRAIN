@@ -43,8 +43,8 @@ async function buildDatasetSrc() {
   // 드롭다운은 고른 쪽만
   if (DS_KIND === "raw") {
     $(".srcbox label").hidden = true;   // 드롭다운만 봐도 알아볼 수 있어 이름표를 안 둔다
-    // 데이터 확인은 전역 필터와 무관하다(10-01). 학습에 쓰는 것만(규격 use: train). 학습 금지(none) · 채점 전용(eval)은 숨긴다(10-02 사용자)
-    SOURCES.filter(x => !DATASETS[x.key] || DATASETS[x.key].use === "train").forEach(x => {
+    // 데이터 확인은 전역 필터와 무관하다(10-01). 학습 금지(규격 use: none)만 숨긴다. 채점 전용(eval, 배포 검증영상)은 라벨을 고치므로 보인다(10-02 사용자)
+    SOURCES.filter(x => !DATASETS[x.key] || DATASETS[x.key].use !== "none").forEach(x => {
       const o = el("option"); o.value = "raw:" + x.key;
       o.textContent = x.key;                        // 편수는 안 쓴다(10-02 사용자)
       sel.appendChild(o);
