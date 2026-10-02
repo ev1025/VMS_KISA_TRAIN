@@ -10,7 +10,9 @@
   falldown              : 화면 전체 사람, 편마다 재현율도 낸다(편 평균 = 장수 많은 편이 좌우하지 않게)
 매칭: 사진마다 확신도 높은 예측부터, 같은 클래스 정답 중 IoU 0.5 이상 가장 큰 것과 짝. 남은 예측 = 오검, 남은 정답 = 미검
 문턱: 판정기 값(침입 0.40 · 배회 0.30 · 불 0.40 · 쓰러짐 자세 0.10)에서의 F1 과, 문턱을 훑은 최고 F1 · 그때 문턱
-추론: 전체 화면 한 장(판정기의 침입 3x3 칸 나눔 · 방화 6뷰는 아님). 해상도는 --imgsz(= 학습 해상도, 쓰러짐 자세 모델은 판정기와 같은 1280)
+추론: 기본은 전체 화면 한 장. --judge-infer 면 판정기와 같은 추론(2026-10-02): 침입 = 3x3 칸(겹침 0.2) 마다 --imgsz 로 키워 추론 ·
+  확신도 0.15 이상 · IoU NMS(판정기 PersonDetector 그대로), 방화 = 6뷰(전체 + 4분할 + 가운데) 낱장 추론 뒤 클래스별 NMS(IoU 0.5).
+  배회 · 쓰러짐 판정기는 원래 전체 화면이라 옵션과 상관없다. 해상도는 --imgsz(= 학습 해상도, 쓰러짐 자세 모델은 판정기와 같은 1280)
   python scripts/det_f1.py <가중치.pt ...> --items intrusion loitering --imgsz 1280 [--root <저장소>] [--tools <kisa_items 폴더>] [--device 0] [--out 결과.json]
   python scripts/det_f1.py --selfcheck
 --root: 평가셋 · 영역파일이 있는 저장소 루트(다른 서버에서 돌릴 때). val.txt 의 경로는 'data/학습데이터/' 뒤만 붙여 바꾼다"""
@@ -114,6 +116,7 @@ def main():
     ap.add_argument("--root", default=str(V)); ap.add_argument("--tools", default=None)
     ap.add_argument("--device", default="0", help="0 = GPU, cpu = CPU(학습이 GPU 를 다 쓸 때)")
     ap.add_argument("--out", default=None); ap.add_argument("--selfcheck", action="store_true")
+    ap.add_argument("--judge-infer", action="store_true", help="침입 3x3 칸 · 방화 6뷰로 판정기와 같게 추론(결과 이름 끝에 '|판정기추론')")
     a = ap.parse_args()
     if a.selfcheck:
         return selfcheck()
@@ -131,26 +134,44 @@ def main():
         wp = Path(w)
         name = f"{wp.parts[-4]}|{wp.stem}" if wp.parent.name == "weights" and len(wp.parts) > 4 and wp.parts[-3] != "kisa_eval" else wp.stem
         m = YOLO(w)
+        pdet = K.PersonDetector(w, tile=dict(K.TILE, imgsz=a.imgsz), device=a.device, contain=None) if a.judge_infer and "intrusion" in sets else None
+
+        def judge_preds(it, path):
+            """판정기와 같은 추론. 반환 (높이, 너비, [(conf, cls, (x1, y1, x2, y2))])"""
+            import cv2
+            bgr = cv2.imread(path); h, wd = bgr.shape[:2]
+            if it == "intrusion":
+                return h, wd, [(c, 0, (x1, y1, x2, y2)) for c, x1, y1, x2, y2 in pdet.detect(bgr)]
+            offs = [(0, 0), (0, 0), (wd // 2, 0), (0, h // 2), (wd // 2, h // 2), (wd // 4, h // 4)]
+            crops = [bgr] + [bgr[y:y + h // 2, x:x + wd // 2] for x, y in offs[1:]]
+            byc = {}
+            for crop, (ox, oy) in zip(crops, offs):
+                for b in m.predict(crop, conf=0.05, imgsz=a.imgsz, verbose=False, device=a.device)[0].boxes:
+                    x1, y1, x2, y2 = (float(v) for v in b.xyxy[0])
+                    byc.setdefault(int(b.cls[0]), []).append((float(b.conf[0]), x1 + ox, y1 + oy, x2 + ox, y2 + oy))
+            return h, wd, [(c, k, (x1, y1, x2, y2)) for k, ds in byc.items() for c, x1, y1, x2, y2 in K.nms(ds, thr=0.5, contain=2.0)]
         for it, imgs in sets.items():
             cfg = ITEM[it]
             scored = {k: [] for k in cfg["classes"]}; n_gt = {k: 0 for k in cfg["classes"]}
             clip = {}; polys = {}; n_neg = 0; neg_fp = {k: [] for k in cfg["classes"]}
             for i in range(0, len(imgs), 16):
                 chunk = imgs[i:i + 16]
-                res = m.predict(chunk, imgsz=a.imgsz, conf=0.05, classes=cfg["classes"], verbose=False, device=a.device)
-                for p, r in zip(chunk, res):
-                    h, wd = r.orig_shape
+                if a.judge_infer and it in ("intrusion", "fire"):
+                    got = [judge_preds(it, p) for p in chunk]
+                else:
+                    got = [(*r.orig_shape, [(float(b.conf[0]), int(b.cls[0]), tuple(float(v) for v in b.xyxy[0])) for b in r.boxes])
+                           for r in m.predict(chunk, imgsz=a.imgsz, conf=0.05, classes=cfg["classes"], verbose=False, device=a.device)]
+                for p, (h, wd, preds) in zip(chunk, got):
                     stem = Path(p).stem.rsplit("_", 1)[0]
                     if cfg["zone"]:
                         poly = polys[stem] if stem in polys else polys.setdefault(stem, K.zone_of(MAPS, stem, cfg["zone"], (wd, h)))
                     else:
                         poly = None
                     gts = []
-                    for row in Path(p.replace("/images/", "/labels/").rsplit(".", 1)[0] + ".txt").read_text().split("\n"):
+                    for row in (Path(p).parent.parent / "labels" / (Path(p).stem + ".txt")).read_text().split("\n"):   # images/x.jpg → labels/x.txt(윈도우 경로에서도)
                         if row.strip():
                             k, cx, cy, bw, bh = row.split(); cx, cy, bw, bh = map(float, (cx, cy, bw, bh))
                             gts.append((int(k), ((cx - bw / 2) * wd, (cy - bh / 2) * h, (cx + bw / 2) * wd, (cy + bh / 2) * h)))
-                    preds = [(float(b.conf[0]), int(b.cls[0]), tuple(float(v) for v in b.xyxy[0])) for b in r.boxes]
                     sc, n = score_image(gts, preds, poly)
                     for k, c, t in sc:
                         scored[k].append((c, t))
@@ -169,7 +190,7 @@ def main():
             if clip:
                 res["편별 재현율"] = {s: round(v["tp"] / max(1, v["gt"]), 3) for s, v in sorted(clip.items())}
                 res["편 평균 재현율"] = round(sum(res["편별 재현율"].values()) / len(clip), 3)
-            out[f"{name}|{it}"] = res
+            out[f"{name}|{it}" + ("|판정기추론" if a.judge_infer and it in ("intrusion", "fire") else "")] = res
             print(name, it, json.dumps(res, ensure_ascii=False), flush=True)
     if a.out:
         Path(a.out).write_text(json.dumps(out, ensure_ascii=False, indent=1), encoding="utf-8")
