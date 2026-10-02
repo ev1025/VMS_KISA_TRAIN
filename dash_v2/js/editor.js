@@ -58,7 +58,7 @@ function shotKinds(clip) {
 }
 // 객체 하나의 라벨 프레임(오름차순) 사이에서 전파가 못 잡은 빈 구간(10-02 사용자: "전파하면 쭉 생겨야 하는데 중간에 10장씩 빈다").
 // 반환 {i: [[첫 빈 프레임, 장수], ...]} · i = 빈 구간 바로 뒤 라벨 프레임의 번호. 검토완료(빈 라벨 마커) 프레임은 빈 곳으로 안 센다
-const GAP_MIN = 2;   // ponytail: 이 장수 이상 연달아 빈 곳만 표시. 한 장짜리까지 보려면 1
+const GAP_MIN = 1;   // 한 장만 비어도 표시(10-02 사용자). 짧은 빈 곳이 너무 많으면 2 로
 function labelGaps(all, kinds) {
   const st = _step(), out = {};
   for (let i = 1; i < all.length; i++) {
