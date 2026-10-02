@@ -22,6 +22,38 @@ python scripts/exp_queue.py status configs/<queue>.yaml
 - 산출: `runs/<exp>/<model>/weights/best.pt` · `results/<exp>/{meta.json,score.txt}` · `logs/queue/<exp>.log`
 - 재실행 안전: `best.pt` 가 있으면 학습을 건너뛰고, `score.txt` 가 있으면 그 실험 전체를 건너뛴다. `_exp/` 는 잡별 임시 목록·캐시라 지워도 된다.
 
+### 학습 데이터 조합(compose) 형식 (2026-10-02)
+
+데이터는 모듈(묶음)로 한 번만 두고, 큐 yaml 의 `compose` 칸으로 학습 때 목록 파일을 짠다. 새 셋 폴더를 만들거나 이미지를 복사하지 않는다.
+모듈 목록 = `configs/data_modules.yaml`, 규칙 코드 = `scripts/compose.py`(`--selfcheck`). 옛 형식(`base` · `extras` · `oversample`)도 그대로 돈다.
+
+| 칸 | 뜻 |
+|---|---|
+| `use` | 이어 붙일 모듈(같은 이미지 이름은 처음 것만) |
+| `exclude` | 걸러 내기 목록(이미지 이름). 이 사진들은 뺀다 |
+| `background` | `{ratio, pool, prefer, seed}`. 양성은 전부 두고 pool 모듈의 빈 사진만 골라 배경 비율을 맞춘다. prefer 목록을 먼저, 모자라면 random.Random(seed) 로 |
+| `repeat` | 반복(오버샘플). use 안 모듈은 모두 합쳐 k번, use 밖 모듈은 k번 더함 |
+
+- compose 판은 `val_set` 을 꼭 적는다(러너가 막는다). 판마다 `_exp/<판>/compose.json`(모듈별 장수 · 뺀 장수 · 배경 비율)과 `results/<판>/meta.json` 의 `compose` 칸에 조합이 남는다
+- 확인(10-02): 배경 10% 셋 `trainset_person_hnfix_full_bg10_20260928` 을 한 장도 안 틀리고 다시 만듦. 2단계 6벌은 장수 · 양성 수가 같고 무작위로 고른 배경 사진만 다름(옛 스크립트는 배경 10% 셋의 남은 빈 사진에서 골랐음). 옛 셋은 그대로 두어 지난 판과의 비교는 옛 셋으로 한다
+- 모듈은 고치지 않는다. 라벨을 고치면 날짜를 바꾼 새 모듈을 만든다
+
+예(사람 2단계 '울타리류 우선 배경 15%' 와 같은 조합):
+```yaml
+- name: p1280_예시_20261005
+  model: yolo11s
+  item: 사람
+  names: [person]
+  compose:
+    use: [mod_person_coco_pos_20260927, mod_person_own_pos_20260927, mod_person_own_empty_20260927, mod_person_coco_empty_20260927]
+    exclude: [flt_person_thin_20260930]
+    background: {ratio: 0.15, pool: [mod_person_coco_empty_20260927], prefer: [flt_coco_fence_20261001], seed: 0}
+  val_set: data/학습데이터/trainset_person_hnfix_20260927/val_domain.txt
+  train: {imgsz: 1280, batch: 85, epochs: 60, multi_scale: 0.0, cache: false, workers: 8}
+  extra: {patience: 0, seed: 0}
+  need_mib: 84000
+```
+
 ### 러너가 강제하는 값 (yaml `defaults` 로 조절)
 
 | 항목 | 값 | 이유 |

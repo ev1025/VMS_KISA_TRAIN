@@ -169,17 +169,31 @@ def build_lists(exp, defaults):
     d = EXP_DIR / name
     d.mkdir(parents=True, exist_ok=True)
     long_px = need_long(exp, defaults)
-    base = find_dataset(exp.get("base", defaults.get("base", "aihub71751_48k")), long_px)
-    lines = list_images(base)
-    frac = float(exp.get("base_frac", defaults.get("base_frac", 1.0)))
-    if 0 < frac < 1:                                        # 베이스 비율 실험(G4): 고정 시드로 일부만
-        lines = random.Random(1).sample(lines, int(len(lines) * frac))
-    oversample = dict(defaults.get("oversample", {}), **exp.get("oversample", {}))
-    for ds, k in oversample.items():                       # 예: human_fire: 5 → 같은 경로 5번
-        imgs = list_images(find_dataset(ds, long_px))
-        lines += imgs * int(k)
-    for ds in exp.get("extras", []):
-        lines += list_images(find_dataset(ds, long_px))
+    if exp.get("compose"):                                  # 조합 형식(2026-10-02, scripts/compose.py). 옛 형식 판은 아래 else 그대로
+        import compose as CP
+
+        def _resolve(n):                                    # 목록 모듈(학습데이터/<이름>/list.txt) 또는 보통 학습셋 폴더
+            f = TRAIN_DS / n / "list.txt"
+            if f.is_file():
+                assert_trainable(n)
+                return [x.strip() for x in f.read_text(encoding="utf-8").splitlines() if x.strip()]
+            return list_images(find_dataset(n, long_px))
+        assert exp.get("val_set", defaults.get("val_set")), "compose 판은 val_set(검증 목록)을 꼭 적는다"
+        lines, crep = CP.compose(exp["compose"], _resolve)
+        (d / "compose.json").write_text(json.dumps(crep, ensure_ascii=False, indent=1), encoding="utf-8")
+        oversample = {}
+    else:
+        base = find_dataset(exp.get("base", defaults.get("base", "aihub71751_48k")), long_px)
+        lines = list_images(base)
+        frac = float(exp.get("base_frac", defaults.get("base_frac", 1.0)))
+        if 0 < frac < 1:                                        # 베이스 비율 실험(G4): 고정 시드로 일부만
+            lines = random.Random(1).sample(lines, int(len(lines) * frac))
+        oversample = dict(defaults.get("oversample", {}), **exp.get("oversample", {}))
+        for ds, k in oversample.items():                       # 예: human_fire: 5 → 같은 경로 5번
+            imgs = list_images(find_dataset(ds, long_px))
+            lines += imgs * int(k)
+        for ds in exp.get("extras", []):
+            lines += list_images(find_dataset(ds, long_px))
     # labels.cache 잡별 분리: 잡 폴더의 000.jpg(빈 라벨)를 목록 맨 앞에 → 캐시가 _exp/<name>.cache 로 떨어진다
     dummy = d / "000.jpg"
     if not dummy.exists():
@@ -202,8 +216,8 @@ def build_lists(exp, defaults):
           + f" · 원본 {len(lines) - n960}장", flush=True)
     # best.pt 를 고르는 val. 우리 CCTV 영상 프레임 중 학습에 안 쓴 클립만(2026-09-24).
     # 전에는 학습 목록에서 무작위 600장이라 학습과 겹치고 대부분 COCO·공개셋이었다.
-    sets = [exp.get("base", defaults.get("base", "aihub71751_48k"))] + list(oversample) + list(exp.get("extras", []))
-    dom, per = domain_val(sets, lines[1:])
+    sets = [] if exp.get("compose") else [exp.get("base", defaults.get("base", "aihub71751_48k"))] + list(oversample) + list(exp.get("extras", []))
+    dom, per = domain_val(sets, lines[1:]) if sets else ([], {})      # compose 판은 val_set 을 쓴다(위에서 확인)
     if len(dom) >= 100:
         (d / "val_domain.txt").write_text("\n".join([str(dummy)] + dom) + "\n")
         val_path = d / "val_domain.txt"
@@ -476,7 +490,8 @@ def _read_source(name):
 def write_meta(exp, defaults, n_train, pt, started, status):
     rdir = V / "results" / exp["name"]; rdir.mkdir(parents=True, exist_ok=True)
     meta = {"name": exp["name"], "item": exp.get("item", "방화"), "model": exp["model"],
-            "phase": exp.get("phase"),      # 그리드 단계 코드(configs/result_blocks.yaml phases). 없으면 null = 그리드 밖(계약 v1, 2026-10-01)
+            "phase": exp.get("phase"),
+            "compose": exp.get("compose"),  # 조합 형식 판의 조합 규칙(2026-10-02). 옛 형식 판은 null, 대신 base · extras · oversample      # 그리드 단계 코드(configs/result_blocks.yaml phases). 없으면 null = 그리드 밖(계약 v1, 2026-10-01)
             "base": exp.get("base", defaults.get("base")), "extras": exp.get("extras", []),
             "oversample": dict(defaults.get("oversample", {}), **exp.get("oversample", {})),
             "train": dict(defaults.get("train", {}), **exp.get("train", {})),

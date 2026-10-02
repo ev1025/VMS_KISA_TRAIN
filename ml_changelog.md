@@ -1,7 +1,7 @@
 # ML → 대시보드 변경 기록 (ml_changelog.md)
 
-계약 버전: v3
-미확인: 없음
+계약 버전: v4
+미확인: v4
 
 ## 규칙
 
@@ -47,6 +47,21 @@
 - 최신 항목이 맨 위. 맨 위 번호 = 계약 버전(머리 `계약 버전: vN`)
 - 머리 `미확인:` = `확인:` 이 빈 항목 번호
 - `scripts/check_contract.py` 가 맨 위 번호 · 머리를 대조하고, `CONTRACT_VER` 는 확인 줄이 채워진 가장 높은 번호와 대조(확인 전 항목은 경고만)
+
+## v4 · 2026-10-02 · 학습 데이터 조합(compose) 형식 · 모듈 목록 파일
+
+- 바뀐 것:
+  - 새 파일 `configs/data_modules.yaml`: 학습 데이터 모듈 목록(name · item · kind(module | filter) · role · count · label). 대시보드 입력 데이터 토글이 읽을 수 있는 원본
+  - `data/학습데이터/` 에 새 꼴 폴더: `mod_*`(이미지 경로 목록 `list.txt` + `meta.json`, images · labels 폴더 없음) · `flt_*`(이미지 이름 목록 `list.txt`)
+  - 큐 yaml 실험 항목 새 칸 `compose`(use · exclude · background · repeat). 이 칸이 있으면 `base` · `extras` · `oversample` 대신 씀. 규칙 = `scripts/compose.py`, 설명 = `docs/EXPERIMENTS.md` 0절
+  - `results/<실험>/meta.json` 새 키 `compose`(조합 규칙 그대로, 옛 형식 판은 null). `_exp/<실험>/compose.json` = 모듈별 장수 · 뺀 장수 · 배경 비율
+- 영향:
+  - 결과 탭 데이터 칸: compose 판은 `meta.base` 가 없다 → `meta.compose.use` 를 보여야 함
+  - 데이터 확인 탭 · 학습셋 목록: `mod_*` · `flt_*` 폴더는 images 폴더가 없으니 학습셋 보기에서 빼거나 모듈 로 따로 표시
+  - 옛 형식 판 · 도는 큐는 영향 없음(10-02 러너 바꾸기 전에 옛 형식 3판의 train.txt · data.yaml 이 똑같이 나오는 것 확인)
+- 옮기기: 없음(새 판부터). 옛 학습셋 폴더는 지우지 않음(지난 판 비교용)
+- 쓴 사람: ML 세션
+- 확인:
 
 ## v3 · 2026-10-01 · 히스토리: 상태 `아이디어` 삭제(할 일로 통합) · 내용을 모델별 서사로
 
