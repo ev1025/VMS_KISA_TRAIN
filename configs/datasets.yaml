@@ -24,7 +24,7 @@ aihub_침입쓰러짐영상: {gt: aihub_json, media: video, mode: person, note: 
 kisa_배포_검증영상: {gt: kisa_xml, media: video, mode: fire, note: '채점 전용(4항목 배포 표본). 라벨은
     mAP 계산용, 학습셋 제외. 사람 항목 클립은 라벨 모드를 person 으로', use: eval}
 kisa_산불_정지이미지: {gt: none, media: image, mode: fire, note: '합성 9,500장, 정답 없음 → 대시보드에서
-    라벨', use: train}
+    라벨', use: "off"}
 kisa_산불_합성영상: {gt: none, media: video, mode: fire, note: '합성 영상, 정답 없음', use: train}
 kisa_연구개발_방화영상: {gt: kisa_xml, media: video, mode: fire, note: Alarm StartTime/Duration
     만(박스 없음). 손라벨 human_fire 의 원본, use: train}
@@ -62,7 +62,7 @@ open_dfire:
   mode: fire
   note: 원본 0=smoke 1=fire → 뒤집는다. 라이선스 CC BY 4.0 (gaiasd/DFireDataset GitHub, 2026-09-19
     확인) = 상업 이용 가능·출처 표기
-  use: train
+  use: "off"
 open_fasdd:
   classes: {fire: 0, smoke: 1}
   gt: coco_json
@@ -88,3 +88,4 @@ aihub71751_night_20260928:
   mode: fire
   note: AI허브 71751 야간(condition ni) 불꽃 클립 중 aihub71751_48k 에 없는 128클립 x 12프레임(1·31…331) = 1,536장. 규칙은 48k 와 같음. 그리드 2단계 방화 데이터 5(2026-09-28)
   use: train
+# use 값(따옴표 필수: off 는 YAML 에서 따옴표 없으면 거짓으로 읽힘): train = 학습에 씀 · eval = 채점 · 검증 전용(학습 금지) · none = 라이선스 등으로 학습 금지 · off = 지금 안 씀(쓸 수는 있음, 대시보드 목록에서 숨김. 2026-10-02 dfire · 산불 정지이미지)

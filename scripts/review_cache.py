@@ -50,6 +50,11 @@ def now(fmt="%Y-%m-%d %H:%M:%S"):
 
 # ---------------------------------------------------------------- 대상 판 고르기(화면 서버도 이것을 import 한다)
 def _datasets(m):
+    """학습에 쓴 데이터 이름. 옛 형식 = base · oversample · extras, 조합 형식(2026-10-02) = compose 의 use · repeat · background.pool"""
+    c = m.get("compose") or {}
+    if c:
+        names = list(c.get("use") or []) + list((c.get("repeat") or {}).keys()) + list((c.get("background") or {}).get("pool") or [])
+        return list(dict.fromkeys(n for n in names if n))
     names = [m.get("base")] + list((m.get("oversample") or {}).keys()) + list(m.get("extras") or [])
     return [n for n in names if n]
 
@@ -67,7 +72,8 @@ def _current(m):
             if not d or int(d.group(1)) < FIRE_FROM:
                 return False
         return True
-    return all("hnfix" in n for n in names)
+    # 사람: hnfix 고정본(09-27)에서 나온 셋, 또는 그 뒤 날짜의 모듈(mod_ · 2026-10-02 조합 형식, 09-27 고정본에서 나눔)
+    return all("hnfix" in n or (re.match(r"mod_", n) and int((re.search(r"(20\d{6})$", n) or [0, "0"])[1]) >= 20260927) for n in names)
 
 
 def local_path(p):
