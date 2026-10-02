@@ -644,8 +644,8 @@ body.dm #list .item.on{outline:0;background:var(--sel);box-shadow:inset 3px 0 0 
 .hq-bar b{display:block;height:100%;background:var(--blue)}
 .hq-h{font-weight:600}
 .hq-tags{display:flex;flex-wrap:wrap;gap:var(--s1);margin-top:var(--s1)}
-.hq-body{max-height:40vh;overflow:auto;padding:0 var(--s3) var(--s6);border-top:1px solid var(--line);font-size:12px;line-height:1.5;
-  -webkit-mask-image:linear-gradient(#000 calc(100% - 24px),transparent);mask-image:linear-gradient(#000 calc(100% - 24px),transparent)}
+.hq-body{padding:0 var(--s3) var(--s3);border-top:1px solid var(--line);font-size:12px;line-height:1.5}   /* 스크롤 칸 없이 러너 로그까지 다 펼침(10-02 사용자) */
+.hs-top:has(.hq[open]){position:static}             /* 펼친 동안엔 위 고정을 풀어 아래 목록을 덮지 않고 같이 스크롤된다 */
 .hq-body .nr-qhead{display:none}                    /* 띠에 이미 있는 줄 */
 .hq .nr-qtbl :is(th,td):nth-child(n+3):nth-child(-n+5){display:none}   /* 히스토리 폭엔 한눈에 볼 칸만: 이 에폭 · 속도 · 에폭당 은 결과 탭에서 */
 .hq .nr-qlog{padding:2px 0}
