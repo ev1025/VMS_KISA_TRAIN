@@ -7,11 +7,12 @@ const CONDS_BY = {};                          // 카테고리 → 촬영조건(�
 let RAW_CAT = "", SUBSEL = "", COND_REDRAW = null;   // 지금 보는 카테고리 · 하위폴더 드롭다운 값 · 조건칩 다시그리기
 let NAMEQ = "", NAMEQ_OPEN = false;                  // 영상 이름 찾기(돋보기로 열고 닫는다)
 // 데이터 드롭다운 표시 이름 = 출처_항목(사람 · 방화 · 공통)_용도(10-02 사용자). 화면 표기만, 폴더 이름(값 · 경로)은 그대로. 여기 없는 폴더는 폴더 이름으로 보인다
+// (파생) = 우리가 원본에서 뽑아 만든 셋(AI허브 71751 영상 → 클립당 12프레임 사진)
 const SRC_NAME = {
   KISA_악천후_사람: "KISA_사람_악천후", kisa_연구개발_사람영상: "KISA_사람_연구개발", kisa_연구개발_방화영상: "KISA_방화_연구개발",
   kisa_산불_합성영상: "KISA_방화_산불합성", kisa_산불_정지이미지: "KISA_방화_산불이미지", kisa_배포_검증영상: "KISA_공통_배포검증",
   aihub171_이상행동: "AIHUB171_사람_이상행동", aihub71953_다각도: "AIHUB71953_사람_다각도", aihub_침입쓰러짐영상: "AIHUB_사람_침입쓰러짐",
-  aihub71330_산불: "AIHUB71330_방화_산불", aihub71751_48k: "AIHUB71751_방화_48k", aihub71751_night_20260928: "AIHUB71751_방화_야간",
+  aihub71330_산불: "AIHUB71330_방화_산불", aihub71751_48k: "AIHUB71751_방화_48k(파생)", aihub71751_night_20260928: "AIHUB71751_방화_야간(파생)",
   open_coco: "COCO_사람_공개셋", open_fasdd: "FASDD_방화_공개셋", open_dfire: "DFIRE_방화_공개셋", open_azimjaan_fire: "AZIMJAAN_방화_공개셋",
 };
 async function buildDatasetSrc() {
@@ -51,9 +52,10 @@ async function buildDatasetSrc() {
   // 드롭다운은 고른 쪽만
   if (DS_KIND === "raw") {
     $(".srcbox label").hidden = true;   // 드롭다운만 봐도 알아볼 수 있어 이름표를 안 둔다
-    // 데이터 확인은 전역 필터와 무관하다(10-01). 학습 금지(규격 use: none)만 숨긴다. 채점 전용(eval, 배포 검증영상)은 라벨을 고치므로 보인다(10-02 사용자)
+    // 데이터 확인은 전역 필터와 무관하다(10-01). 규격 use 가 train(학습) · eval(채점 전용, 라벨을 고친다)인 것만 보인다.
+    // none(학습 금지) · 그 밖의 값(지금 안 씀 등)은 숨긴다. 규격에 없는 폴더는 보인다(10-02 사용자)
     // 표시 이름 순으로(출처끼리 모인다). 값(폴더 이름)은 그대로
-    SOURCES.filter(x => !DATASETS[x.key] || DATASETS[x.key].use !== "none")
+    SOURCES.filter(x => !DATASETS[x.key] || ["train", "eval"].includes(DATASETS[x.key].use))
       .map(x => [x, SRC_NAME[x.key] || x.key]).sort((a, b) => a[1].localeCompare(b[1])).forEach(([x, nm]) => {
       const o = el("option"); o.value = "raw:" + x.key;
       o.textContent = nm;                           // 편수는 안 쓴다(10-02 사용자)
