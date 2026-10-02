@@ -112,27 +112,35 @@ function p3Exp(D, r, k, extra) {                             // 실험 이름 �
   return `<td class="nr-exp"><span class="p3-ell" title="${nrEsc(r.exp)}${r.ended ? ` · 학습 종료 ${nrEsc(r.ended.slice(5, 16))}` : ""}">${nrEsc(r.exp)}</span>${extra.role || ""}` +
     (bd ? `<div>${bd}</div>` : "") + (r.new ? "" : '<div class="nr-warn">새 데이터 실험 아님</div>') + "</td>";
 }
+const P3COLS = ["imgsz", "batch", "epochs"];                  // 열로 따로 보이는 학습 설정(10-02 사용자: 해상도 · 배치 · 에폭 = 열 이름)
+const P3COLONLY = /^\s*(해상도|배치|epoch|에폭)\s*\d+(\s*[,·]\s*(해상도|배치|epoch|에폭)\s*\d+)*\s*$/i;   // 조건 글이 이 열들뿐이면 조건 칸은 비움
 function p3Chg(b, r) {                                       // 조건 칸(nrChanged 와 같은 값): 데이터 모듈 이름은 조건 이름표에 마우스(이름표가 같은 뜻), 총 장수는 그대로
-  const lab = b.labels[r.exp] || "", sub = [], tip = [];
-  b.diffs.filter(d => d.declared).forEach(d => {
+  const lab0 = b.labels[r.exp] || "", lab = P3COLONLY.test(lab0) ? "" : lab0, sub = [], tip = [];
+  b.diffs.filter(d => d.declared && !P3COLS.includes(d.key)).forEach(d => {
     const v = d.values[r.exp];
     if (d.key === "data") { tip.push(...(v.length ? v : ["추가 데이터 없음"])); if (r.n_train) sub.push(`총 ${r.n_train.toLocaleString()}장`); }
     else if (!lab.includes(nrFmt(v))) sub.push(`${d.label} ${nrEsc(nrFmt(v))}`);
   });
-  return `<b${tip.length ? ` class="p3-tip" title="${nrEsc(tip.join(" · "))}"` : ""}>${nrEsc(lab)}</b>` + (sub.length ? `<div class="nr-sub">${sub.join("<br>")}</div>` : "");
+  return (lab ? `<b${tip.length ? ` class="p3-tip" title="${nrEsc(tip.join(" · "))}"` : ""}>${nrEsc(lab)}</b>` : "") + (sub.length ? `<div class="nr-sub">${sub.join("<br>")}</div>` : "");
+}
+function p3Cols(r) {                                         // 해상도 · 배치 · 에폭 칸(학습 설정 원본 값). 에폭: 학습 중 · 덜 돈 판 = 돈 / 정한
+  const a = r.args && typeof r.args === "object" ? r.args : {}, ep = a.epochs, run = r.epochs_run, v = x => x == null ? "-" : nrEsc(String(x));
+  const e = ep == null && run == null ? "-" : r.status === "train" || (run != null && ep != null && run !== ep) ? `${run == null ? 0 : run} / ${ep}` : v(ep != null ? ep : run);
+  return `<td class="nr-num">${v(a.imgsz)}</td><td class="nr-num">${v(a.batch)}</td><td class="nr-num">${e}</td>`;
 }
 function p3Block(b, D, q, k) {                               // 비교 묶음(결과 탭 nrBlock 과 같은 값, 줄마다 반복되던 것을 걷어낸 표)
   const ids = [b.control, ...b.members], its = D.runs[b.control].items, kc = (D.key_clips || {})[b.item];
   const oneModel = b.same.train.some(([x]) => x === "model");
   const ko = it => its.length > 1 ? NR_KO[it] + " " : "";
-  const head = `<tr><th class="p3-pc"></th><th>실험</th><th>조건</th>` +
+  const chg = Object.fromEntries(ids.map(x => [x, p3Chg(b, D.runs[x])])), hasChg = ids.some(x => chg[x]);   // 조건 글이 열(해상도 · 배치 · 에폭)뿐인 묶음은 조건 칸을 통째로 뺀다
+  const head = `<tr><th class="p3-pc"></th><th>실험</th>${hasChg ? "<th>조건</th>" : ""}<th>해상도</th><th>배치</th><th>에폭</th>` +
     its.map((it, i) => `<th>${ko(it)}F1<br>${nrMut(i ? "best / last" : "best / last · 굵게 = 비교값")}</th>`).join("") +
     (kc ? "<th>변별 편</th>" : "") + `<th>기준 대비 정검${its.length > 1 ? "<br>" + nrMut(its.map(it => NR_KO[it]).join(" / ")) : ""}</th><th>판정</th></tr>`;
   const rows = ids.map((x, i) => {
     const r = D.runs[x], v = b.verdicts[x];
     const st = r.status === "train" ? `<div class="p3-pg">${nrStatus(r, q)}<div>${nrEnded(r, q)}</div></div>` : !i && r.status !== "done" ? nrStatus(r, q) : "";
     return `<tr class="${i ? "" : "ctl"}"><td class="p3-pc">${p3Btns(x)}</td>${p3Exp(D, r, k, { model: !oneModel, role: i ? "" : '<span class="nr-role">기준 실험</span>' })}` +
-      `<td class="nr-chg">${p3Chg(b, r)}</td>` + its.map(it => `<td class="nr-num">${p3F1(r, it)}</td>`).join("") +
+      (hasChg ? `<td class="nr-chg">${chg[x]}</td>` : "") + p3Cols(r) + its.map(it => `<td class="nr-num">${p3F1(r, it)}</td>`).join("") +
       (kc ? `<td>${r.status === "done" ? nrKeys(r, kc) : ""}</td>` : "") +
       `<td class="nr-num">${i && v ? its.map(it => (v.delta[it] > 0 ? "+" : "") + v.delta[it]).join(" / ") : ""}</td>` +
       `<td>${i ? p3Chip(v, r) : ""}${st}</td></tr>`;

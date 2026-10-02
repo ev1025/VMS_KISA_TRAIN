@@ -228,3 +228,4 @@
 | 스타일 | `dashboard.html` '12. 모델 학습 탭' 절 | 배지 = 바탕 없이 옅은 테두리, 부가 글자 = `--p3-mut`(이 탭만), best · last · 재생만 크고 진하게 |
 
 * 옛 결과 탭 · 영상 검수 탭 코드(`main.js buildResults` · `nrDraw` 등, `review.js enterReview` 등)는 남아 있으나 탭에서 부르지 않는다. 모델 학습이 쓰는 것: `nrOthers` · `nrCond` · `nrTerms` · `nrStatus` · `nrEnded` · `nrKeys` · `nrBindToggles` 와 `review.js` 의 `plotPath` · `barFrame` · `rvNear` · `nmsBoxes` · `RV_SHOW_MIN` · `REVIEW_ITEMS`
+* 2026-10-02 사용자: 비교 표에 해상도 · 배치 · 에폭 열(`train.js p3Cols`, 학습 설정 원본 값. 에폭은 학습 중 · 덜 돈 판이면 돈 / 정한). 조건 글이 이 셋뿐인 묶음(예: 1단계 해상도 × 배치)은 조건 열을 통째로 뺌, 조건 보조 줄에서도 해상도 · 배치 · Epoch 차이는 뺌
