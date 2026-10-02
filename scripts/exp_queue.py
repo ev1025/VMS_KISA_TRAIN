@@ -751,7 +751,10 @@ def cmd_run(a):
         util_avg = (sum(v for _, v in util_hist) / len(util_hist)) if util_hist and now - util_hist[0][0] >= win - 60 else None
         # 띄운 지 20분 안 된 판은 메모리를 아직 다 안 잡았을 수 있다. 그 몫을 미리 쓴 것으로 친다
         recent = sum(need_of(x, defaults) or 0 for _, x in running if now - launched.get(x["name"], 0) < 1200)
-        pick = pick_next(todo, defaults, gpu_used_mib() + recent, total_mib, util_avg) if (todo and len(running) < a.jobs and gb >= min_free) else None
+        # 도는 판은 끝날 때까지 자기 몫(need_mib)을 예약한 것으로 친다. 검증 · 저장 때 메모리를 잠깐 내려놓은 순간을 보고
+        # 옆에 판을 띄워 둘 다 OOM 으로 죽은 일(2026-10-03 03:35, 방화 1280 b170 47에폭 + b85)
+        reserved = sum(need_of(x, defaults) or 0 for _, x in running)
+        pick = pick_next(todo, defaults, max(gpu_used_mib() + recent, reserved), total_mib, util_avg) if (todo and len(running) < a.jobs and gb >= min_free) else None
         if pick is not None:
             e = todo.pop(pick)
             if pick:
