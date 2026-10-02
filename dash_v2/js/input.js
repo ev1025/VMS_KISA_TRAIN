@@ -127,7 +127,7 @@ function p2PickTop() {
   if (top) p2Pick(top.name);
 }
 function p2Pick(n) {
-  P2.focus = n; P2.flag = "sus"; P2.off = 0; P2.cur = 0; p2SaveUi();
+  P2.focus = n; P2.flag = "sus"; P2.off = 0; P2.cur = 0; P2Z.z = 1; p2SaveUi();
   document.querySelectorAll("#p2Left .p2-mod").forEach(e => e.classList.toggle("on", e.dataset.n === n));
   p2Load(0);
 }
@@ -177,10 +177,40 @@ function p2SibsHtml(it) {                                 // 같은 원본: 원�
   return `<div class="p2-sibs">${orig ? `<span class="p2-sib o"><img alt="" src="${p2Thumb(orig, 320)}" onerror="this.parentNode.remove()"><span>원본</span></span>` : ""}` +
     sibs.map(([x, i, w]) => `<button type="button" class="p2-sib${x.p === it.p ? " on" : ""}" data-i="${i}"><span class="tv-img"><img alt="" src="${p2Thumb(x.p, 320)}">${p2Boxes(x.boxes)}</span><span>${w.v}</span></button>`).join("") + "</div>";
 }
+const P2Z = { z: 1, tx: 0, ty: 0 };                      // 큰 사진 확대 · 위치. 모듈을 바꾸면 푼다
+let p2SwapSeq = 0;                                        // 사진 바꾸기 순번(늦게 받은 옛 사진이 새 사진을 덮지 않게)
+function p2ZoomApply(b) {
+  const w = b.offsetWidth, h = b.offsetHeight;
+  P2Z.tx = Math.min(0, Math.max(w * (1 - P2Z.z), P2Z.tx)); P2Z.ty = Math.min(0, Math.max(h * (1 - P2Z.z), P2Z.ty));   // 사진 밖 빈 곳이 안 보이게
+  if (P2Z.z === 1) P2Z.tx = P2Z.ty = 0;
+  b.style.transformOrigin = "0 0"; b.style.transform = P2Z.z === 1 ? "" : `translate(${P2Z.tx}px,${P2Z.ty}px) scale(${P2Z.z})`;
+  b.parentNode.classList.toggle("zoomed", P2Z.z > 1);
+}
+function p2ZoomBind() {                                   // 큰 사진에 휠 확대 · 끌어 이동 · 두 번 눌러 원래대로(10-02 사용자: 전처리와 같게)
+  const st = document.querySelector("#p2Big .p2-stage"), b = st && st.querySelector(".p2-bimg"); if (!b) return;
+  const img = b.querySelector("img"); if (img && !img.complete) img.addEventListener("load", () => p2ZoomApply(b), { once: true });
+  p2ZoomApply(b);
+  st.onwheel = e => {
+    e.preventDefault();
+    const r = b.getBoundingClientRect(), cx = e.clientX - (r.left - P2Z.tx), cy = e.clientY - (r.top - P2Z.ty), z0 = P2Z.z;   // 커서 밑 지점(확대 전 좌표)
+    P2Z.z = Math.min(8, Math.max(1, z0 * (e.deltaY < 0 ? 1.15 : 1 / 1.15)));
+    P2Z.tx = cx - (P2Z.z / z0) * (cx - P2Z.tx); P2Z.ty = cy - (P2Z.z / z0) * (cy - P2Z.ty);
+    p2ZoomApply(b);
+  };
+  st.onmousedown = e => {
+    if (P2Z.z === 1 || e.button !== 0) return;
+    e.preventDefault();
+    const x0 = e.clientX - P2Z.tx, y0 = e.clientY - P2Z.ty;
+    const mv = ev => { P2Z.tx = ev.clientX - x0; P2Z.ty = ev.clientY - y0; p2ZoomApply(b); };
+    const up = () => { removeEventListener("mousemove", mv); removeEventListener("mouseup", up); };
+    addEventListener("mousemove", mv); addEventListener("mouseup", up);
+  };
+  st.ondblclick = () => { P2Z.z = 1; p2ZoomApply(b); };
+}
 function p2DrawCenter() {
   const r = P2.data, it = r.items[P2.cur];
   $("#center").innerHTML = `<div class="p2-gal p2-one">${p2Head(r)}${it ? `<div id="p2Big">${p2BigHtml(it)}</div>${p2ActsHtml(it)}<div class="p2-strip" id="p2Strip">${r.items.map(p2CellHtml).join("")}</div>` : p2Empty("이 조건인 사진 없음")}</div>`;
-  p2StripScroll();
+  p2ZoomBind(); p2StripScroll();
   p2Preload();
 }
 function p2ActsHtml(it) {
@@ -190,14 +220,17 @@ function p2ActsHtml(it) {
     `<button type="button" class="p2-nav" data-mv="1" aria-label="다음 사진">›</button>${P2X.undo.length ? '<button type="button" class="p2-undo" data-undo="1">되돌리기<kbd>Z</kbd></button>' : ""}</div>`;
 }
 function p2StripScroll() { const s = document.getElementById("p2Strip"), e = s && s.querySelector(".cur"); if (e) s.scrollLeft = e.offsetLeft - s.clientWidth / 2 + e.offsetWidth / 2; }
-function p2Preload() { const r = P2.data, n = r && r.items[P2.cur + 1]; if (n) new Image().src = p2Thumb(n.p, 1280); }
+function p2Preload() { const r = P2.data; if (r) [1, 2, -1].forEach(k => { const n = r.items[P2.cur + k]; if (n) new Image().src = p2Thumb(n.p, 1280); }); }   // 앞뒤 사진 미리 받기
 function p2Show() {                                       // 고른 사진 · 표시가 바뀜: 필요한 곳만 다시
   const r = P2.data, it = r && r.items[P2.cur], big = document.getElementById("p2Big");
   if (!it || !big) return p2DrawLeftMarks();
   document.querySelectorAll(".p2-cell").forEach(e => { const x = r.items[+e.dataset.i]; e.classList.toggle("cur", +e.dataset.i === P2.cur); e.classList.toggle("ex", !!P2X.ex[x.p]); e.classList.toggle("ok", !!P2X.ok[x.p]);
     const im = e.querySelector(".tv-img"), mk = im.querySelector(".p2-exmark"); if (P2X.ex[x.p] && !mk) im.insertAdjacentHTML("beforeend", '<span class="p2-exmark">제외</span>'); if (!P2X.ex[x.p] && mk) mk.remove(); });
   const h = document.querySelector(".p2-galh"); if (h) h.outerHTML = p2Head(r);
-  big.innerHTML = p2BigHtml(it); $("#p2Acts").outerHTML = p2ActsHtml(it);
+  $("#p2Acts").outerHTML = p2ActsHtml(it);
+  const my = ++p2SwapSeq, pre = new Image();                // 새 사진을 다 받은 뒤 바꿔 끼운다(10-02: 넘길 때 사진 칸이 잠깐 비던 것)
+  const swap = () => { if (my !== p2SwapSeq || !big.isConnected) return; big.innerHTML = p2BigHtml(it); p2ZoomBind(); };
+  pre.onload = pre.onerror = swap; pre.src = p2Thumb(it.p, 1280); if (pre.complete) swap();
   p2StripScroll(); p2Preload(); p2DrawLeftMarks();
 }
 function p2DrawLeftMarks() {                              // 제외 수만 바꾼다(목록 순서 · 스크롤은 그대로)
