@@ -1,18 +1,19 @@
-// dash_v2/js/main.js — 모드 전환·결과 탭·boot(). app.js 에서 분리(2026-09-09). 로드 순서: core → review → data → editor → main (dashboard.html)
+// dash_v2/js/main.js — 모드 전환·결과 탭·boot(). app.js 에서 분리(2026-09-09). 로드 순서: core → review → data → editor → history → trainview → input → train → main (dashboard.html)
+// 탭(2026-10-02 개편) = 데이터 확인 · 입력 데이터(input.js) · 모델 학습(train.js, 옛 영상 검수 + 결과) · 히스토리
 // ---------- 모드 ----------
 let IS_BENCH = false;                 // 라벨 작업대(서버로 보내는 쪽)인가. boot 에서 /api/pushinfo 로 정한다
 function buildMode() {
   const box = $("#modeBox"); box.innerHTML = "";
   const TABS = IS_BENCH ? [["data", "데이터 확인"]]                                  // 작업대는 라벨만 한다
-                        : [["data", "데이터 확인"], ["review", "영상 검수"], ["results", "결과"], ["history", "히스토리"]];
+                        : [["data", "데이터 확인"], ["input", "입력 데이터"], ["train", "모델 학습"], ["history", "히스토리"]];
   TABS.forEach(([k, label]) => {
     const b = el("button", k === CUR.mode ? "on" : "", label);
     b.onclick = () => {
       if (CUR.mode === k) return;
-      if (CUR.mode === "data" && typeof saveSession === "function") {          // 탭을 오갔다 와도 자리를 지키려고 떠나기 전에 적는다
-        try { saveSession({ dsKind: DS_KIND, dsSel: DS_SEL }); } catch (e) {}
-      }
-      CUR.mode = k; buildMode(); applyMode();
+      const ds = CUR.mode === "data" ? { dsKind: DS_KIND, dsSel: DS_SEL } : {};   // 데이터 확인을 떠날 때는 보던 자리도 적는다
+      CUR.mode = k;
+      try { saveSession(ds); } catch (e) {}                                     // 새로고침하면 이 탭으로
+      buildMode(); applyMode();
     };
     box.appendChild(b);
   });
@@ -31,10 +32,12 @@ function buildMode() {
 function applyMode() {
   document.onkeydown = null;   // 편집기 밖에선 단축키 끄기
   document.body.classList.toggle("dm", CUR.mode === "data");   // 데이터 확인 배치(오른쪽 패널 없음 · 왼쪽 330 · 목록 점). dashboard.html body.dm
+  document.body.classList.toggle("p2in", CUR.mode === "input");   // 입력 데이터 배치(왼쪽 = 모듈 목록, 오른쪽 패널 없음). dashboard.html body.p2in
+  if (CUR.mode !== "input") p2Leave();             // 모듈 목록 · 학습 제외 창 · 요약 다시 읽기를 거둔다(input.js)
   { const lh = document.getElementById("listHead"); if (lh) lh.remove(); }   // 드롭다운 아래 둔 목록 머리(항목 · 조건 · 표시). 데이터 확인이면 목록을 다시 받으며 새로 그린다
   { const sr = document.getElementById("srcRow"); if (sr) sr.style.display = "flex"; }   // 학습 데이터 보기가 숨긴 드롭다운 줄을 되살린다(검수 탭도 이 줄을 쓴다)
-  const wide = CUR.mode === "results" || CUR.mode === "history";   // 결과 · 히스토리 탭은 가운데만
-  $("#right").hidden = wide;
+  const wide = CUR.mode === "train" || CUR.mode === "history";   // 모델 학습 · 히스토리 탭은 가운데만
+  $("#right").hidden = wide || CUR.mode === "input";
   $(".left").style.display = wide ? "none" : "";   // 결과 탭은 결과만(왼쪽 패널째 숨김). .srcbox 의 display:flex 가 [hidden] 을 이겨 드롭다운이 남던 것도 여기서 끝(2026-09-29)
   if (CUR.mode !== "review") {                      // 검수 탭의 항목 이름표 · 모델 · 판정 필터를 바로 거둔다. 데이터 탭은 목록을 받아 온 뒤에야 다시 그려 그 사이 남아 보였다
     $("#filtBox").hidden = true; $("#filtBox").innerHTML = "";
@@ -51,12 +54,12 @@ function applyMode() {
       try { restoreLast(loadSession()); } catch (e) {}
     }
     applyMode._first = false;
-  } else if (CUR.mode === "results") {
-    $("#list").innerHTML = ""; buildResults();
+  } else if (CUR.mode === "train") {
+    $("#list").innerHTML = ""; trBuild();          // train.js
   } else if (CUR.mode === "history") {
     $("#list").innerHTML = ""; buildHistory();
-  } else {
-    enterReview();   // 모델 목록 · 판정을 서버에서 받아 첫 영상(또는 보던 영상)을 연다(review.js)
+  } else if (CUR.mode === "input") {
+    $("#list").innerHTML = ""; p2Enter();          // input.js
   }
 }
 // ---------- 부트 ----------
@@ -358,7 +361,8 @@ async function boot() {
   try { IS_BENCH = !!(await (await fetch("/api/pushinfo")).json()).enabled; } catch (e) { IS_BENCH = false; }
   if (!IS_BENCH) ntInit();              // 머리줄 알림 단추(history.js). 작업대에는 히스토리가 없다
   const last = (typeof loadSession === "function") ? loadSession() : {};
-  if (["data", "review", "results", "history"].includes(last.mode)) CUR.mode = last.mode;
+  const lm = { review: "train", results: "train" }[last.mode] || last.mode;   // 옛 영상 검수 · 결과 탭 → 모델 학습
+  if (["data", "input", "train", "history"].includes(lm)) CUR.mode = lm;
   if (IS_BENCH) CUR.mode = "data";     // 작업대엔 다른 탭이 없다(지난 세션이 검수였어도 데이터 확인으로)
   DS_KIND = "raw";                                  // 학습 데이터 탭은 없다
   if (last.dsSel && String(last.dsSel).startsWith("raw:")) DS_SEL = last.dsSel;

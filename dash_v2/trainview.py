@@ -7,6 +7,7 @@
 import json
 import re
 import threading
+import time
 from concurrent.futures import ThreadPoolExecutor
 from io import BytesIO
 from pathlib import Path
@@ -134,6 +135,29 @@ def _read(img, ncls, item):
     return [img, boxes, check(img, boxes, has, ncls, item)]
 
 
+def _sig(d, imgs):
+    """셋 서명 = 폴더 · 장수 · labels mtime. 같으면 다시 세지 않는다"""
+    return [str(d), len(imgs), (d / "labels").stat().st_mtime if (d / "labels").exists() else 0]
+
+
+def _scan(d, imgs, name):
+    item = item_of(name)
+    ncls = _ncls(d, item)
+    with ThreadPoolExecutor(32) as ex:                                 # 라벨 파일 수만 개를 Lustre 에서 읽는다
+        return list(ex.map(lambda p: _read(p, ncls, item), imgs, chunksize=256))
+
+
+def _count(R):
+    counts = {k: 0 for k in FLAGS}
+    sus = bg = 0
+    for _, b, f in R:
+        for k in f:
+            counts[k] += 1
+        sus += any(k in STRONG for k in f)
+        bg += not b
+    return counts, sus, bg
+
+
 def _ncls(d, item):
     try:
         names = (yaml.safe_load((d / "data.yaml").read_text(encoding="utf-8")) or {}).get("names")
@@ -150,15 +174,12 @@ def rows(name):
     if d is None:
         return None, None
     imgs = list_images(d)
-    sig = (str(d), len(imgs), (d / "labels").stat().st_mtime if (d / "labels").exists() else 0)
+    sig = _sig(d, imgs)
     with _LOCK:
         c = _CACHE.get(name)
         if c and c[0] == sig:
             return d, c[1]
-    item = item_of(name)
-    ncls = _ncls(d, item)
-    with ThreadPoolExecutor(32) as ex:                                 # 라벨 파일 수만 개를 Lustre 에서 읽는다
-        out = list(ex.map(lambda p: _read(p, ncls, item), imgs, chunksize=256))
+    out = _scan(d, imgs, name)
     with _LOCK:
         _CACHE[name] = (sig, out)
         while len(_CACHE) > 6:
@@ -170,13 +191,7 @@ def set_page(name, flag="", offset=0, limit=60):
     d, R = rows(name)
     if R is None:
         return {"error": f"이 서버에는 이 셋의 사진이 없습니다: {name}(학습셋은 서버 A 에만 있다)"}
-    counts = {k: 0 for k in FLAGS}
-    sus = bg = 0
-    for _, b, f in R:
-        for k in f:
-            counts[k] += 1
-        sus += any(k in STRONG for k in f)
-        bg += not b
+    counts, sus, bg = _count(R)
     if flag == "sus":
         sel = [r for r in R if any(k in STRONG for k in r[2])]
     elif flag == "bg":
@@ -194,6 +209,89 @@ def set_page(name, flag="", offset=0, limit=60):
             "sus": sus, "bg": bg, "counts": counts, "labels": FLAGS,
             "meta": {k: meta.get(k) for k in ("built", "mode", "source", "counts", "note", "bg_ratio") if meta.get(k) is not None},
             "items": [{"p": p, "boxes": b, "flags": f} for p, b, f in sel[offset:offset + limit]]}
+
+
+def data_modules():
+    """학습 데이터 모듈 목록 = configs/data_modules.yaml(계약 v4) 그대로. 목록만 있는 파일이면 {modules: [...]}"""
+    d = yaml.safe_load((G / "configs/data_modules.yaml").read_text(encoding="utf-8")) or {}
+    return {"modules": d} if isinstance(d, list) else d
+
+
+# ---------- 모듈 요약(입력 데이터 탭 왼쪽 목록, 2026-10-02) ----------
+# 첫 화면에서 모듈마다 라벨 파일을 다 읽으면 수십만 개(서버 A = Lustre)라, 요약을 디스크에 기억하고 백그라운드 스레드 하나가 차례로 센다.
+# 기억 파일은 logs/ 아래(저장소 .gitignore 가 logs/ 를 무시한다)
+SUM_FILE = G / "logs/dash/tv_summary.json"
+_SUM = {"memo": None, "run": False, "at": 0.0}
+
+
+def summary(name, old_sig=None):
+    """셋 요약 {sig, total, sus, counts}. 서명이 old_sig 와 같으면 None(다시 안 셈). 셋이 이 서버에 없으면 {error}"""
+    d = set_dir(name)
+    if d is None:
+        return {"error": f"이 서버에는 이 셋의 사진이 없습니다: {name}"}
+    imgs = list_images(d)
+    sig = _sig(d, imgs)
+    if sig == old_sig:
+        return None
+    with _LOCK:
+        c = _CACHE.get(name)
+    R = c[1] if c and c[0] == sig else _scan(d, imgs, name)             # 화면에서 막 연 셋이면 읽어 둔 것을 쓴다(_CACHE 는 건드리지 않는다)
+    counts, sus, _ = _count(R)
+    return {"sig": sig, "total": len(R), "sus": sus, "counts": counts}
+
+
+def _sum_run(names):
+    try:
+        for n in names:
+            with _LOCK:
+                old = (_SUM["memo"].get(n) or {}).get("sig")
+            try:
+                s = summary(n, old)
+            except Exception as ex:
+                s = {"error": f"{type(ex).__name__}: {ex}"}
+            if s is None:
+                continue
+            with _LOCK:
+                _SUM["memo"][n] = s
+                body = json.dumps(_SUM["memo"], ensure_ascii=False)
+            SUM_FILE.parent.mkdir(parents=True, exist_ok=True)
+            tmp = SUM_FILE.with_suffix(".json.tmp")
+            tmp.write_text(body, encoding="utf-8")
+            tmp.replace(SUM_FILE)
+    finally:
+        with _LOCK:
+            _SUM["run"], _SUM["at"] = False, time.time()
+
+
+def summaries(recheck=600):
+    """모듈(걸러 내기 flt_* 빼고)마다 {name, total, sus, counts} 또는 {name, error}. 아직 안 센 것은 pending.
+    없는 것 · recheck 초가 지난 것은 백그라운드 스레드 하나가 서명을 보고 바뀐 것만 다시 센다"""
+    names = [m["name"] for m in data_modules().get("modules") or [] if m.get("name") and m.get("kind") != "filter"]
+    with _LOCK:
+        if _SUM["memo"] is None:
+            try:
+                _SUM["memo"] = json.loads(SUM_FILE.read_text(encoding="utf-8"))
+            except Exception:
+                _SUM["memo"] = {}
+        memo = _SUM["memo"]
+        mods = [dict({k: v for k, v in memo[n].items() if k != "sig"}, name=n) for n in names if n in memo]
+        pending = [n for n in names if n not in memo]
+        if not _SUM["run"] and (pending or time.time() - _SUM["at"] > recheck):
+            _SUM["run"] = True
+            threading.Thread(target=_sum_run, args=(names,), daemon=True).start()
+    return {"mods": mods, "pending": pending}
+
+
+def allowed(path):
+    """허용된 폴더(ALLOWED) 안의 사진 파일이면 실제 경로, 아니면 None. 썸네일 · 학습 제외 저장이 같이 쓴다"""
+    p = Path(str(path))
+    try:
+        rp = p.resolve()
+    except Exception:
+        return None
+    if p.suffix.lower() not in IMG_EXT or not rp.is_file() or not any(a in rp.parents for a in ALLOWED + [a.resolve() for a in ALLOWED]):
+        return None
+    return rp
 
 
 def _queue_entries():
@@ -255,12 +353,8 @@ def exps(limit=60):
 
 def thumb(path, w=320):
     """사진 축소본 JPEG. 허용된 폴더 밖이면 None"""
-    p = Path(path)
-    try:
-        rp = p.resolve()
-    except Exception:
-        return None
-    if p.suffix.lower() not in IMG_EXT or not rp.is_file() or not any(a in rp.parents for a in ALLOWED + [a.resolve() for a in ALLOWED]):
+    rp = allowed(path)
+    if rp is None:
         return None
     from PIL import Image
     im = Image.open(rp)

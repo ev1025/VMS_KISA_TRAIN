@@ -9,6 +9,7 @@
 손라벨 박스가 있는 프레임은 SAM 저장소에서 빠진다(savelabel 이 빼고, 전파 저장이 건너뛴다).
 SAM: /api/sam2_mask(한 프레임 점·박스 → 마스크), 전파 방식 PROP_DEFAULT_MODE(separate·joint)
 데이터 확인: /api/sources · raw · clips · clipconds · clipinfo · frameat · warmframes · dsimg · dslabel · rawlabel · vid
+입력 데이터: /api/data_modules · tv_summary · tv_set · tv_thumb · train_exclude(GET · POST, data/학습데이터/손라벨/train_exclude.json)
 결과: /api/meta · dataset · results · queue
 """
 import json, os, re, shutil, threading, time, urllib.parse
@@ -61,6 +62,33 @@ def label_file(kind):
     """손라벨 파일. person = 사람 영상, image = 이미지 데이터셋(정지 이미지, 클립 대신 'img:<상대경로>'), 그 외 = 화재 영상."""
     fn = "person_labels.json" if kind == "person" else ("image_labels.json" if kind == "image" else "fire_labels.json")
     return data_path("data/학습데이터/손라벨/" + fn, fn)
+
+
+def train_exclude_file():
+    """학습 제외 목록(입력 데이터 탭 X). 손라벨 파일들 옆. ML 이 name(이미지 파일 이름)으로 걸러 내기를 만든다"""
+    return data_path("data/학습데이터/손라벨/train_exclude.json", "train_exclude.json")
+
+
+def train_exclude_write(b):
+    """{set, path, why, on} 하나를 넣거나(on 참) 뺀다(on=false). 형식 {"items": [{set, path, name, why, by, at}]}, 경로마다 한 줄"""
+    import trainview as _TV
+    from datetime import datetime, timedelta, timezone
+    st, path, on = str(b.get("set") or ""), str(b.get("path") or ""), b.get("on", True) is not False
+    if on and _TV.set_dir(st) is None:
+        raise ValueError(f"모르는 셋: {st}")
+    if on and _TV.allowed(path) is None:                 # 넣을 때만 본다. 빼기는 목록에서 지우기만 해서 쓰는 값이 없다
+        raise ValueError(f"허용된 폴더 밖이거나 사진이 아님: {path}")
+    why = [str(x)[:60] for x in b.get("why") or [] if x][:10] if isinstance(b.get("why"), list) else []
+    with _SAVE_LOCK:
+        fl = train_exclude_file()
+        _backup_labels(fl)
+        d = read_json(fl, {})
+        items = [x for x in (d.get("items") if isinstance(d, dict) else None) or [] if x.get("path") != path]
+        if on:
+            items.append({"set": st, "path": path, "name": Path(path).name, "why": why, "by": str(b.get("by") or "사용자")[:40],
+                          "at": datetime.now(timezone(timedelta(hours=9))).strftime("%Y-%m-%d %H:%M:%S")})
+        write_json(fl, {"items": items})
+    return {"ok": True, "items": items}
 
 
 def clip_state_file():
@@ -1814,6 +1842,13 @@ class H(BaseHTTPRequestHandler):
             except Exception as e:
                 self._bytes(json.dumps({"err": str(e)}).encode(), "application/json; charset=utf-8", 500)
             return
+        if p == "/api/train_exclude":           # 입력 데이터 탭: 학습 제외 넣기 · 빼기(손라벨 저장과 같은 잠금)
+            try:
+                n = int(self.headers.get("Content-Length", 0))
+                r = train_exclude_write(json.loads(self.rfile.read(n) or b"{}"))
+            except Exception as e:
+                r = {"ok": False, "err": f"{type(e).__name__}: {e}"}
+            self._bytes(json.dumps(r, ensure_ascii=False).encode(), "application/json; charset=utf-8"); return
         if p == "/api/history":                 # 히스토리 저장(문서 통째로, 마지막 수정 시각 대조)
             try:
                 n = int(self.headers.get("Content-Length", 0))
@@ -2247,7 +2282,9 @@ class H(BaseHTTPRequestHandler):
             except Exception as ex:
                 body = {"error": f"{type(ex).__name__}: {ex}"}
             self._bytes(json.dumps(body, ensure_ascii=False).encode(), "application/json; charset=utf-8"); return
-        if p in ("/api/tv_exps", "/api/tv_set", "/api/tv_thumb"):   # 데이터 확인 탭 '학습 데이터' 보기(2026-10-01). 읽기만. 계산은 dash_v2/trainview.py
+        if p == "/api/train_exclude":             # 입력 데이터 탭 학습 제외 목록(POST 로 고친다)
+            self._bytes(json.dumps(read_json(train_exclude_file(), {"items": []}), ensure_ascii=False).encode(), "application/json; charset=utf-8"); return
+        if p in ("/api/tv_exps", "/api/tv_set", "/api/tv_thumb", "/api/tv_summary", "/api/data_modules"):   # 학습 데이터 보기(2026-10-01) · 입력 데이터 탭(10-02). 읽기만. 계산은 dash_v2/trainview.py
             q = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
             g = lambda k, d="": (q.get(k) or [d])[0]
             try:
@@ -2255,7 +2292,8 @@ class H(BaseHTTPRequestHandler):
                 if p == "/api/tv_thumb":
                     data = _TV.thumb(g("p"), max(64, min(int(float(g("w", "320"))), 1600)))
                     self._bytes(data, "image/jpeg") if data else self.send_error(404); return
-                body = _TV.exps() if p == "/api/tv_exps" else _TV.set_page(g("name"), g("flag", "sus"), max(0, int(g("offset", "0"))), max(1, min(int(g("limit", "60")), 200)))
+                body = (_TV.exps() if p == "/api/tv_exps" else _TV.summaries() if p == "/api/tv_summary" else _TV.data_modules() if p == "/api/data_modules"   # data_modules = configs/data_modules.yaml 그대로
+                        else _TV.set_page(g("name"), g("flag", "sus"), max(0, int(g("offset", "0"))), max(1, min(int(g("limit", "60")), 200))))
             except Exception as ex:
                 body = {"error": f"{type(ex).__name__}: {ex}"}
             self._bytes(json.dumps(body, ensure_ascii=False).encode(), "application/json; charset=utf-8"); return
