@@ -37,7 +37,7 @@ async function trBuild() {
 // ---------- 오른쪽: 단계 · 표 ----------
 function p3Draw(D, q) {
   const c = $("#center");
-  P3.D = D; P3.q = q;
+  P3.D = D; P3.q = q; nrJudge.ph = D.phases || {};   // 점수 카드 펼침의 시험한 기술 단계 배지
   let main = c.querySelector(".p3-main");
   const first = !main;
   if (first) {                                               // 1분마다 다시 그려도 플레이어는 그대로 둔다(표 쪽만 다시)
@@ -49,10 +49,11 @@ function p3Draw(D, q) {
   }
   if (!p3Stages(D).includes(NR_PH)) NR_PH = p3Stages(D)[0] || "";   // 고른 단계가 없으면(전체 · 0단계 · 단계 없음이던 것) 1단계
   const ks = NR_PH ? [NR_PH] : [];
-  main.innerHTML = '<i class="p3-anc"></i>' + p3Tabs(D) + ks.map(k => p3Sec(D, q, k)).join("") + nrOthers(D, q) + nrTerms(D.terms || []);
+  // 맨 위 점수 카드(옛 결과 탭, 항목 필터와 무관하게 늘 넷). 누르면 적용 중 모델의 학습 · 판정기 설정(10-02 사용자)
+  main.innerHTML = nrScoreCard(D.score || [], D.runs) + '<i class="p3-anc"></i>' + p3Tabs(D) + ks.map(k => p3Sec(D, q, k)).join("") + nrOthers(D, q) + nrTerms(D.terms || []);
   const o = main.querySelector('.nr-block[data-id="_others"] .nr-tbl table');   // 비교 묶음에 없는 실험(지금 결과 탭 표 그대로)에도 재생 칸
   if (o) { const ids = D.others.filter(x => gfMeta(D.runs[x].item) && nrPhOk(D.runs[x])); [...o.rows].forEach((tr, i) => tr.prepend(el(i ? "td" : "th", "p3-pc", i ? p3Btns(ids[i - 1]) : ""))); }
-  nrBindToggles(main); p3Ovf(main);
+  nrBindToggles(main); nrScoreBind(main); p3Ovf(main);
   const pop = $("#nrTermsPop"), tb = main.querySelector(".nr-tbtn");
   if (pop) pop.addEventListener("beforetoggle", e => {
     if (e.newState !== "open") return;

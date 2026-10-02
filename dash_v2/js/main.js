@@ -228,9 +228,9 @@ function nrTerms(T) {                            // '용어 정리' 창(브라�
   return `<div id="nrTermsPop" class="nr-tpop" popover role="dialog" aria-label="용어 정리"><div class="nr-tpop-h"><b>용어 정리</b> <span class="nr-mut">${T.length}개</span>` +
     `<button type="button" class="nr-tx" popovertarget="nrTermsPop" popovertargetaction="hide">닫기</button></div><table>${rows}</table></div>`;
 }
-function nrScoreCard(S) {                        // 항목별 실제로 낼 수 있는 최고 점수(공식 채점) · 그 모델. 누르면 판정기 설정(학습 외)
+function nrScoreCard(S, runs) {                  // 항목별 실제로 낼 수 있는 최고 점수(공식 채점) · 그 모델. 누르면 그 모델의 학습 설정 · 판정기 설정
   if (!S.length) return "";
-  nrScoreCard.S = S;
+  nrScoreCard.S = S; nrScoreCard.R = runs || {}; if (!nrJudge.ph) nrJudge.ph = {};
   return `<div class="nr-score">` + S.map(s => {
     const has = s.f1 != null, cls = (!has ? "" : (s.f1 >= 90 ? " ok" : " bad")) + (nrScoreCard.open === s.item ? " on" : "");
     const tip = has && s.tp != null ? ` title="정검 ${s.tp} · 미검 ${s.fn} · 오검 ${s.fp}"` : "";
@@ -239,14 +239,22 @@ function nrScoreCard(S) {                        // 항목별 실제로 낼 수 
   }).join("") + `</div><div id="nrJudge">${nrJudge()}</div>`;
 }
 function nrJudge() {                              // 누른 스코어카드 항목의 판정기 설정: 적용 중 · 시험한 기술(결과 · 판정 · 이유)
-  const s = (nrScoreCard.S || []).find(x => x.item === nrScoreCard.open), j = s && s.judge;
-  if (!j) return "";
+  const s = (nrScoreCard.S || []).find(x => x.item === nrScoreCard.open), j = (s && s.judge) || {};
+  if (!s) return "";
+  const r = s.exp && (nrScoreCard.R || {})[s.exp], a = (r && r.args) || {}, ep = r && (r.epochs_run != null ? r.epochs_run : a.epochs);
+  const tr = r ? [                                            // 학습(결과 기록 runs): 모델 · 해상도 · 배치 · 에폭 · 가중치 · 학습 사진 · 데이터 · 검증 · 끝난 시각(10-02 사용자: 카드 = 적용 중 최고 모델의 학습 내용)
+      [a.model, a.imgsz != null ? `해상도 ${a.imgsz}` : "", a.batch != null ? `배치 ${a.batch}` : "", ep != null ? `에폭 ${ep}` : "", s.ck ? `가중치 ${s.ck === "last" ? "마지막(last)" : s.ck === "best" ? "검증 최고(best)" : s.ck}` : ""].filter(Boolean).join(" · "),
+      [r.n_train != null ? `학습 사진 ${Number(r.n_train).toLocaleString()}장` : "", (r.data || []).length ? `데이터 ${r.data.join(", ")}` : ""].filter(Boolean).join(" · "),
+      r.val && r.val.text ? `검증 ${r.val.text}${r.val.note ? ` (${r.val.note})` : ""}` : "",
+      r.ended ? `학습 끝 ${r.ended}` : ""].filter(Boolean)
+    : s.model ? [s.model] : [];
   const pill = d => `<span class="nr-dec nr-dec-${{채택: "ok", 기각: "no", 보류: "hold"}[d] || "wait"}">${nrEsc(d || "")}</span>`;
   const here = t => !t.variant ? nrMut("–") : !t.here ? nrMut("계산 전") :
     `${s.f1 != null ? s.f1.toFixed(2) + " → " : ""}<b>${t.here["점수"].toFixed(2)}</b> ${nrMut(`정 ${t.here["정검"]} · 미 ${t.here["미검"]} · 오 ${t.here["오검"]}`)}`;
   const rows = (j.tried || []).map(t => `<tr><th>${nrEsc(t.name)}${t.phase && nrJudge.ph[t.phase] ? `<div><span class="nr-bdg ph">${nrEsc(nrJudge.ph[t.phase])}</span></div>` : ""}</th><td>${nrEsc(t.what || "")}</td><td>${pill(t.dec)}</td><td>${nrEsc(t.result || "")}</td><td>${nrEsc(t.why || "")}</td><td class="nr-num">${here(t)}</td></tr>`).join("");
-  return `<div class="nr-judge"><div class="nr-jh">${nrEsc(s.item)} 판정기 설정 (학습 외)${s.exp ? nrMut(` · ${s.exp} · ${s.ck}`) : ""}</div>` +
-    `<div class="nr-jc"><b>적용 중</b><ul>${(j.applied || []).map(a => `<li>${nrEsc(a)}</li>`).join("")}</ul></div>` +
+  return `<div class="nr-judge"><div class="nr-jh">${nrEsc(s.item)} 적용 중인 모델${s.exp ? nrMut(` · ${s.exp} · ${s.ck}`) : ""}</div>` +
+    (tr.length ? `<div class="nr-jc"><b>학습</b><ul>${tr.map(x => `<li>${nrEsc(x)}</li>`).join("")}</ul></div>` : "") +
+    ((j.applied || []).length ? `<div class="nr-jc"><b>판정기 설정 (학습 외)</b><ul>${j.applied.map(a => `<li>${nrEsc(a)}</li>`).join("")}</ul></div>` : "") +
     (rows ? `<div class="nr-jc"><b>시험한 기술</b><div class="nr-tbl"><table><tr><th>기술</th><th>내용</th><th>판정</th><th>결과</th><th>이유</th><th>이 모델에 적용<br>${nrMut("채점편, 측정만")}</th></tr>${rows}</table></div></div>` : "") + `</div>`;
 }
 function nrScoreBind(root) {                      // 스코어카드 누르면 펼침 · 다시 누르면 접힘
