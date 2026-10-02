@@ -107,6 +107,46 @@ function hsDays(D, all) {
   }).join("");
   return `${open}<div class="hs-tl">${days}</div>`;
 }
+// ---------- 맨 위 서버 큐 띠(4단계 개편, 10-02 사용자 시안 P4-1) ----------
+// 한 줄 = 실행 중 · 대기 판 수 · GPU. 누르면 큐 표(결과 탭 nrQueueHtml 그대로) · 대기 판 · 러너 로그(접는 단추 없이 늘 펼침). 30초마다 /api/queue
+// 띠 요소는 하나를 두고 hsRender 가 다시 그릴 때마다 붙인다(펼침 상태가 그대로 남는다). 결과 탭 큐 상자는 그대로
+const HQ = { q: null, at: 0, el: null, busy: false };
+async function hqFetch() {
+  if (HQ.busy) return;
+  HQ.busy = true;
+  try { HQ.q = await (await fetch("/api/queue")).json(); } catch (e) { HQ.q = { error: true }; }
+  HQ.at = Date.now(); HQ.busy = false;
+}
+function hqDraw() {
+  if (!HQ.el) { HQ.el = document.createElement("details"); HQ.el.className = "hq"; }
+  const q = HQ.q;
+  if (!q || q.error) { HQ.el.innerHTML = `<summary class="hq-sum">${nrMut(q ? "큐를 못 읽었습니다" : "큐 불러오는 중…")}</summary>`; return; }
+  const run = q.running || [], w = q.waiting || [], g = q.gpu, box = document.createElement("div");
+  box.innerHTML = nrQueueHtml(q);
+  const log = box.querySelector(".nr-qdet");
+  if (log) {
+    const tip = x => nrEsc([x.item, x.queue, x.imgsz ? `${x.imgsz} / 배치 ${x.batch}` : ""].filter(Boolean).join(" · "));   // 대기 판 = 러너가 집는 순서 그대로
+    log.insertAdjacentHTML("beforebegin", `<div class="nr-qbox"><div class="hq-h">대기 ${w.length}판</div>` +
+      (w.length ? `<div class="hq-tags">${w.map(x => `<span class="hs-tag" title="${tip(x)}">${nrEsc(x.name)}</span>`).join("")}</div>` : "") + "</div>");
+    const plain = document.createElement("div"); plain.className = "nr-qbox";   // 러너 로그: 접는 단추 없이 늘 펼침, 내용은 결과 탭과 같음
+    plain.innerHTML = `<div class="hq-h">러너 로그</div>` + [...log.querySelectorAll(".nr-qlog, .nr-mut")].map(x => x.outerHTML).join("");
+    log.replaceWith(plain);
+  }
+  const gpu = g && g.total_mib ? `<span class="hq-gpu"><span class="hq-k">GPU</span><i class="hq-bar"><b style="width:${Math.round(100 * g.used_mib / g.total_mib)}%"></b></i>` +
+    `<span>${g.used_mib.toLocaleString()} / ${g.total_mib.toLocaleString()} MiB</span><span class="nr-mut">사용률 ${g.util}%</span></span>` : "";
+  HQ.el.innerHTML = `<summary class="hq-sum"><span class="hq-c${run.length ? " run" : ""}">${run.length ? `실행 중 ${run.length}판` : "실행 중 없음"}</span>` +
+    `<span class="hq-c">대기 ${w.length}판</span>${gpu}</summary><div class="hq-body">${box.innerHTML}</div>`;
+}
+function hqMount(top) {                               // 위 고정 줄(빠른 추가 · 상태 카드) 맨 앞에 띠
+  if (!top) return;
+  if (!HQ.el) hqDraw();
+  top.prepend(HQ.el);
+  if (Date.now() - HQ.at > 30000) hqFetch().then(hqDraw);
+}
+setInterval(async () => {                             // 결과 탭처럼 30초마다 큐만 다시 읽는다(히스토리 탭에 띠가 붙어 있을 때만)
+  if (CUR.mode !== "history" || document.hidden || !HQ.el || !HQ.el.isConnected) return;
+  await hqFetch(); hqDraw();
+}, 30000);
 function hsRender() {
   const c = $("#center"), D = HS.doc, all = D.days.flatMap(d => d.items).filter(hsGf), y = c.scrollTop;
   const cards = '<div class="hs-cards">' + `<button class="hs-card${HS.f ? "" : " on"}" data-s="" aria-pressed="${!HS.f}"><div class="k">전체</div><div class="v">${all.length}</div></button>` + HS_ST.map(s => `<button class="hs-card hs-c-${hsCls(s)}${HS.f === s ? " on" : ""}" data-s="${s}" aria-pressed="${HS.f === s}">
@@ -116,6 +156,7 @@ function hsRender() {
   c.innerHTML = `<div class="hs"><div class="hs-top">${qa}${cards}
       <div class="hs-meta"><div class="hs-decf">${decf}</div>${D.readonly ? '<span class="hs-ro">보기 전용(고치기는 서버 B 대시보드)</span>' : '<button class="hs-dayadd">+ 날짜</button>'}
       <span class="sp">마지막 수정 ${hsEsc(D.updated_at)}${D.updated_by ? " · " + hsEsc(D.updated_by) : ""}</span></div></div>${hsDays(D, all)}</div>`;
+  hqMount(c.querySelector(".hs-top"));                // 맨 위 서버 큐 띠
   c.scrollTop = y;
   const q = c.querySelector(".hs-qa");
   if (q) q.onsubmit = async e => {

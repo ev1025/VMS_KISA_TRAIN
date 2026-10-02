@@ -629,6 +629,27 @@ body.dm #list .item.on{outline:0;background:var(--sel);box-shadow:inset 3px 0 0 
 .hs-fbtn button{height:var(--ctl-h);padding:0 var(--s3);font-size:var(--fs-md);font-weight:600}
 .hs-fbtn .hs-del{color:var(--bad-tx)}
 
+/* 맨 위 서버 큐 띠(history.js hqDraw, 10-02 사용자 시안 P4-1): 한 줄 = 실행 중 · 대기 판 · GPU, 누르면 큐 표 · 대기 판 · 러너 로그(늘 펼침), 띠 안에서 스크롤 */
+.hq{margin-bottom:var(--s3);background:var(--panel);border:1px solid var(--line-ctl);border-radius:var(--r-lg)}
+.hq-sum{display:flex;align-items:center;gap:var(--s3);height:40px;padding:0 var(--s3);cursor:pointer;list-style:none}
+.hq-sum::-webkit-details-marker{display:none}
+.hq-sum::after{content:"";flex:0 0 auto;width:7px;height:7px;margin:0 2px 3px auto;border-right:2px solid var(--mut);border-bottom:2px solid var(--mut);transform:rotate(45deg)}
+.hq[open] .hq-sum::after{margin:3px 2px 0 auto;transform:rotate(-135deg)}
+.hq-c{display:inline-flex;align-items:center;flex:0 0 auto;height:20px;padding:0 var(--s2);border-radius:var(--r-pill);background:var(--t-mut);color:var(--tx2);font-size:12px;font-weight:600;white-space:nowrap}
+.hq-c.run{background:var(--t-blue);color:var(--blue)}
+.hq-c.run::before{content:"";width:6px;height:6px;margin-right:6px;border-radius:50%;background:currentColor}
+.hq-gpu{display:inline-flex;align-items:center;flex:0 0 auto;gap:var(--s2);font-size:12px;white-space:nowrap;font-variant-numeric:tabular-nums}
+.hq-k{color:var(--mut);font-weight:600}
+.hq-bar{display:inline-block;width:64px;height:6px;border-radius:3px;background:var(--panel2);overflow:hidden}
+.hq-bar b{display:block;height:100%;background:var(--blue)}
+.hq-h{font-weight:600}
+.hq-tags{display:flex;flex-wrap:wrap;gap:var(--s1);margin-top:var(--s1)}
+.hq-body{max-height:40vh;overflow:auto;padding:0 var(--s3) var(--s6);border-top:1px solid var(--line);font-size:12px;line-height:1.5;
+  -webkit-mask-image:linear-gradient(#000 calc(100% - 24px),transparent);mask-image:linear-gradient(#000 calc(100% - 24px),transparent)}
+.hq-body .nr-qhead{display:none}                    /* 띠에 이미 있는 줄 */
+.hq .nr-qtbl :is(th,td):nth-child(n+3):nth-child(-n+5){display:none}   /* 히스토리 폭엔 한눈에 볼 칸만: 이 에폭 · 속도 · 에폭당 은 결과 탭에서 */
+.hq .nr-qlog{padding:2px 0}
+
 /* ---------- 10. 편집기가 띄우는 창(확인 · 라벨 검수 · 크게 보기): 글꼴만 맞춘다 ---------- */
 body > div[style*="position: fixed"] button{font-family:inherit}
 

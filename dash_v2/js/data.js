@@ -381,7 +381,7 @@ async function showRawVideo(rel) {
   const clip = rel.replace(/^data\/원본데이터\//, "").replace(/\.mp4$/, "");
   let events = [];
   try { events = (await (await fetch("/api/clipinfo?clip=" + encodeURIComponent(clip))).json()).fire || []; } catch (e) {}
-  if (_my !== _SRV_SEQ) return;
+  if (_my !== _SRV_SEQ || CUR.mode !== "data") return;   // 받아 오는 사이 다른 탭으로 갔으면 그 탭 화면을 덮지 않는다(10-02 히스토리 탭에 편집기가 뜨던 것)
   markListItem(rel);                                    // 지금 보는 영상 표시
   const first = events[0] || {};
   document.onkeydown = null;
@@ -389,7 +389,7 @@ async function showRawVideo(rel) {
   const _editing = _mode0 !== "none";               // 데이터 확인은 늘 라벨 편집(SAM2 · 손라벨). 영상 보기 · 예측 박스 고르기는 없앴다(10-02 사용자)
   if (_editing) {
     await openFrameAt(clip, null, _mode0);   // 시작 프레임은 openFrameAt 이 고른다(자동라벨 첫 검출 → 정답 시각 → 0). 기다려야 새로고침 복원이 두 번 열지 않는다
-    if (_my !== _SRV_SEQ) return;
+    if (_my !== _SRV_SEQ || CUR.mode !== "data") return;
   } else {
     ED = null;   // 영상 볼 땐 에디터 재사용상태 초기화(다음 라벨편집이 새로 그리게)
     // 재생 화면이 쓸 갈래. 라벨 모드를 "편집 안 함"으로 둔 경우는 이름으로 짐작한다

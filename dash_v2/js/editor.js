@@ -210,6 +210,7 @@ async function openFrameAt(clip, sec, mode) {
       ED.syncSam(); ED.fillShots(); ED.loadSam();
     });
   };
+  if (CUR.mode !== "data") return;                         // 받아 오는 사이 다른 탭으로 갔으면 그 탭 화면을 덮지 않는다(10-02)
   if (ED && ED.clip === clip) {
     if (ED.keydown) { document.onkeydown = ED.keydown; document.onkeyup = ED.keyup; }   // 같은 클립 재클릭 시 showRawVideo 가 지운 단축키 복구
     // 화면을 지우지 않는다. 새 그림을 다 받은 뒤 바꿔 끼우면 사라졌다 나타나는 깜빡임이 없다.
@@ -1344,6 +1345,7 @@ async function openImageEdit(rel) {
     GTL[key] = Promise.resolve(GTMAP[key]);
   } catch (e) { GTMAP[key] = { frames: {}, points: {} }; GTL[key] = Promise.resolve(GTMAP[key]); }
   SAML[key] = Promise.resolve(SAMMAP[key] = {});   // 이미지엔 전파 저장소가 없다
+  if (CUR.mode !== "data") return;                         // 이미지를 받는 사이 다른 탭으로 갔으면 그리지 않는다
   saveSession({ img: rel, rel: null });
   const g = GTMAP[key], fr = (g.frames || {})["0.0"] || {}, cls = g.imgcls || [];
   const prefill = Object.keys(fr).map((k, i) => [isFire() ? (cls[i] === 1 ? 1 : 0) : 0, ...fr[k]]);   // 정답 클래스: 0 불 · 1 연기(화재) / 사람은 전부 0
