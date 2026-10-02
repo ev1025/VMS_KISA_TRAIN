@@ -11,7 +11,15 @@ const P2X = { ex: {}, ok: {}, fx: {}, undo: [] };         // ex = 학습 제외 
 try { P2X.ok = JSON.parse(localStorage.getItem("in_ok") || "{}") || {}; } catch (e) {}
 try { P2.focus = localStorage.getItem("in_focus") || ""; } catch (e) {}
 const p2Now = () => { const d = new Date(), z = n => String(n).padStart(2, "0"); return `${d.getFullYear()}-${z(d.getMonth() + 1)}-${z(d.getDate())} ${z(d.getHours())}:${z(d.getMinutes())}`; };
-const p2SaveOk = () => { try { localStorage.setItem("in_ok", JSON.stringify(P2X.ok)); } catch (e) {} };
+P2X.rs = {};                                               // 의심이던 사진을 점검(통과 · 제외)한 기록 {경로: 셋}(이 브라우저). 남은 의심 수를 센다
+try { P2X.rs = JSON.parse(localStorage.getItem("in_rs") || "{}") || {}; } catch (e) {}
+const p2SaveOk = () => { try { localStorage.setItem("in_ok", JSON.stringify(P2X.ok)); localStorage.setItem("in_rs", JSON.stringify(P2X.rs)); } catch (e) {} };
+// 점검 끝(통과 · 제외)한 사진은 의심 보기에서 바로 뺀다(10-02 사용자). 전체 보기에는 표시만 남는다
+const p2Done = p => !!(P2X.ok[p] || P2X.ex[p]);
+const p2SusView = () => P2.flag !== "all";                 // 의심 · 사유 칩 보기
+const p2SusDone = set => Object.keys(P2X.rs).filter(p => P2X.rs[p] === set && p2Done(p)).length
+  + Object.values(P2X.ex).filter(x => x.set === set && !P2X.rs[x.path] && (x.why || []).length).length;   // 다른 브라우저에서 뺀 것 = 서버 학습 제외 중 사유가 있는 것
+const p2SusLeft = (set, n) => Math.max(0, (n || 0) - p2SusDone(set));
 const p2SaveUi = () => { try { localStorage.setItem("in_focus", P2.focus); } catch (e) {} };
 const p2Items = () => ["방화", "사람"].filter(gfMeta);
 const p2N = n => n == null ? "?" : Number(n).toLocaleString();
@@ -152,12 +160,13 @@ async function p2FixPost(x, on, prev) {                   // 박스 지우기 �
 const p2ExN = set => Object.values(P2X.ex).filter(x => x.set === set).length;
 const p2FxN = set => Object.values(P2X.fx).filter(x => x.set === set).length;
 function p2Sorted(item) {
-  const k = m => { const c = P2.cnt[m.name]; return c && !c.error ? c.sus : -1; };
+  const k = m => { const c = P2.cnt[m.name]; return c && !c.error ? p2SusLeft(m.name, c.sus) : -1; };
   return p2Mods().filter(m => m.item === item).sort((a, b) => k(b) - k(a) || b.count - a.count);
 }
 function p2ModHtml(m) {
   const c = P2.cnt[m.name], nx = p2ExN(m.name), nf = p2FxN(m.name);
-  const sus = c ? (c.error ? `<span class="p2-sus wait" title="${nrEsc(c.error)}">사진 없음</span>` : `<span class="p2-sus${c.sus ? "" : " zero"}">의심 ${p2N(c.sus)}</span>`)
+  const sl = c && !c.error ? p2SusLeft(m.name, c.sus) : 0;
+  const sus = c ? (c.error ? `<span class="p2-sus wait" title="${nrEsc(c.error)}">사진 없음</span>` : `<span class="p2-sus${sl ? "" : " zero"}" title="서버 의심 ${p2N(c.sus)} · 점검 끝 ${p2N(c.sus - sl)}">의심 ${p2N(sl)}</span>`)
     : P2.pending.includes(m.name) ? '<span class="p2-sus wait">세는 중</span>' : "";
   return `<button type="button" class="p2-mod${m.name === P2.focus ? " on" : ""}" data-n="${nrEsc(m.name)}"><span class="p2-mb"><span class="p2-ml">${nrEsc(m.label)}</span>` +
     `<span class="p2-nm">${p2Nm(m.name)}</span><span class="p2-tags">${p2Tags(m.name)}</span></span>` +
@@ -177,7 +186,8 @@ function p2DrawLeft() {
   lb.onscroll = () => { P2.lbTop = lb.scrollTop; };
 }
 function p2PickTop() {
-  const top = p2Items().map(it => p2Sorted(it)[0]).filter(Boolean).sort((a, b) => ((P2.cnt[b.name] || {}).sus || 0) - ((P2.cnt[a.name] || {}).sus || 0))[0];
+  const sl = n => p2SusLeft(n, (P2.cnt[n] || {}).sus);
+  const top = p2Items().map(it => p2Sorted(it)[0]).filter(Boolean).sort((a, b) => sl(b.name) - sl(a.name))[0];
   if (top) p2Pick(top.name);
 }
 function p2Pick(n) {
@@ -196,18 +206,24 @@ async function p2Load(at) {
   if (r.error) { P2.data = null; c.innerHTML = `<div class="p2-gal p2-one">${p2Head(null)}${p2Empty(nrEsc(r.error))}</div>`; return; }
   if (!P2.cnt[n]) { P2.cnt[n] = { name: n, total: r.total, sus: r.sus, counts: r.counts }; p2DrawLeft(); }   // 요약이 아직이면 이 셋을 연 값으로
   if (P2.flag === "sus" && !r.sus && !P2.off) { P2.flag = "all"; return p2Load(at); }   // 의심이 없으면 전체
+  if (p2SusView()) {                                        // 점검 끝난 사진은 빼고 보인다. 이 쪽이 다 끝났으면 다음 쪽
+    r.items = r.items.filter(it => !p2Done(it.p));
+    if (!r.items.length && P2.off + P2_PAGE < r.sel && typeof at !== "string") { P2.off += P2_PAGE; return p2Load(0); }
+  }
   P2.data = r;
-  P2.cur = at === "last" ? r.items.length - 1 : Math.max(0, Math.min(at || 0, r.items.length - 1));
+  const ai = typeof at === "string" && at !== "last" ? r.items.findIndex(x => x.p === at) : -1;
+  P2.cur = ai >= 0 ? ai : at === "last" ? r.items.length - 1 : Math.max(0, Math.min(typeof at === "number" ? at : 0, r.items.length - 1));
   p2DrawCenter();
 }
 function p2Head(r) {
   const m = P2.by[P2.focus] || { label: P2.focus };
-  const seg = `<div class="dt-seg p2-seg" role="group" aria-label="보기">` + [["sus", "의심", r && r.sus], ["all", "전체", r && r.total]].map(([k, l, n]) =>
+  const seg = `<div class="dt-seg p2-seg" role="group" aria-label="보기">` + [["sus", "의심", r && p2SusLeft(P2.focus, r.sus)], ["all", "전체", r && r.total]].map(([k, l, n]) =>
     `<button type="button" class="${P2.flag === k ? "on" : ""}" data-flag="${k}" aria-pressed="${P2.flag === k}">${l}${n != null ? ` <small>${p2N(n)}</small>` : ""}</button>`).join("") + "</div>";
   const why = r ? [...TV_STRONG, ...TV_SOFT].filter(k => r.counts[k]).map(k =>
     `<button type="button" class="tv-chip ${TV_STRONG.includes(k) ? "s" : "w"}${P2.flag === k ? " on" : ""}" data-flag="${k}" aria-pressed="${P2.flag === k}">${nrEsc(r.labels[k])} <b>${p2N(r.counts[k])}</b></button>`).join("") : "";
   const ok = Object.values(P2X.ok).filter(s => s === P2.focus).length;
-  const nav = r ? `<div class="p2-progress"><b>${p2N(P2.off + P2.cur + 1)}</b> / ${p2N(r.sel)}<span class="p2-mut">통과 ${p2N(ok)} · 제외 ${p2N(p2ExN(P2.focus))}</span></div>` : "";
+  const nav = r ? `<div class="p2-progress">${p2SusView() ? `남은 의심 <b>${p2N(P2.flag === "sus" ? p2SusLeft(P2.focus, r.sus) : r.items.length)}</b>` : `<b>${p2N(P2.off + P2.cur + 1)}</b> / ${p2N(r.sel)}`}` +
+    `<span class="p2-mut">통과 ${p2N(ok)} · 제외 ${p2N(p2ExN(P2.focus))}</span></div>` : "";
   return `<div class="p2-galh"><div class="p2-gt"><b>${nrEsc(m.label)}</b><span class="p2-nm">${p2Nm(P2.focus)}</span><span class="p2-tags">${p2Tags(P2.focus)}</span></div>` +
     (r ? `<div class="p2-gc">${seg}${why ? `<div class="tv-chips">${why}</div>` : ""}${nav}</div>` : "") + "</div>";
 }
@@ -286,7 +302,7 @@ function p2BoxDraw() {                                    // 박스 고르기 ·
 function p2DrawCenter() {
   const r = P2.data, it = r.items[P2.cur];
   p2BoxInit(it);
-  $("#center").innerHTML = `<div class="p2-gal p2-one">${p2Head(r)}${it ? `<div id="p2Big">${p2BigHtml(it)}</div>${p2ActsHtml(it)}<div class="p2-strip" id="p2Strip">${r.items.map(p2CellHtml).join("")}</div>` : p2Empty("이 조건인 사진 없음")}</div>`;
+  $("#center").innerHTML = `<div class="p2-gal p2-one">${p2Head(r)}${it ? `<div id="p2Big">${p2BigHtml(it)}</div>${p2ActsHtml(it)}<div class="p2-strip" id="p2Strip">${r.items.map(p2CellHtml).join("")}</div>` : p2Empty(p2SusView() ? "남은 의심 없음 · 전체에서 다른 사진 보기" : "이 조건인 사진 없음")}</div>`;
   p2ZoomBind(); p2StripScroll();
   p2Preload();
 }
@@ -295,7 +311,8 @@ function p2ActsHtml(it) {
   return `<div class="p2-acts" id="p2Acts">${P2.msg ? `<span class="p2-msg" title="${nrEsc(P2.msgTip || "")}">${nrEsc(P2.msg)}</span>` : ""}<button type="button" class="p2-nav" data-mv="-1" aria-label="이전 사진">‹</button>` +
     `<button type="button" class="p2-okb" data-mark="ok">통과<kbd>O</kbd></button><button type="button" class="p2-exb${ex ? " on" : ""}" data-mark="ex">${ex ? "제외 취소" : "제외"}<kbd>X</kbd></button>` +
     `<button type="button" class="p2-nav" data-mv="1" aria-label="다음 사진">›</button><span class="p2-actr">` +
-    `<button type="button" class="p2-undo p2-bdel" data-bdel="1"${b ? "" : ' disabled title="큰 사진에서 박스를 누르면 고름"'}>${b && p2Del(it, b) ? "지우기 취소" : "박스 지우기"}<kbd>D</kbd></button>` +
+    (p2Hand() ? '<span class="p2-mut p2-handnote" title="손라벨에서 나온 모듈: 박스는 원본 손라벨을 고쳐야 다음 학습셋에 들어간다(ML 10-02)">손라벨 사진 · 박스는 전처리에서 고치기</span>'
+      : `<button type="button" class="p2-undo p2-bdel" data-bdel="1"${b ? "" : ' disabled title="큰 사진에서 박스를 누르면 고름"'}>${b && p2Del(it, b) ? "지우기 취소" : "박스 지우기"}<kbd>D</kbd></button>`) +
     `${P2X.undo.length ? '<button type="button" class="p2-undo" data-undo="1">되돌리기<kbd>Z</kbd></button>' : ""}</span></div>`;
 }
 function p2StripScroll() { const s = document.getElementById("p2Strip"), e = s && s.querySelector(".cur"); if (e) s.scrollLeft = e.offsetLeft - s.clientWidth / 2 + e.offsetWidth / 2; }
@@ -337,6 +354,7 @@ function p2Mark(kind) {                                   // ex = 학습 제외(
   const r = P2.data, it = r && r.items[P2.cur]; if (!it) return;
   const was = P2X.ex[it.p] || null;
   P2X.undo.push({ p: it.p, ex: was, ok: P2X.ok[it.p] || null, focus: P2.focus, flag: P2.flag, off: P2.off, cur: P2.cur });
+  if (it.flags.some(f => TV_STRONG.includes(f))) P2X.rs[it.p] = P2.focus;
   let next = true;
   if (kind === "ex" && was) { delete P2X.ex[it.p]; next = false; p2ExPost(it.p, was.set, was.why, false, was); }
   else if (kind === "ex") {
@@ -348,10 +366,22 @@ function p2Mark(kind) {                                   // ex = 학습 제외(
     if (was) { delete P2X.ex[it.p]; p2ExPost(it.p, was.set, was.why, false, was); }
   }
   p2SaveOk();
+  if (p2SusView() && p2Done(it.p)) return p2Drop();         // 의심 보기: 점검 끝난 사진은 목록에서 바로 뺀다
   if (next && P2.cur < r.items.length - 1 || next && P2.off + P2_PAGE < r.sel) p2Move(1); else p2Show();
 }
+function p2Drop() {                                        // 지금 사진을 이 쪽 목록에서 빼고 같은 자리(= 다음 사진)를 보인다. 쪽이 끝나면 다음 쪽
+  const r = P2.data; r.items.splice(P2.cur, 1);
+  if (P2.cur >= r.items.length && P2.off + P2_PAGE < r.sel) { P2.off += P2_PAGE; p2DrawLeft(); return p2Load(0); }
+  P2.cur = Math.max(0, Math.min(P2.cur, r.items.length - 1));
+  p2DrawLeft();
+  const st = document.getElementById("p2Strip");
+  if (!r.items.length || !st) return p2DrawCenter();
+  st.innerHTML = r.items.map(p2CellHtml).join("");
+  p2Show();
+}
+const p2Hand = () => /^handset_/.test(P2.focus);           // 손라벨에서 나온 모듈: 박스 지우기 대신 '전처리에서 고치기' 안내(ML 10-02: 원본 손라벨을 고쳐야 반영)
 function p2BoxDel() {                                    // 고른 박스 지움 표시(다시 누르면 취소). 기록만 하고 라벨 파일은 안 고친다
-  const r = P2.data, it = r && r.items[P2.cur], b = it && it.boxes[P2.box]; if (!b) return;
+  const r = P2.data, it = r && r.items[P2.cur], b = it && it.boxes[P2.box]; if (!b || p2Hand()) return;
   const key = p2FixKey(it.p, b), was = P2X.fx[key] || null;
   P2X.undo.push({ kind: "box", p: it.p, key, bi: P2.box, was, focus: P2.focus, flag: P2.flag, off: P2.off, cur: P2.cur });
   if (was) { delete P2X.fx[key]; p2FixPost(was, false, was); }
@@ -372,8 +402,8 @@ function p2Undo() {
     if (u.ok) P2X.ok[u.p] = u.ok; else delete P2X.ok[u.p];
     p2SaveOk();
   }
-  if (u.focus === P2.focus && u.flag === P2.flag && u.off === P2.off) { P2.cur = u.cur; p2Show(); p2BoxDraw(); }
-  else { P2.focus = u.focus; P2.flag = u.flag; P2.off = u.off; p2SaveUi(); p2DrawLeft(); p2Load(u.cur); }
+  if (u.focus === P2.focus && u.flag === P2.flag && u.off === P2.off && (u.kind === "box" || !p2SusView())) { P2.cur = u.cur; p2Show(); p2BoxDraw(); }
+  else { P2.focus = u.focus; P2.flag = u.flag; P2.off = u.off; p2SaveUi(); p2DrawLeft(); p2Load(u.kind === "box" ? u.cur : u.p); }   // 의심 보기에서 뺐던 사진 = 경로로 찾아 다시 보인다
 }
 function p2ExList() {                                     // 학습 제외 목록(떠 있는 창). 줄마다 되돌리기
   let pop = document.getElementById("p2ExPop");
