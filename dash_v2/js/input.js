@@ -81,7 +81,7 @@ function p2Boxes(it, big) {                               // 라벨 파일 박�
   const bad = big ? p2BoxBad(it) : [], R = (b, a) => `<rect x="${b[1] - b[3] / 2}" y="${b[2] - b[4] / 2}" width="${b[3]}" height="${b[4]}" fill="none" vector-effect="non-scaling-stroke" ${a}/>`;
   const svg = it.boxes.map((b, i) => {
     const del = p2Del(it, b), sus = big && bad[i].length;
-    return R(b, `stroke="${del || sus ? "#f85149" : p2Cls(b[0])[1]}" stroke-width="${sus && !del ? 3 : 2}"${del ? ' stroke-dasharray="5 4"' : ""}`) +
+    return R(b, `stroke="${del ? "#f85149" : sus ? "#d29922" : p2Cls(b[0])[1]}" stroke-width="${sus && !del ? 3 : 2}"${del ? ' stroke-dasharray="5 4"' : ""}`) +
       (big && i === P2.box ? R(b, 'stroke="#fff" stroke-width="2" stroke-dasharray="4 3"') : "");
   }).join("");
   return `<svg class="tv-svg" viewBox="0 0 1 1" preserveAspectRatio="none" aria-hidden="true">${svg}</svg>` + (big ? it.boxes.map((b, i) => {
@@ -234,10 +234,27 @@ function p2CellHtml(it, i) {                              // 아래 줄 한 칸:
 }
 function p2BigHtml(it) {                                  // 크게: 라벨 박스 그대로 + 클래스 이름표 · 의심 사유 · 같은 원본 묶음
   const r = P2.data, ex = P2X.ex[it.p], ok = P2X.ok[it.p], pt = p2PhotoTags(it);
-  return `<div class="p2-big${ex ? " ex" : ""}" data-p="${nrEsc(it.p)}"><div class="p2-stage"><span class="p2-bimg"><img alt="" src="${p2Thumb(it.p, 1280)}"><span class="p2-ov">${p2Boxes(it, true)}</span></span></div>${p2SibsHtml(it)}` +
+  return `<div class="p2-big${ex ? " ex" : ""}" data-p="${nrEsc(it.p)}"><div class="p2-stage"><div class="p2-vt">${p2Tools(it)}</div><span class="p2-bimg"><img alt="" src="${p2Thumb(it.p, 1280)}"><span class="p2-ov">${p2Boxes(it, true)}</span></span></div>${p2SibsHtml(it)}` +
     `<div class="p2-binfo"><div class="p2-tags">${ex ? '<span class="p2-tag r-flt p2-st">학습 제외</span>' : ok ? '<span class="p2-tag r-pos p2-st">통과</span>' : ""}${p2Why(it, r)}` +
     `${pt.map(t => `<span class="p2-tag c">${nrEsc(t)}</span>`).join("")}<span class="p2-tag s">박스 ${it.boxes.length}</span></div>` +
     `<div class="p2-file" title="${nrEsc(it.p)}"><b>${p2Nm(it.p.split("/").pop())}</b><span class="p2-dir"><bdi>${nrEsc(it.p.split("/").slice(0, -1).join("/"))}</bdi></span></div></div></div>`;   // 경로는 앞을 '…' 로 줄이고 마우스를 올리면 전체
+}
+const P2_TRASH = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 6h18M8 6V4h8v2M6 6l1 14h10l1-14"/></svg>';
+function p2Tools(it) {                                     // 사진 안 오른쪽 위 도구: 확대 · 축소 · 원래 크기 · 박스 지우기(사진을 다루는 기능은 사진 곁에, 10-02 UI 조언)
+  const b = it.boxes[P2.box], del = b && p2Del(it, b);
+  return '<button type="button" class="p2-vb" data-zoom="1" title="확대(휠)" aria-label="확대">+</button><button type="button" class="p2-vb" data-zoom="-1" title="축소(휠)" aria-label="축소">−</button>' +
+    '<button type="button" class="p2-vb" data-zoom="0" title="원래 크기(사진 두 번 누르기)" aria-label="원래 크기">1:1</button><i class="p2-vsep"></i>' +
+    (p2Hand() ? '<span class="p2-vnote" title="손라벨에서 나온 모듈: 박스는 원본 손라벨을 고쳐야 다음 학습셋에 들어간다(ML 10-02)">손라벨 사진 · 박스는 전처리에서 고치기</span>'
+      : `<button type="button" class="p2-vb p2-vdel${del ? " on" : ""}" data-bdel="1"${b ? "" : " disabled"} title="${b ? (del ? "지우기 취소" : "고른 박스 지우기") : "사진에서 박스를 누르면 고름"}">${P2_TRASH}<span>${del ? "지우기 취소" : "박스 지우기"}</span><kbd>D</kbd></button>`);
+}
+function p2ZoomStep(k) {                                   // 도구 단추: + · − = 사진 칸 가운데 기준 1.5배씩, 0 = 원래 크기
+  const st = document.querySelector("#p2Big .p2-stage"), b = st && st.querySelector(".p2-bimg"); if (!b) return;
+  if (!k) { P2Z.z = 1; return p2ZoomApply(b); }
+  const sr = st.getBoundingClientRect(), r = b.getBoundingClientRect(), z0 = P2Z.z;
+  const cx = sr.left + sr.width / 2 - (r.left - P2Z.tx), cy = sr.top + sr.height / 2 - (r.top - P2Z.ty);
+  P2Z.z = Math.min(8, Math.max(1, z0 * (k > 0 ? 1.5 : 1 / 1.5)));
+  P2Z.tx = cx - (P2Z.z / z0) * (cx - P2Z.tx); P2Z.ty = cy - (P2Z.z / z0) * (cy - P2Z.ty);
+  p2ZoomApply(b);
 }
 function p2SibsHtml(it) {                                 // 같은 원본: 원본(meta.source 폴더에서 이름 꼬리를 뗀 것, 없으면 숨김) + 이 쪽에 있는 다른 변형
   const v = p2Var(it.p); if (!v) return "";
@@ -268,6 +285,7 @@ function p2ZoomBind() {                                   // 큰 사진에 휠 �
     p2ZoomApply(b);
   };
   st.onmousedown = e => {
+    if (e.target.closest(".p2-vt")) return;
     P2.md = [e.clientX, e.clientY];
     if (P2Z.z === 1 || e.button !== 0) return;
     e.preventDefault();
@@ -276,8 +294,9 @@ function p2ZoomBind() {                                   // 큰 사진에 휠 �
     const up = () => { removeEventListener("mousemove", mv); removeEventListener("mouseup", up); };
     addEventListener("mousemove", mv); addEventListener("mouseup", up);
   };
-  st.ondblclick = () => { P2Z.z = 1; p2ZoomApply(b); };
+  st.ondblclick = e => { if (e.target.closest(".p2-vt")) return; P2Z.z = 1; p2ZoomApply(b); };
   st.onclick = e => {                                     // 박스 고르기: 끌어 이동과 구분(누른 곳에서 4px 미만 움직였을 때만)
+    if (e.target.closest(".p2-vt")) return;
     if (P2.md && Math.hypot(e.clientX - P2.md[0], e.clientY - P2.md[1]) >= 4) return;
     const it = P2.data && P2.data.items[P2.cur]; if (!it || st.closest(".p2-big").dataset.p !== it.p) return;
     const r = b.getBoundingClientRect(), x = (e.clientX - r.left) / r.width, y = (e.clientY - r.top) / r.height, px = 6 / r.width, py = 6 / r.height;
@@ -294,7 +313,7 @@ function p2BoxInit(it) {                                  // 사진이 바뀌면
 }
 function p2BoxDraw() {                                    // 박스 고르기 · 지우기가 바뀜: 큰 사진 겹침 · 단추 줄 · 아래 줄 칸 · 왼쪽 수만 다시(사진 · 확대는 그대로)
   const r = P2.data, it = r && r.items[P2.cur], big = document.querySelector("#p2Big .p2-big");
-  if (it && big && big.dataset.p === it.p) big.querySelector(".p2-ov").innerHTML = p2Boxes(it, true);
+  if (it && big && big.dataset.p === it.p) { big.querySelector(".p2-ov").innerHTML = p2Boxes(it, true); const vt = big.querySelector(".p2-vt"); if (vt) vt.innerHTML = p2Tools(it); }
   const a = document.getElementById("p2Acts"); if (a && it) a.outerHTML = p2ActsHtml(it);
   if (r) document.querySelectorAll("#p2Strip .p2-cell").forEach(c => { const x = r.items[+c.dataset.i], s = c.querySelector(".tv-svg"); if (x && s) s.outerHTML = p2Boxes(x); });
   p2DrawLeftMarks();
@@ -311,8 +330,7 @@ function p2ActsHtml(it) {
   return `<div class="p2-acts" id="p2Acts">${P2.msg ? `<span class="p2-msg" title="${nrEsc(P2.msgTip || "")}">${nrEsc(P2.msg)}</span>` : ""}<button type="button" class="p2-nav" data-mv="-1" aria-label="이전 사진">‹</button>` +
     `<button type="button" class="p2-okb" data-mark="ok">통과<kbd>O</kbd></button><button type="button" class="p2-exb${ex ? " on" : ""}" data-mark="ex">${ex ? "제외 취소" : "제외"}<kbd>X</kbd></button>` +
     `<button type="button" class="p2-nav" data-mv="1" aria-label="다음 사진">›</button><span class="p2-actr">` +
-    (p2Hand() ? '<span class="p2-mut p2-handnote" title="손라벨에서 나온 모듈: 박스는 원본 손라벨을 고쳐야 다음 학습셋에 들어간다(ML 10-02)">손라벨 사진 · 박스는 전처리에서 고치기</span>'
-      : `<button type="button" class="p2-undo p2-bdel" data-bdel="1"${b ? "" : ' disabled title="큰 사진에서 박스를 누르면 고름"'}>${b && p2Del(it, b) ? "지우기 취소" : "박스 지우기"}<kbd>D</kbd></button>`) +
+
     `${P2X.undo.length ? '<button type="button" class="p2-undo" data-undo="1">되돌리기<kbd>Z</kbd></button>' : ""}</span></div>`;
 }
 function p2StripScroll() { const s = document.getElementById("p2Strip"), e = s && s.querySelector(".cur"); if (e) s.scrollLeft = e.offsetLeft - s.clientWidth / 2 + e.offsetWidth / 2; }
@@ -487,6 +505,7 @@ document.querySelector(".main").addEventListener("click", e => {
   if ((x = t.closest("[data-exlist]"))) { p2ExList(); return; }
   if ((x = t.closest("[data-fixlist]"))) { p2FixList(); return; }
   if ((x = t.closest("[data-bdel]"))) { p2BoxDel(); return; }
+  if ((x = t.closest("[data-zoom]"))) { p2ZoomStep(+x.dataset.zoom); return; }
   if ((x = t.closest(".p2-mod[data-n]"))) { if (x.dataset.n !== P2.focus) p2Pick(x.dataset.n); return; }
   if ((x = t.closest("[data-flag]"))) { if (P2.flag !== x.dataset.flag) { P2.flag = x.dataset.flag; P2.off = 0; p2Load(0); } return; }
   if ((x = t.closest("[data-mv]"))) { p2Move(+x.dataset.mv); return; }
