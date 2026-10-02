@@ -31,6 +31,7 @@ python scripts/exp_queue.py status configs/<queue>.yaml
 |---|---|
 | `use` | 이어 붙일 모듈(같은 이미지 이름은 처음 것만) |
 | `exclude` | 걸러 내기 목록(이미지 이름). 이 사진들은 뺀다 |
+| (학습 제외 단추) | 대시보드 입력 데이터 탭에서 뺀 사진: `python scripts/make_exclude_filter.py` → `flt_train_exclude_<날짜>` 를 새 큐 `exclude` 에 적는다(러너 자동 반영 없음, 2026-10-02) |
 | `background` | `{ratio, pool, prefer, seed}`. 양성은 전부 두고 pool 모듈의 빈 사진만 골라 배경 비율을 맞춘다. prefer 목록을 먼저, 모자라면 random.Random(seed) 로 |
 | `repeat` | 반복(오버샘플). use 안 모듈은 모두 합쳐 k번, use 밖 모듈은 k번 더함 |
 
