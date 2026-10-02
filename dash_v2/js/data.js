@@ -286,6 +286,14 @@ function catModeRow(rel, onApply) {
   row.appendChild(sel); row.appendChild(ap);
   return row;
 }
+function zoneToggle() {                              // '영역' 체크: KISA 영역(.map) 구역을 편집 화면에 켜고 끔. 브라우저에 기억
+  const w = el("label"); w.title = "KISA 영역 파일(.map)의 감시 구역";
+  w.style.cssText = "display:inline-flex;align-items:center;gap:4px;white-space:nowrap;cursor:pointer;font-size:var(--fs-sm);font-weight:700;color:#3fb950";
+  const cb = el("input"); cb.type = "checkbox"; cb.checked = ZONE_ON; cb.style.cssText = "margin:0;cursor:pointer";
+  cb.onchange = () => { ZONE_ON = cb.checked; try { localStorage.setItem("zone_on", ZONE_ON ? "1" : "0"); } catch (e) {} if (ED && ED.redraw) ED.redraw(); };
+  w.appendChild(cb); w.appendChild(el("span", null, "영역"));
+  return w;
+}
 // ---------- 클립 상태(표시 기본/전파/손 + 전파 구간) ----------
 // 서버 저장이라 다른 PC 에서도 같이 보인다(손라벨 폴더에 있어 '서버로 라벨 보내기' 에 같이 간다).
 let CLIPST = {};                       // stem -> {mark, a, b, smoke}   smoke:"todo" = 불은 쳤고 연기가 아직 덜 쳐진 편
@@ -398,7 +406,10 @@ async function showRawVideo(rel) {
                    weather: [], tod: null, gt: (first.start != null ? first.start : null), gt_dur: first.dur || 0, sa: null });
   }
   const b = modeBox();
-  if (_mode0 !== "none") b.appendChild(markRadioRow(stemOf(clip)));   // 이 클립을 무엇으로 채웠나(기본/전파/손) · 고르면 바로 저장
+  if (_mode0 !== "none") {
+    const mr = markRadioRow(stemOf(clip)); b.appendChild(mr);   // 이 클립을 무엇으로 채웠나(기본/전파/손) · 고르면 바로 저장
+    zoneOf(clip).then(z => { if (z.length && mr.isConnected) { mr.appendChild(zoneToggle()); if (ED && ED.clip === clip && ED.redraw) ED.redraw(); } });   // KISA 영역 파일이 있으면 '영역' 체크(연기 미완 오른쪽)
+  }
   b.appendChild(catModeRow(rel, () => showRawVideo(rel)));          // 이 데이터셋을 무엇으로 라벨할지
 }
 function renderDatasetList() {

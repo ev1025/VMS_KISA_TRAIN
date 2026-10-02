@@ -229,3 +229,9 @@
 
 * 옛 결과 탭 · 영상 검수 탭 코드(`main.js buildResults` · `nrDraw` 등, `review.js enterReview` 등)는 남아 있으나 탭에서 부르지 않는다. 모델 학습이 쓰는 것: `nrOthers` · `nrCond` · `nrTerms` · `nrStatus` · `nrEnded` · `nrKeys` · `nrBindToggles` 와 `review.js` 의 `plotPath` · `barFrame` · `rvNear` · `nmsBoxes` · `RV_SHOW_MIN` · `REVIEW_ITEMS`
 * 2026-10-02 사용자: 비교 표에 해상도 · 배치 · 에폭 열(`train.js p3Cols`, 학습 설정 원본 값. 에폭은 학습 중 · 덜 돈 판이면 돈 / 정한). 조건 글이 이 셋뿐인 묶음(예: 1단계 해상도 × 배치)은 조건 열을 통째로 뺌, 조건 보조 줄에서도 해상도 · 배치 · Epoch 차이는 뺌
+
+## 16. 전처리 탭 이름 · KISA 영역 (2026-10-02)
+- 탭 이름 '데이터 확인' → '전처리'(요청서 1단계 이름, 사용자 10-02). 탭 키 `data` · 코드 이름은 그대로
+- 전처리 편집기에 KISA 영역 파일(.map) 감시 구역: 초록 칠 = Intrusion · Loitering 등, 회색 점선 = 화면 전체가 아닌 DetectArea. 표시 줄 '연기 미완' 오른쪽 '영역' 체크(영역이 있는 영상만, `localStorage zone_on`, 기본 켬)
+- 읽기: `js/editor.js zoneOf()` 가 `/dsimg/` 로 원본 폴더의 .map 을 직접 읽음(서버 새 기능 없음). 찾는 순서 = 카테고리/zone_maps/<영상>.map → 카테고리/zone_maps/<카메라>.map → 영상 폴더/map/<카메라>.map → 영상 폴더/map/<영상>.map → kisa_배포_검증영상/zone_maps/<카메라>.map(C00_ 카메라). 카메라 = C00_025_0001 → C00_025, C055301_003 → C055301, `fall_` 앞머리 뗌. KISA 카테고리만. 좌표 = 1280×720 기준을 영상 크기로
+

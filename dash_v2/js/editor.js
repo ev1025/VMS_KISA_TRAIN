@@ -68,6 +68,52 @@ function labelGaps(all) {
   }
   return out;
 }
+// ---------- KISA 영역 파일(.map) 감시 구역(10-02 사용자: 전처리에도 띄우고, 표시 줄 '영역' 체크로 켜고 끔) ----------
+// 서버 새 기능 없이 /dsimg/ 로 원본 폴더의 .map(XML, 1280×720 좌표)을 읽는다. 찾는 순서(build_dash_meta.zone_of 와 같은 이름 규칙):
+// 카테고리/zone_maps/<영상>.map → 카테고리/zone_maps/<카메라>.map → 영상 폴더/map/<카메라>.map → 영상 폴더/map/<영상>.map → 배포 검증영상 zone_maps/<카메라>.map(C00_ 카메라)
+// 카메라 = C00_025_0001 → C00_025, C055301_003 → C055301. fall_ 앞머리는 뗀다. KISA 카테고리만 찾는다
+const ZONES = {};                                    // clip → Promise<[{tag, pts:[[x,y] 0~1]}]>
+const ZONEMAP = {};                                  // clip → 다 읽은 구역 목록(그리기용, 동기)
+let ZONE_ON = (() => { try { return localStorage.getItem("zone_on") !== "0"; } catch (e) { return true; } })();
+function zoneOf(clip) {
+  if (ZONES[clip]) return ZONES[clip];
+  const parts = String(clip).split("/"), cat = parts[0], stem = parts[parts.length - 1], dir = parts.slice(0, -1).join("/");
+  const s = stem.replace(/^fall_/, ""), p = s.split("_"), cam = s.startsWith("C00_") ? p.slice(0, 2).join("_") : p[0];
+  const R = "data/원본데이터/", c = [];
+  if (/^kisa_/i.test(cat)) {
+    c.push(`${R}${cat}/zone_maps/${s}.map`, `${R}${cat}/zone_maps/${cam}.map`, `${R}${dir}/map/${cam}.map`, `${R}${dir}/map/${s}.map`);
+    if (s.startsWith("C00_")) c.push(`${R}kisa_배포_검증영상/zone_maps/${cam}.map`);
+  }
+  const parse = txt => {
+    const x = new DOMParser().parseFromString(txt.replace(/^\uFEFF/, ""), "text/xml");
+    if (!x.documentElement || x.getElementsByTagName("parsererror").length) return null;
+    return [...x.documentElement.children].filter(n => n.tagName !== "DetectionAreas").map(n => ({ tag: n.tagName,
+      pts: [...n.getElementsByTagName("Point")].map(q => q.textContent.split(",").map(Number)).filter(v => v.length === 2 && v.every(isFinite)).map(([a, b]) => [a / 1280, b / 720]) }))
+      .filter(z => z.pts.length >= 3 && !(z.tag === "DetectArea" && full(z.pts)));   // 화면 전체 검지 구역은 그릴 것이 없어 뺀다(그런 영상엔 '영역' 체크도 안 뜸)
+  };
+  const full = pts => { const xs = pts.map(q => q[0]), ys = pts.map(q => q[1]); return Math.min(...xs) < 0.01 && Math.max(...xs) > 0.99 && Math.min(...ys) < 0.01 && Math.max(...ys) > 0.99; };
+  return (ZONES[clip] = (async () => {
+    for (const u of c) {
+      try {
+        const r = await fetch("/dsimg/" + u.split("/").map(encodeURIComponent).join("/"));
+        if (!r.ok) continue;
+        const z = parse(await r.text());
+        if (z) return (ZONEMAP[clip] = z);
+      } catch (e) {}
+    }
+    return (ZONEMAP[clip] = []);
+  })());
+}
+function zoneSvg(clip, W, H) {                         // 감시 구역 = 초록 칠, 검지 구역(DetectArea, 화면 전체가 아닌 것만 남아 있음) = 회색 점선
+  const z = ZONE_ON ? ZONEMAP[clip] : null;
+  if (!z || !z.length) return "";
+  return z.map(({ tag, pts }) => {
+    const det = tag === "DetectArea";
+    const pt = pts.map(([a, b]) => `${(a * W).toFixed(1)},${(b * H).toFixed(1)}`).join(" ");
+    return `<polygon points="${pt}" pointer-events="none" vector-effect="non-scaling-stroke" ` +
+      (det ? 'fill="none" stroke="#8b949e" stroke-width="1.5" stroke-dasharray="6 4"' : 'fill="#3fb95018" stroke="#3fb950" stroke-width="2"') + `><title>${tag}</title></polygon>`;
+  }).join("");
+}
 let SAMFR = {};    // stem → SAM 전파 프레임 시각 목록(/api/sam2frames). 목록 배지 = 손라벨 ∪ SAM = 학습데이터 수
 function labeledCount(clip, mode) {   // mode 를 주면 그 모드 손라벨만 센다(방화 클립은 불·연기, 사람 클립은 사람)
   if (clip.startsWith("img:")) return (IMGLABELS || []).some(r => r.clip === clip && r.cls >= 0) ? 1 : 0;   // 이미지 = 프레임 하나
@@ -437,7 +483,7 @@ function renderEditor(f) {
   // ---------- 그리기: 손라벨 파랑 · SAM 주황 · 정답 하늘. 객체가 잡은 박스는 객체 색, 마스크는 객체별 층 ----------
   let saveState = "";
   const draw = (drag, dcls) => {
-    let s = `<svg viewBox="0 0 ${f.W} ${f.H}" style="position:absolute;inset:0;width:100%;height:100%">`;
+    let s = `<svg viewBox="0 0 ${f.W} ${f.H}" style="position:absolute;inset:0;width:100%;height:100%">` + (f.image ? "" : zoneSvg(f.clip, f.W, f.H));   // KISA 영역(맨 아래 층)
     const col = SRC_COLOR[LB.src] || SRC_COLOR.none;
     LB.boxes.forEach((b, i) => {                     // 박스의 객체: 참조샷 → 전파 결과의 번호 → 화재면 클래스(불=1 연기=2). 있으면 객체 색 + 번호
       const q = seedForBox(i);
@@ -1023,7 +1069,7 @@ function renderEditor(f) {
 
   // ---------- 편집기 핸들: 같은 클립의 다른 초로 넘어갈 때는 applyFrame 만 부른다(DOM 을 다시 만들지 않는다) ----------
   ED = {
-    clip: f.clip, mode: LB.mode, _tok: MY, loadSam, fillShots, frameDeleted, watch: () => watchJob(),
+    clip: f.clip, mode: LB.mode, _tok: MY, loadSam, fillShots, frameDeleted, watch: () => watchJob(), redraw: () => draw(),
     keydown: document.onkeydown, keyup: document.onkeyup,   // 같은 클립 재진입(ED 재사용) 때 다시 걸기 위해 보관
     setPseudo: (sec, boxes, src) => {                 // 늦게 도착한 의사라벨을 얹는다. 이미 화면에 박스가 있거나 손라벨로 확정된 프레임이면 무시
       if (LB.sec !== sec || LB.boxes.length || hasHand(f.saved) || LB.src === "hand") return;

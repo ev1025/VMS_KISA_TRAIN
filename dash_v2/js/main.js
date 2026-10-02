@@ -4,8 +4,8 @@
 let IS_BENCH = false;                 // 라벨 작업대(서버로 보내는 쪽)인가. boot 에서 /api/pushinfo 로 정한다
 function buildMode() {
   const box = $("#modeBox"); box.innerHTML = "";
-  const TABS = IS_BENCH ? [["data", "데이터 확인"]]                                  // 작업대는 라벨만 한다
-                        : [["data", "데이터 확인"], ["input", "입력 데이터"], ["train", "모델 학습"], ["history", "히스토리"]];
+  const TABS = IS_BENCH ? [["data", "전처리"]]                                  // 작업대는 라벨만 한다
+                        : [["data", "전처리"], ["input", "입력 데이터"], ["train", "모델 학습"], ["history", "히스토리"]];
   TABS.forEach(([k, label]) => {
     const b = el("button", k === CUR.mode ? "on" : "", label);
     b.onclick = () => {
