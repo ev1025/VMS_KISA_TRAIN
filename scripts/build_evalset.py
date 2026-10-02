@@ -2,9 +2,11 @@
 """검증셋 빌더: 채점 전용 카테고리(use: eval)의 영상에서 사람이 만든 라벨만 모아 mAP 검증셋을 만든다. 학습에 절대 넣지 않는다(검증 전용).
   포함  1) 손라벨 eval 행(cls -1 = 검토완료 → 박스 없는 배경 프레임)
         2) SAM 전파 결과(자동라벨/sam2/<stem>.json) — 채점 전용 카테고리 클립만. 손라벨 프레임이 있으면 손라벨이 우선
-        3) 배경 프레임 자동 표본(--bg N): 정답 XML 의 화재 발생 시각(StartTime) 이전 [0, 시작-여유) 구간에서 N장. 정답이 '불 없음'을 보증하는 구간이라 사람이 안 쳐도 된다
+        3) 라벨 범위 밖 = 대상 없음(--neg-step 초 간격, 2026-10-02): 편마다 박스 있는 첫 ~ 끝 시각 밖을 빈 프레임으로 넣는다.
+           범위 앞뒤 --neg-margin 초는 뺀다. 쓰러짐 편은 안 넣는다(넘어지기 전 · 뒤에도 사람이 있다). 범위 안 라벨 없는 칸도 안 넣는다(방화는 1초 간격으로 친다)
+           사용자가 대상이 나오는 동안을 다 쳐 두었다는 전제다(10-02 범위 밖 9장 확인: 불 꺼짐 · 구역에 사람 없음)
   출력  data/학습데이터/evalset_<mode>/{images,labels}/ + val.txt + meta.json
-  사용  python scripts/build_evalset.py fire [--name evalset_fire] [--bg 10] [--bg-margin 5]
+  사용  python scripts/build_evalset.py fire [--name evalset_fire] [--neg-step 2] [--neg-margin 3]
 러너(exp_queue.py)는 defaults.val_set 에 이 val.txt 경로를 주면 val_small 대신 이걸 검증셋으로 쓴다."""
 import sys, io, json, argparse, collections, time
 from pathlib import Path
@@ -13,8 +15,8 @@ import kisa_paths as KP            # 저장소 루트는 여기 한 곳에서만
 V = KP.V
 sys.path.insert(0, str(V / "dash_v2")); import gt_adapters as GTA
 ap = argparse.ArgumentParser(); ap.add_argument("mode", choices=["fire", "person", "intrusion", "loitering", "falldown"]); ap.add_argument("--name", default=None)
-ap.add_argument("--bg", type=int, default=10, help="클립마다 화재 발생 전 구간에서 뽑을 배경 프레임 수(0=안 뽑음)")
-ap.add_argument("--bg-margin", type=float, default=5.0, help="발생 시각 앞 여유(초). 이 안쪽은 배경으로 안 쓴다(불씨가 보일 수 있다)")
+ap.add_argument("--neg-step", type=float, default=2.0, help="라벨 범위 밖에서 빈 프레임을 뽑는 간격(초). 0 = 안 뽑음")
+ap.add_argument("--neg-margin", type=float, default=3.0, help="라벨 범위 앞뒤 여유(초). 이 안쪽은 빈 프레임으로 안 쓴다(들어오는 사람 · 불씨가 걸칠 수 있다)")
 a = ap.parse_args()
 RAW = V / "data/원본데이터"; D = GTA.Datasets(V / "configs/datasets.yaml", RAW)
 NAME = a.name or f"evalset_{a.mode}"; OUT = V / "data/학습데이터" / NAME
@@ -103,25 +105,23 @@ for f in sorted((V / "data/학습데이터/자동라벨/sam2").glob("*.json")):
         if key in frames or not objs or not fall_keep(*key):
             continue
         frames[key] = [(sam_cls(o), list(b)) for o, b in objs.items()]; src[key] = "sam"
-# 3) 배경 프레임: 정답 화재 발생 시각 앞 구간에서 균등 표본
-if a.bg > 0:
+# 3) 라벨 범위 밖 = 대상 없음. 편마다 박스 있는 첫 ~ 끝 시각(± 여유) 밖을 neg_step 초 간격으로
+if a.neg_step > 0:
     for stem in sorted({s for s, _ in frames}):
         mp4 = eval_clip(stem)
         if not mp4:
             continue
-        if _clip_item(mp4) == "falldown":           # 넘어지기 전에도 그 사람이 걸어 다닌다(081 은 5명). '사람 없음' 으로 못 쓴다(2026-10-02)
-            stats["배경 생략:쓰러짐 편"] += 1; continue
-        st = fire_start(mp4)
-        if st is None:
-            stats["배경 생략:발생시각 없음"] += 1; continue
-        end = st - a.bg_margin
-        if end < 2:
-            stats["배경 생략:구간 짧음"] += 1; continue
-        for i in range(a.bg):
-            t = round((end * (i + 0.5) / a.bg) * 2) / 2
-            key = (stem, t)
-            if key not in frames:
-                frames[key] = []; src[key] = "bg"
+        if _clip_item(mp4) == "falldown":           # 넘어지기 전 · 뒤에도 그 사람이 있다(081 은 5명). '대상 없음' 으로 못 쓴다
+            stats["범위 밖 생략:쓰러짐 편"] += 1; continue
+        pos = [t for (c, t), b in frames.items() if c == stem and b]
+        if not pos:
+            continue
+        lo, hi = min(pos) - a.neg_margin, max(pos) + a.neg_margin
+        cap = cv2.VideoCapture(str(mp4)); dur = cap.get(cv2.CAP_PROP_FRAME_COUNT) / (cap.get(cv2.CAP_PROP_FPS) or 30.0); cap.release()
+        for k in range(int((dur - 1) / a.neg_step) + 1):
+            t = round(k * a.neg_step * 2) / 2
+            if (t < lo or t > hi) and (stem, t) not in frames:
+                frames[(stem, t)] = []; src[(stem, t)] = "out"
 
 # 프레임 뽑기 + 라벨 쓰기
 (OUT / "images").mkdir(parents=True, exist_ok=True); (OUT / "labels").mkdir(parents=True, exist_ok=True)
@@ -146,7 +146,7 @@ for c in caps.values():
 (OUT / "data.yaml").write_text(f"path: {OUT}\ntrain: {OUT}/val.txt\nval: {OUT}/val.txt\nnc: {len(NAMES)}\nnames: {NAMES}\n")   # 검증 전용. train 칸은 ultralytics 형식 때문에 채울 뿐 학습에 쓰지 않는다
 clips = sorted({s for s, _ in frames})
 meta = {"name": NAME, "mode": a.mode, "items": sorted(WANT), "built": time.strftime("%F %T"), "frames": len(lst), "clips": clips,
-        "boxes": sum(len(b) for b in frames.values()), "bg_per_clip": a.bg, "bg_margin_s": a.bg_margin,
-        "source": "손라벨 eval 행 > SAM 전파(채점 전용 클립) > 발생 전 배경 표본", "use": "검증 전용. 학습 금지", "stats": dict(stats)}
+        "boxes": sum(len(b) for b in frames.values()), "neg_step_s": a.neg_step, "neg_margin_s": a.neg_margin,
+        "source": "손라벨 eval 행 > SAM 전파(채점 전용 클립) > 라벨 범위 밖 빈 프레임(쓰러짐 제외)", "use": "검증 전용. 학습 금지", "stats": dict(stats)}
 (OUT / "meta.json").write_text(json.dumps(meta, ensure_ascii=False, indent=1), encoding="utf-8")
 print(f"완료 → {OUT}  프레임 {len(lst)} · 클립 {len(clips)} · 박스 {meta['boxes']}  {dict(stats)}")
