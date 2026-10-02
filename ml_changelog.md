@@ -1,7 +1,7 @@
 # ML → 대시보드 변경 기록 (ml_changelog.md)
 
 계약 버전: v5
-미확인: v5
+미확인: 없음
 
 ## 규칙
 
@@ -54,7 +54,7 @@
 - 영향: 대시보드 드롭다운은 train · eval 만 보이므로 off 는 숨겨짐(요청대로). 러너 `assert_trainable` 은 eval · none 만 막아 off 는 막지 않음
 - 옮기기: 없음
 - 쓴 사람: ML 세션
-- 확인:
+- 확인: 2026-10-02 dash_v2 830f8ee(드롭다운 = use 가 train · eval 인 것만, off 는 숨김. 서버 A 실측 16 → 14)
 
 ## v4 · 2026-10-02 · 학습 데이터 조합(compose) 형식 · 모듈 목록 파일
 
@@ -158,3 +158,4 @@
 - (2026-10-02) 요청: `configs/datasets.yaml` 의 `open_dfire` · `open_azimjaan_fire` · `kisa_산불_정지이미지` 를 '지금 안 씀' 으로 표시해 달라(사용자 10-02 "DFIRE 랑 AZIMJAAN 은 안 쓰는 데이터 아니야?" · "산불이미지도 안 쓰지 않아?"). 대시보드가 본 근거: `results/*/meta.json` 에 dfire 마지막 09-12(3판), azimjaan 마지막 09-15(22판), 09-16 이후 meta · 방화 큐에 없음. 산불 정지이미지 9,500장은 meta · 큐에 이름이 없고 손라벨은 `image_labels.json` 1장뿐(build_trainset 이 image_labels 를 읽으니 그 1장은 손라벨셋에 들어갈 수 있음 = 판단은 ML). 산불 합성영상은 손라벨 24프레임(2편)이 있어 요청에서 뺐다. 라이선스상 학습은 가능하니 `none`(학습 금지)과 다른 값 제안 = `use: off` + note 에 이유. 대시보드 데이터 확인 드롭다운은 `use` 가 `train` · `eval` 인 것만 보이게 바꿨다(값을 바꾸면 바로 숨음) → ML 답(2026-10-02): dfire · 산불 정지이미지는 use: off(v5). azimjaan 은 방화 2단계 rsmall 판(큐 대기)이 다시 써서 train 유지
 - (2026-10-02) 알림: 계약 v4 반영(dash_v2 ee87472, `CONTRACT_VER = 4`). 결과 탭 데이터 칸 = `compose`(use 모듈 · ×반복 · 빼기 flt_* · 배경 N% · 우선 목록), 학습 데이터 보기 = 조합 판 셋 목록 + `mod_*` · `flt_*` 의 `list.txt` 를 읽음(`flt_*` 는 이름만이라 사진 0장). `configs/data_modules.yaml` 은 2단계 입력 데이터 탭에서 읽는다. 서버 B 재시작함, 서버 A 는 사용자 라벨 작업 중이라 재시작을 미룸(파이썬 모듈이라 재시작 전엔 옛 코드)
 - (2026-10-02) 요청: `scripts/review_cache._datasets()` 가 `compose` 를 안 읽는다(`base` · `oversample` · `extras` 만). compose 판은 이름 목록이 비어 `_current()` 가 False → 결과 탭 '새 데이터' 표식 · 검수 대상(`eligible`)에서 빠질 수 있음. `compose.use` · `repeat` 키 · `background.pool` 을 넣어 달라(import 계약 이름이라 ML 소유) → ML 답(2026-10-02): 고침. compose 판은 use · repeat · background.pool 을 읽고, 사람 판 '지금 데이터' 는 hnfix 또는 2026-09-27 이후 mod_ 모듈
+- (2026-10-02) 알림: 계약 v5 확인(`CONTRACT_VER = 5`). 서버 B 의 `configs/datasets.yaml` 은 09-28 사본 그대로라 B 화면에는 open_dfire · kisa_산불_정지이미지 가 아직 보임(B 실측 16개). B 로 규격 파일 옮기는 건 ML 몫 → ML 답( )
