@@ -464,10 +464,11 @@ function renderEditor(f) {
   drawRef = draw;
   const saveNow = async () => {                       // 화면 박스 → 손라벨 저장(SAM 전파 결과·정답 초안은 보이는 그대로 손라벨로)
     LB.boxes.forEach((b, i) => { if (b[5] == null) { const q = seedForBox(i); const o = q ? q.obj : (isFire() ? objOfCls(b[0]) : null); if (o != null) b[5] = o; } });   // 객체 번호를 채워 저장(옛 박스도)
+    const t = f.t, boxes = LB.boxes.map(b => b.slice());   // 저장 중 다음 프레임으로 넘어가도 이 프레임 값으로 마무리한다(10-02: 빈 곳을 채우고 넘어가면 다음 프레임 전파 박스가 화면에서 사라지던 것)
     try {
-      await postLabel(f.stem, f.t, f.W, f.H, LB.boxes, f.src);
-      f.saved = LB.boxes.map(b => b.slice()); LB.src = "hand";
-      if ((SAMMAP[f.clip] || {})[tkey(f.t)]) { samForget(f.clip, f.t); SM.propFrames = SAMFR[f.stem].map(tkey); }   // 손라벨이 SAM 을 대신(서버 저장소는 savelabel 이 뺐다)
+      await postLabel(f.stem, t, f.W, f.H, boxes, f.src);
+      if (near(f.t, t)) { f.saved = boxes.map(b => b.slice()); LB.src = "hand"; }   // 아직 같은 프레임일 때만 화면 상태를 손라벨로
+      if ((SAMMAP[f.clip] || {})[tkey(t)]) { samForget(f.clip, t); SM.propFrames = SAMFR[f.stem].map(tkey); }   // 손라벨이 SAM 을 대신(서버 저장소는 savelabel 이 뺐다)
       fillShots(); saveState = ""; draw(); if (typeof updateRawBadge === "function") updateRawBadge(f.stem);   // 목록 배지(영상·이미지 공통)
     } catch (e) { saveState = "저장 실패"; draw(); }
   };
@@ -481,7 +482,7 @@ function renderEditor(f) {
   let _tapGen = 0;                                   // 되돌리기마다 +1 → 그 전에 보낸 탭 요청 결과는 버린다
   const applyHist = e => {                           // 이력 항목을 지금 프레임에 적용. 초안(SAM·정답) 상태면 손라벨 기록을 지우고 초안으로 되돌린다
     LB.boxes = JSON.parse(e.boxes); sel = null; if (e.sam) applySam(JSON.parse(e.sam));
-    if (e.src && e.src !== "hand") { LB.src = e.src; draw(); clearLabel(f.stem, f.t).then(() => { f.saved = null; fillShots(); }).catch(() => {}); }
+    if (e.src && e.src !== "hand") { const t0 = f.t; LB.src = e.src; draw(); clearLabel(f.stem, t0).then(() => { if (near(f.t, t0)) f.saved = null; fillShots(); }).catch(() => {}); }
     else { LB.src = "hand"; draw(); saveNow(); }
   };
   const restore = (from, to) => {
