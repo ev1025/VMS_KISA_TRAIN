@@ -396,7 +396,8 @@ function renderEditor(f) {
   const bUndo = mkBtn("↶", "되돌리기 (Ctrl+Z)"), bRedo = mkBtn("↷", "다시하기 (Ctrl+Shift+Z)"), bRev = mkBtn("라벨 검수", "이 클립의 SAM 전파 결과를 격자로 검수");
   const bGo = mkBtn("전파", "참조샷으로 전파 → SAM 저장소 자동 저장. 결과가 있는 클립에서 지금 프레임에 참조샷이 있으면 '이어서 전파' = 그 프레임부터 종료까지 뒤로만"); bGo.style.cssText += ";color:var(--blue);border-color:var(--blue);font-weight:800;padding:0 12px";
   const bClr = mkBtn("전파 지우기", "이 클립의 SAM 전파 결과를 저장소에서 전부 뺀다(손라벨은 그대로)"); bClr.hidden = true;
-  const pstat = el("span", "now", ""); pstat.style.whiteSpace = "nowrap";
+  const pstat = el("span", "now", ""); pstat.style.cssText = "flex:1 1 0;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap";   // 진행 · 알림 글은 도구 줄 남는 자리만 쓴다(넘치면 줄임). 글이 생겨 줄이 접히면 높이가 바뀌어 화면이 작아지던 것(10-02)
+  bGo.style.minWidth = "84px";                       // 전파 · 이어서 전파 · 전파 취소 · 취소 중… 으로 글이 바뀌어도 폭이 그대로(줄이 안 접히게)
   const tstat = el("span", "now", ""); tstat.style.cssText = "color:var(--mut);font-size:var(--fs-xs);white-space:nowrap";
   const bReset = mkBtn("프레임 초기화", "이 클립의 손라벨·전파 결과·참조샷을 전부 지운다(손라벨은 백업됨)"); bReset.style.cssText += ";color:#f85149;border-color:#f8514966";
   // 순서: 되돌리기 · 전파 · 검수 · 초기화 · 건수 · 상태
