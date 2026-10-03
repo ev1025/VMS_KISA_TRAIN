@@ -618,7 +618,7 @@ _RV_NAME = re.compile(r"^[A-Za-z0-9_.\-]+$")
 
 # ---------------------------------------------------------------- 히스토리 탭(2026-09-30): 모델 개선 기록, 사용자가 고친다
 HISTORY = G / "configs/history.yaml"
-CONTRACT_VER = 5                                       # ml_changelog.md 맨 위 vN 과 같아야 한다(scripts/check_contract.py 가 대조)
+CONTRACT_VER = 6                                       # ml_changelog.md 맨 위 vN 과 같아야 한다(scripts/check_contract.py 가 대조)
 HS_ST, HS_DEC = ("할 일", "진행", "완료"), ("채택", "기각", "보류")   # 계약 v3(2026-10-01): 아이디어 삭제. 할지 덜 정한 것도 할 일 + cond, 판정으로 가른다
 HS_ITEM = ("방화", "사람", "쓰러짐", "공통")
 HS_KEYS = ("id", "s", "dec", "t", "why", "sub", "ref", "cond", "carry", "item", "phase")
