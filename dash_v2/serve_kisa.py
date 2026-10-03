@@ -84,12 +84,25 @@ def _train_item(b):
                           "at": datetime.now(timezone(timedelta(hours=9))).strftime("%Y-%m-%d %H:%M:%S")}
 
 
+def _rebase(p):
+    """다른 서버(A · B)에서 적은 절대 경로 → 이 서버 경로. 저장소 뿌리 아래 '/data/' 부터는 두 서버가 같다(10-03 사용자: B 는 A 와 늘 같게).
+    학습 제외 · 라벨 고침 목록을 서버끼리 그대로 복사해도 사진과 맞는다. ML 걸러 내기는 name 으로 맞춰서 경로와 무관"""
+    p = str(p or "")
+    i = p.find("/data/")
+    return str(G) + p[i:] if i >= 0 and not p.startswith(str(G) + "/") else p
+
+
+def _train_list_read(fl):
+    """목록 파일 읽기(경로는 이 서버 기준으로)"""
+    d = read_json(fl, {})
+    return [dict(x, path=_rebase(x.get("path"))) for x in (d.get("items") if isinstance(d, dict) else None) or [] if isinstance(x, dict)]
+
+
 def _train_list_edit(fl, same, item):
     """손라벨 옆 목록 파일 {"items": [...]} 고치기: same(줄) 인 줄을 빼고 item 이 있으면 넣는다. 손라벨 저장과 같은 잠금 · 그날 첫 저장 전 백업"""
     with _SAVE_LOCK:
         _backup_labels(fl)
-        d = read_json(fl, {})
-        items = [x for x in (d.get("items") if isinstance(d, dict) else None) or [] if not same(x)]
+        items = [x for x in _train_list_read(fl) if not same(x)]
         if item:
             items.append(item)
         write_json(fl, {"items": items})
@@ -2313,7 +2326,7 @@ class H(BaseHTTPRequestHandler):
             self._bytes(json.dumps(body, ensure_ascii=False).encode(), "application/json; charset=utf-8"); return
         if p in ("/api/train_exclude", "/api/train_fix"):   # 입력 데이터 탭 학습 제외 · 라벨 고침 목록(POST 로 고친다)
             fl = train_exclude_file() if p == "/api/train_exclude" else train_fix_file()
-            self._bytes(json.dumps(read_json(fl, {"items": []}), ensure_ascii=False).encode(), "application/json; charset=utf-8"); return
+            self._bytes(json.dumps({"items": _train_list_read(fl)}, ensure_ascii=False).encode(), "application/json; charset=utf-8"); return
         if p in ("/api/tv_exps", "/api/tv_set", "/api/tv_thumb", "/api/tv_summary", "/api/data_modules"):   # 학습 데이터 보기(2026-10-01) · 입력 데이터 탭(10-02). 읽기만. 계산은 dash_v2/trainview.py
             q = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
             g = lambda k, d="": (q.get(k) or [d])[0]
