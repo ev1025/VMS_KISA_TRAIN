@@ -4,7 +4,64 @@
 name: hold_after_stage0_20261003
 defaults: {min_free_gb: 150, ram_cache_max: 0, stagger_sec: 120, util_gate_pct: 30, util_window_min: 10,
   val_small: 600, vram_gate_mib: 10000}
+# 2026-10-03 13시 추가: 방화 2단계 nightpos(35/60) · rsmall(32/60) 은 11:50 검증 사진이 없어 멈춤(꾸러미 정리 때 검증용 handset_fire_all_20260926 을 지운 실수). 검증 목록에서 없는 276장을 빼 두었으니(val_domain.txt.bak_1003_deleted_val 백업) 같은 이름으로 넣으면 last.pt 에서 이어 학습
 experiments:
+- name: f960_grid2_nightpos_b160_20261001
+  model: yolo11s
+  item: 방화
+  phase: grid2
+  names:
+  - fire
+  - smoke
+  base: aihub71751_48k_pos_20260928
+  extras:
+  - fasdd_snowfog
+  - fasdd_yolo_pos_20260928
+  - wildfire_pos_yolo
+  - wildfire_fog_neg
+  - fire_snowbg_흑백불_20260926
+  oversample:
+    handset_fire_hand_20260928: 4
+    fire_mask_hn_fog_20260926: 3
+    aihub71751_night_20260928: 4
+  extra:
+    patience: 0
+    seed: 0
+  train:
+    multi_scale: 0.0
+    epochs: 60
+    cache: false
+    workers: 8
+    imgsz: 960
+    batch: 160
+  need_mib: 85000
+- name: f960_grid2_rsmall_b160_20261001
+  model: yolo11s
+  item: 방화
+  phase: grid2
+  names:
+  - fire
+  - smoke
+  base: aihub71751_48k_pos_20260928
+  extras:
+  - fasdd_snowfog
+  - fasdd_yolo_pos_20260928
+  - wildfire_pos_yolo
+  - fire_snowbg_흑백불_20260926
+  oversample:
+    handset_fire_hand_20260928: 8
+    fire_mask_hn_fog_20260926: 3
+  extra:
+    patience: 0
+    seed: 0
+  train:
+    multi_scale: 0.0
+    epochs: 60
+    cache: false
+    workers: 8
+    imgsz: 960
+    batch: 160
+  need_mib: 85000
 - name: f1280_grid_b170_20261002
   model: yolo11s
   item: 방화
