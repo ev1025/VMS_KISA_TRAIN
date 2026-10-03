@@ -5,6 +5,7 @@
 # 실행: exp_queue.py run 이 파일 --jobs 2 --wait-tmux grid2f. 채점 = 작업 PC 감시(SCORE_ON_THOR) · 서버 B 검증 F1(relay_watch)
 # 2026-10-02 19시: 방화 두 판(대조군 시드 1 · 11m)의 바탕을 배경 10%(f960_bgtest_bg10_b160_20260928 과 같은 구성)로. 방화 대조군 = 배경 10% 판(사용자 "일단 10%로 바꾸고")
 # 2026-10-03 07시 앞에 넣음: ① 방화 1단계 1280 b170 이어 학습(10-03 03:35 러너가 옆에 b85 를 띄워 둘 다 OOM, last.pt = 47/60 에폭) ② 사람 4단계(결선) 1280 b170 · 배경 10%(사용자 10-03: 41% 와 차이가 0.006 으로 작아 울트라리틱스 권장 0 ~ 10% 를 따름) · 학습 제외 29장 + 배포 검증영상 프레임 189장 뺌, 시드 0 · 1 ③ 방화 1280 b85 처음부터(need 100000 으로 올림). 사람 1단계 판정(검증 라벨 F1, IoU 0.50 ~ 0.95 최대 F1): 1280 b170 0.737 > b85 0.7305 · 960 0.706 · 640 0.658, 배경 41% 0.7365 vs 10% 0.7305(b85, 차이 작음 → 권장 10%), 2단계 6판 채택 없음 → 4단계 = b170 + 배경 10%
+# 2026-10-03 09시 사용자 '코코 줄여서 테스트하는 거 한 번 먼저': 맨 앞에 사람 COCO 축소 2판(COCO 사람 12k · 24k 무작위, 우리 영상 프레임은 그대로 · 반복 없음, 1280 b170 배경 10%). 대조군 = 1단계 p1280_grid_b170_bg10_20260929(0.737, 학습 제외 217장만 다름). 사람 4단계 두 판은 방화 1280 b85 뒤로(COCO 결과로 4단계 구성을 다시 정할 시간)
 name: queue_grid2b_20261002
 defaults:
   val_small: 600
@@ -15,6 +16,72 @@ defaults:
   util_gate_pct: 30
   util_window_min: 10
 experiments:
+- name: p1280_grid2_coco12k_b170_20261003
+  model: yolo11s
+  item: 사람
+  phase: grid2
+  names:
+  - person
+  compose:
+    use:
+    - mod_person_coco_pos_r12k_20261003
+    - mod_person_own_pos_20260927
+    - mod_person_own_empty_20260927
+    - mod_person_coco_empty_20260927
+    exclude:
+    - flt_train_exclude_20261002
+    - flt_evalclips_20261002
+    background:
+      ratio: 0.1
+      pool:
+      - mod_person_coco_empty_20260927
+      seed: 0
+  val_set: data/학습데이터/trainset_person_hnfix_20260927/val_domain.txt
+  extra:
+    patience: 0
+    seed: 0
+    save_period: 5
+  train:
+    multi_scale: 0.0
+    epochs: 60
+    cache: false
+    workers: 8
+    imgsz: 1280
+    batch: 170
+  need_mib: 168000
+- name: p1280_grid2_coco24k_b170_20261003
+  model: yolo11s
+  item: 사람
+  phase: grid2
+  names:
+  - person
+  compose:
+    use:
+    - mod_person_coco_pos_r24k_20261003
+    - mod_person_own_pos_20260927
+    - mod_person_own_empty_20260927
+    - mod_person_coco_empty_20260927
+    exclude:
+    - flt_train_exclude_20261002
+    - flt_evalclips_20261002
+    background:
+      ratio: 0.1
+      pool:
+      - mod_person_coco_empty_20260927
+      seed: 0
+  val_set: data/학습데이터/trainset_person_hnfix_20260927/val_domain.txt
+  extra:
+    patience: 0
+    seed: 0
+    save_period: 5
+  train:
+    multi_scale: 0.0
+    epochs: 60
+    cache: false
+    workers: 8
+    imgsz: 1280
+    batch: 170
+  need_mib: 168000
 - name: f1280_grid_b170_20261002
   model: yolo11s
   item: 방화
@@ -43,6 +110,34 @@ experiments:
     imgsz: 1280
     batch: 170
   need_mib: 168000
+- name: f1280_grid_b85_20261002
+  model: yolo11s
+  item: 방화
+  phase: grid1
+  names:
+  - fire
+  - smoke
+  base: aihub71751_48k
+  extras:
+  - fasdd_snowfog
+  - fasdd_yolo
+  - wildfire_pos_yolo
+  - wildfire_fog_neg
+  - fire_snowbg_흑백불_20260926
+  oversample:
+    handset_fire_hand_20260928: 4
+    fire_mask_hn_fog_20260926: 3
+  extra:
+    patience: 0
+    seed: 0
+  train:
+    multi_scale: 0.0
+    epochs: 60
+    cache: false
+    workers: 8
+    imgsz: 1280
+    batch: 85
+  need_mib: 100000
 - name: p1280_grid4_b170_s0_20261003
   model: yolo11s
   item: 사람
@@ -109,34 +204,6 @@ experiments:
     imgsz: 1280
     batch: 170
   need_mib: 168000
-- name: f1280_grid_b85_20261002
-  model: yolo11s
-  item: 방화
-  phase: grid1
-  names:
-  - fire
-  - smoke
-  base: aihub71751_48k
-  extras:
-  - fasdd_snowfog
-  - fasdd_yolo
-  - wildfire_pos_yolo
-  - wildfire_fog_neg
-  - fire_snowbg_흑백불_20260926
-  oversample:
-    handset_fire_hand_20260928: 4
-    fire_mask_hn_fog_20260926: 3
-  extra:
-    patience: 0
-    seed: 0
-  train:
-    multi_scale: 0.0
-    epochs: 60
-    cache: false
-    workers: 8
-    imgsz: 1280
-    batch: 85
-  need_mib: 100000
 - name: p1280_grid2_ctl_s1_b85_20261002
   model: yolo11s
   item: 사람
