@@ -28,7 +28,7 @@ def tiles(fr):
     return [fr] + [fr[y:y+h//2, x:x+w//2] for x, y in ((0,0),(w//2,0),(0,h//2),(w//2,h//2),(w//4,h//4))]
 
 
-m = YOLO(str(G/"model/fire_base.pt"))
+m = YOLO(str(G/"model/pre_test_v1/fire_base.pt"))
 out = {}
 for mp4 in sorted((W/"vms/data/원본데이터/kisa_배포_방화채점셋/videos").glob("*.mp4")):
     g, dur = gt(W/"vms/data/원본데이터/kisa_배포_방화채점셋/gt"/(mp4.stem+".xml"))

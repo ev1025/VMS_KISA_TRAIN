@@ -29,7 +29,7 @@ ROOT_PY = {"model.py", "score_kisa.py", "config.py"}
 # SUMMARY.md 는 exp_queue · build_summary 가 실험이 끝날 때마다 다시 쓰는 한 장 요약이다(2026-09-29 추가)
 RESULTS_FILES = {"MODELS.json", "loocv_results.json", "BASELINE.json", "SUMMARY.md"}
 # 학습 가중치가 아닌 산출물이 들어가는 runs 폴더(SeqNet 등). best.pt 가 없는 게 정상이다.
-RUNS_EXCEPT = {"fall_track", "fall_seq", "_eval", "_archive"}
+RUNS_EXCEPT = {"fall_track", "fall_seq", "_eval", "_archive", "pre_test_v1"}   # pre_test_v1 = 09-26 이전 옛 판 모음(2026-10-03, 한 단계 깊음)
 # 루트에 둘 수 있는 폴더 · 파일(docs/file_path.md 2절). 캡처 사진 · 백업 폴더가 루트에 쌓이는 것을 잡는다
 # (2026-10-02: 루트에 _*.jpg 12장 · weights_배포원본/ 이 있었는데 위 검사는 .py 만 봐서 못 잡았다)
 ROOT_DIRS = {".git", ".venv", "__pycache__", "_exp", "_kisa_port", "configs", "dash_v2", "data", "docs", "dumps",
@@ -62,10 +62,11 @@ def root_stray(root):
 def empty_results(rd):
     """기록(score.txt · meta.json)이 없는 결과 폴더. 빼는 것:
     '_' 로 시작하는 폴더(실험이 아닌 기준 자료, 예 _exam_ref = 시험 PC 결과 기준, scripts/exam_ingest.py)
+    pre_test_v1(09-26 데이터 정정 이전 옛 판을 모아 둔 곳, 2026-10-03)
     SCORE_ON_THOR 하나만 있는 폴더(러너가 큐를 걸 때 미리 만든 표시. 아직 안 돈 판이다)"""
     out = []
     for d in rd.iterdir():
-        if not d.is_dir() or d.name.startswith("_") or (d / "score.txt").is_file() or (d / "meta.json").is_file():
+        if not d.is_dir() or d.name.startswith("_") or d.name == "pre_test_v1" or (d / "score.txt").is_file() or (d / "meta.json").is_file():
             continue
         if {x.name for x in d.iterdir()} == {"SCORE_ON_THOR"}:
             continue

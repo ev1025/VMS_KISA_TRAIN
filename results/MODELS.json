@@ -85,9 +85,9 @@
    "path": "vms/_kisa_port/weights/kisa/fire_fog.pt",
    "experiment": "f960_mask_hn_x2_fog3_20260920",
    "실험": "f960_mask_hn_x2_fog3_20260920",
-   "원본": "runs/f960_mask_hn_x2_fog3_20260920/yolo11s/weights/best.pt",
+   "원본": "runs/pre_test_v1/f960_mask_hn_x2_fog3_20260920/yolo11s/weights/best.pt",
    "found_at": [
-    "runs/f960_mask_hn_x2_fog3_20260920/yolo11s/weights/best.pt"
+    "runs/pre_test_v1/f960_mask_hn_x2_fog3_20260920/yolo11s/weights/best.pt"
    ],
    "task": "fire/smoke detect (2class)",
    "used_by": [
@@ -144,9 +144,9 @@
    "path": "vms/_kisa_port/weights/kisa/fire_small.pt",
    "experiment": "f960_best_s_20260915",
    "실험": "f960_best_s_20260915",
-   "원본": "runs/f960_best_s_20260915/yolo11s/weights/best.pt",
+   "원본": "runs/pre_test_v1/f960_best_s_20260915/yolo11s/weights/best.pt",
    "found_at": [
-    "runs/f960_best_s_20260915/yolo11s/weights/best.pt"
+    "runs/pre_test_v1/f960_best_s_20260915/yolo11s/weights/best.pt"
    ],
    "task": "fire/smoke detect (2class)",
    "used_by": [
@@ -198,7 +198,7 @@
   },
   "person_v2.pt": {
    "sha256_16": "1b25d92bfc56453b",
-   "path": "vms/model/person_v2.pt",
+   "path": "vms/model/pre_test_v1/person_v2.pt",
    "task": "person detect",
    "used_by": [
     "배회"
@@ -240,13 +240,13 @@
    "note": "person_v3 = 이 데이터 + 야간 트랙 542장.",
    "size_mb": 19.2,
    "found_at": [
-    "runs/person_v2/weights/best.pt"
+    "runs/pre_test_v1/person_v2/weights/best.pt"
    ],
    "experiment": "person_v2"
   },
   "person_v3.pt": {
    "sha256_16": "4006bb79730cc250",
-   "path": "vms/model/person_v3.pt",
+   "path": "vms/model/pre_test_v1/person_v3.pt",
    "task": "person detect",
    "used_by": [
     "침입"
@@ -292,7 +292,7 @@
    "note": "의사라벨 18,532장이 성능의 핵심. 빼고 학습한 person_coco_kisa_s 는 침입 69.23 으로 떨어진다.",
    "size_mb": 19.2,
    "found_at": [
-    "runs/person_v3/weights/best.pt"
+    "runs/pre_test_v1/person_v3/weights/best.pt"
    ],
    "experiment": "person_v3"
   },
@@ -324,7 +324,7 @@
  "retired": {
   "fire_snowfull.pt": {
    "sha256_16": "c76b7d69a275e4dc",
-   "path": "/NHNHOME/WORKSPACE/26mss002_E3/vms/runs/g_wildpos_20260912/yolo11s/weights/best.pt",
+   "path": "/NHNHOME/WORKSPACE/26mss002_E3/vms/runs/pre_test_v1/g_wildpos_20260912/yolo11s/weights/best.pt",
    "task": "fire/smoke detect (2class)",
    "used_by": [
     "방화"
@@ -366,7 +366,7 @@
    "sha256_16": "689ba18d53651931",
    "path": "vms/_kisa_port/weights/kisa/fire_fog.pt",
    "실험": "fresh_48k_wildall_20260909",
-   "원본": "runs/fresh_48k_wildall_20260909/yolo11s/weights/best.pt",
+   "원본": "runs/pre_test_v1/fresh_48k_wildall_20260909/yolo11s/weights/best.pt",
    "task": "fire/smoke detect",
    "used_by": [
     "방화"
@@ -405,7 +405,7 @@
    "sha256_16": "dbec41d2a2e97091",
    "path": "vms/_kisa_port/weights/kisa/fire_small.pt",
    "실험": "s2_s960_20260913",
-   "원본": "logs/_archive/2026-09-15/r960오염실험/runs/s2_s960_20260913/yolo11s/weights/best.pt",
+   "원본": "logs/_archive/2026-09-15/r960오염실험/runs/pre_test_v1/s2_s960_20260913/yolo11s/weights/best.pt",
    "task": "fire/smoke detect",
    "used_by": [
     "방화"
@@ -480,7 +480,7 @@
   },
   "fire_snowfull.pt(2026-09-15 이전 배포)": {
    "sha256_16": "77741a01590b419b",
-   "path": "vms/runs/fire_snowfull_20260908/weights/best.pt",
+   "path": "vms/runs/pre_test_v1/fire_snowfull_20260908/weights/best.pt",
    "task": "fire/smoke detect (2class)",
    "used_by": [
     "방화"
@@ -501,7 +501,7 @@
     "status": "dataset_deleted",
     "note": "data/학습데이터/mix_fire_snowfull_20260908 삭제됨. args.yaml 에 경로만 남아 구성 복구 불가."
    },
-   "evidence": "runs/fire_snowfull_20260908/args.yaml · results/fire_snowfull_20260908.txt",
+   "evidence": "runs/pre_test_v1/fire_snowfull_20260908/args.yaml · results/fire_snowfull_20260908.txt",
    "note": "이름의 snowfull = 눈 증강 전량 투입. 정확한 혼합비는 남아 있지 않다. · 2026-09-15 배포에서 내려옴. 새 규칙에서 82.35 (정검 7 미검 3 오검 0). 학습셋이 지워져 재현 불가."
   }
  }

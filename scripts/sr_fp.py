@@ -74,9 +74,9 @@ def judge(gt, on):
 
 
 def main():
-    model = YOLO(str(G / "model/fire_base.pt"))
+    model = YOLO(str(G / "model/pre_test_v1/fire_base.pt"))
     net = RRDBNet(num_in_ch=3, num_out_ch=3, num_feat=64, num_block=23, num_grow_ch=32, scale=4)
-    sr = RealESRGANer(scale=4, model_path=str(G / "model/sr/RealESRGAN_x4plus.pth"), model=net, tile=0, half=True, device=torch.device("cuda"))
+    sr = RealESRGANer(scale=4, model_path=str(G / "model/pre_test_v1/sr/RealESRGAN_x4plus.pth"), model=net, tile=0, half=True, device=torch.device("cuda"))
     vids = [(m, gt_start(W / "vms/data/원본데이터/kisa_배포_방화채점셋/gt" / (m.stem + ".xml"))) for m in sorted((W / "vms/data/원본데이터/kisa_배포_방화채점셋/videos").glob("*.mp4"))]
     vids += [(m, None) for m in sorted((G / "datasets/rnd_rest/5. 싸움(200개)").rglob("*.mp4"))[:20]]
     tally = {"base": {}, "sr": {}}

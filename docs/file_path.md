@@ -43,7 +43,7 @@ KP.DEFAULT_IMGSZ    # 기본 입력 크기 (640)
 | `scripts/` | 파이프라인 스크립트 | 새 스크립트는 이곳에 생성 (루트 생성 금지) |
 | `scripts/_archive/<날짜>/` | 일회성·탐색 스크립트 보관 | 삭제 대신 이곳으로 이동 |
 | `scripts/data_prep/` | 데이터 준비 단계 스크립트 |  |
-| `model/` | 운영 고정 가중치(루트) · 기준 모델(`model/pretrained/`, yolo11s 등. 단 루트의 `yolo11x-pose.pt` · `person_v2/v3.pt` · `fall_track.pt` 는 제출 도구 `_kisa_port/weights/kisa/` 가 바로가기로 가리키므로 옮기지 않는다, 2026-10-02 옮겼다가 끊겨 되돌림) · 옛 배포 가중치 원본(`model/배포원본_20260923/`, README 에 계보) | Git 제외. 가중치를 루트 · 다른 폴더에 두지 않는다 |
+| `model/` | 운영 고정 가중치(루트) · 기준 모델(`model/pretrained/`, yolo11s 등. 단 루트의 `yolo11x-pose.pt` · `fall_track.pt` 는 제출 도구 `_kisa_port/weights/kisa/` 가 바로가기로 가리키므로 옮기지 않는다, 2026-10-02 옮겼다가 끊겨 되돌림) · 옛 가중치(`person_v2/v3.pt` · `fire_base` · `fire_snowfull` · `sr` · `배포원본_20260923/` 등)는 `model/pre_test_v1/`(2026-10-03, `_kisa_port` 바로가기도 그리로 다시 걸었다) | Git 제외. 가중치를 루트 · 다른 폴더에 두지 않는다 |
 | `feats/` | 쓰러짐 자세 특징 캐시(`fall_kpts*` · `fall_seq` · `fire_seq`) | Git 제외. `scripts/fall_*.py` 가 쓰고 읽는다. 지워도 다시 만든다 |
 | `configs/` | 큐 yaml, 데이터 계약(`datasets.yaml`), 결과 탭 비교 블록(`result_blocks.yaml`) |  |
 | `dash_v2/` | 대시보드 서버 및 프론트엔드 | 로그/데이터 파일 보관 금지 |
@@ -52,6 +52,7 @@ KP.DEFAULT_IMGSZ    # 기본 입력 크기 (640)
 | `data/학습데이터/` | 생성된 라벨, 학습/검증셋 |  |
 | `results/<실험>/` | 실험 산출물 (`score.txt`, `meta.json` 등) |  |
 | `runs/<실험>/` | 학습 가중치 및 설정 내역 |  |
+| `data/학습데이터/pre_test_v1/` · `runs/pre_test_v1/` · `results/pre_test_v1/` · `model/pre_test_v1/` | **09-26 데이터 정정(hnfix) 이전 = 사전시험 전 옛 학습 데이터 · 판 · 결과 · 가중치**(사용자 2026-10-03 '섞이지 않게 분리, pre_test_v1'). 기준 = 대시보드 '지금 데이터 판' 판별(review_cache._current)과 같음. 각 폴더 MANIFEST.json 에 원래 경로, 데이터 쪽 relink_<시각>.tsv 에 다시 건 심링크(되돌리기용). 새 판 · 새 데이터를 여기에 두지 않는다 | 분리 스크립트 /NHNHOME/pretest_split.py(1회성) |
 | `logs/`, `logs/dash/` | 실행 로그 | Git 제외. 소스 폴더에 로그 파일 생성 금지 |
 | `dumps/` | 채점 및 박스 덤프 | 영상 오버레이용 jsonl 등 |
 | `_exp/` | 잡(Job) 목록 및 캐시 | Git 제외. 재생성 가능한 임시물 |
