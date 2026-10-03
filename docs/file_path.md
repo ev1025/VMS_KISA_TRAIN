@@ -52,6 +52,7 @@ KP.DEFAULT_IMGSZ    # 기본 입력 크기 (640)
 | `data/학습데이터/` | 생성된 라벨, 학습/검증셋 |  |
 | `results/<실험>/` | 실험 산출물 (`score.txt`, `meta.json` 등) |  |
 | `runs/<실험>/` | 학습 가중치 및 설정 내역 |  |
+| `data/학습데이터/_deleted_bundles_<날짜>/` | 지운 학습셋 꾸러미(실험마다 만든 셋 폴더)의 설정 · 목록 파일(meta.json · data.yaml · *.txt)과 LIST.tsv(이름 · 원래 자리 · 만든 날 · 장수 · 지운 시각). 2026-10-03 사용자 '안 쓰면 목록 남기고 지우자' 로 54개 지움(지금 큐 · 모듈 목록 · val 셋 · 그것들이 심링크로 거쳐 가는 폴더는 남김). 새 학습은 꾸러미를 만들지 않고 모듈 조합(compose) | 정리 스크립트 /NHNHOME/bundle_cleanup.py(1회성) |
 | `data/학습데이터/pre_test_v1/` · `runs/pre_test_v1/` · `results/pre_test_v1/` · `model/pre_test_v1/` | **09-26 데이터 정정(hnfix) 이전 = 사전시험 전 옛 학습 데이터 · 판 · 결과 · 가중치**(사용자 2026-10-03 '섞이지 않게 분리, pre_test_v1'). 기준 = 대시보드 '지금 데이터 판' 판별(review_cache._current)과 같음. 각 폴더 MANIFEST.json 에 원래 경로, 데이터 쪽 relink_<시각>.tsv 에 다시 건 심링크(되돌리기용). 새 판 · 새 데이터를 여기에 두지 않는다 | 분리 스크립트 /NHNHOME/pretest_split.py(1회성) |
 | `logs/`, `logs/dash/` | 실행 로그 | Git 제외. 소스 폴더에 로그 파일 생성 금지 |
 | `dumps/` | 채점 및 박스 덤프 | 영상 오버레이용 jsonl 등 |
