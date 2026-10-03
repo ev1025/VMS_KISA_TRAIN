@@ -18,6 +18,7 @@ defaults:
   stagger_sec: 120
   util_gate_pct: 30
   util_window_min: 10
+# 2026-10-03 22시 사용자 '방화 데이터 바꿔보는 건 아직 시작 전인가': 사람 시드 1 판을 미룸 표시로 건너뛰게 하고 같은 설정을 ..._ctl_s1b 로 끝에 다시 넣음 → 방화 0단계가 먼저
 experiments:
 - name: p1280_grid0_coco12k_b170_20261003
   model: yolo11s
@@ -265,3 +266,36 @@ experiments:
     imgsz: 960
     batch: 160
   need_mib: 85000
+- name: p1280_grid0_ctl_s1b_b170_20261003
+  model: yolo11s
+  item: 사람
+  phase: grid0
+  names:
+  - person
+  compose:
+    use:
+    - mod_person_coco_pos_20260927
+    - mod_person_own_pos_20260927
+    - mod_person_own_empty_20260927
+    - mod_person_coco_empty_20260927
+    exclude:
+    - flt_train_exclude_20261002
+    - flt_evalclips_20261002
+    background:
+      ratio: 0.1
+      pool:
+      - mod_person_coco_empty_20260927
+      seed: 0
+  val_set: data/학습데이터/trainset_person_hnfix_20260927/val_domain.txt
+  extra:
+    patience: 0
+    seed: 1
+    save_period: 5
+  train:
+    multi_scale: 0.0
+    epochs: 60
+    cache: false
+    workers: 8
+    imgsz: 1280
+    batch: 170
+  need_mib: 168000
