@@ -39,17 +39,22 @@ def main():
     ap.add_argument("--extra-kpts", nargs="*", default=[]); ap.add_argument("--meta-dir", default=None)
     ap.add_argument("--set-gt-aihub", default=None); ap.add_argument("--seeds", type=int, default=3); ap.add_argument("--seed", type=int, default=0)
     ap.add_argument("--imgsz", type=int, default=1280); ap.add_argument("--tag", default="base"); ap.add_argument("--device", default="cpu")
+    ap.add_argument("--pt", default=None, help="학습하지 않고 이 SeqNet 가중치로 돌린다(예: runs/fall_track/fall_track.pt = 배포 분류기를 같은 특징에, 2026-10-03)")
     a = ap.parse_args()
     if a.set_gt_aihub:
         return set_gt_aihub(a.test, a.set_gt_aihub)
     CV.DEV = torch.device(a.device)
-    clips = CV.prep(sorted(p for p in Path(a.kpts).glob("*.npz") if not p.stem.startswith(FT.DEPLOY_PREFIX)))
-    xclips = CV.prep(sorted(p for d in a.extra_kpts for p in Path(d).glob("*.npz"))) if a.extra_kpts else []
-    pos, neg = [], []
-    for _s, gt, dur, trs in clips + xclips:
-        p_, n_, _ = CV.clip_windows(gt, dur, trs); pos += p_; neg += n_
-    print(f"학습 {len(clips)}편 + 더함 {len(xclips)}편 · 양성 창 {len(pos)} 음성 창 {len(neg)} · 시드 {a.seeds}", flush=True)
-    nets = [CV.train(pos, neg, a.seed + k)[0] for k in range(a.seeds)]
+    if a.pt:
+        net = FT.SeqNet(); net.load_state_dict(torch.load(a.pt, map_location="cpu")); net.to(CV.DEV); net.eval(); nets = [net]
+        print(f"가중치 {a.pt} 로 돌림(학습 안 함)", flush=True)
+    if not a.pt:
+        clips = CV.prep(sorted(p for p in Path(a.kpts).glob("*.npz") if not p.stem.startswith(FT.DEPLOY_PREFIX)))
+        xclips = CV.prep(sorted(p for d in a.extra_kpts for p in Path(d).glob("*.npz"))) if a.extra_kpts else []
+        pos, neg = [], []
+        for _s, gt, dur, trs in clips + xclips:
+            p_, n_, _ = CV.clip_windows(gt, dur, trs); pos += p_; neg += n_
+        print(f"학습 {len(clips)}편 + 더함 {len(xclips)}편 · 양성 창 {len(pos)} 음성 창 {len(neg)} · 시드 {a.seeds}", flush=True)
+        nets = [CV.train(pos, neg, a.seed + k)[0] for k in range(a.seeds)]
     out = V / f"dumps/fall_seq_ext_{Path(a.test).name}_{a.tag}"; out.mkdir(parents=True, exist_ok=True)
     test = CV.prep(sorted(Path(a.test).glob("*.npz")))
     for s, gt, dur, trs in test:
