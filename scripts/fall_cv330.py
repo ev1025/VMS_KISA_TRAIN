@@ -32,6 +32,7 @@
 사용
     CUDA_VISIBLE_DEVICES= .venv/bin/python scripts/fall_cv330.py [--folds 6] [--seed 0] [--threads 16]
                           [--ignore-pre 2] [--seeds 5] [--hard-neg] [--tag ig2] [--kpts feats/fall_kpts] [--imgsz 640]
+                          [--extra-kpts feats/fall_kpts_1280_swoon171]   # 다른 출처 편을 학습에만 더함(2026-10-03)
 """
 import argparse
 import json
@@ -212,6 +213,7 @@ def main():
     ap.add_argument("--ignore-post", action="store_true", help="사건이 끝난 뒤(누워 있는) 창을 음성에서 뺀다")
     ap.add_argument("--vanish", type=float, default=0.0, help="사라지는 음성 창 수 = 양성 창 수 × 이 값(0 = 끔, 2026-09-30)")
     ap.add_argument("--tag", default="")
+    ap.add_argument("--extra-kpts", nargs="*", default=[], help="모든 겹의 학습에만 더할 피처 폴더(예: AI허브 171 실신 145편, 2026-10-03). 검증 겹 · 곡선에는 안 들어감")
     ap.add_argument("--no-insample", action="store_true")
     ap.add_argument("--device", default="cpu", help="cpu 또는 cuda")
     a = ap.parse_args()
@@ -230,6 +232,11 @@ def main():
     t0 = time.time(); clips = prep(files)
     print(f"전처리 {len(clips)}편 {time.time() - t0:.0f}s", flush=True)
     win = {s: clip_windows(gt, dur, trs, a.ignore_pre, a.ignore_post) for s, gt, dur, trs in clips}
+    xclips = prep(sorted(p for d in a.extra_kpts for p in Path(d).glob("*.npz"))) if a.extra_kpts else []
+    xwin = [clip_windows(gt, dur, trs, a.ignore_pre, a.ignore_post) for _s, gt, dur, trs in xclips]
+    xpos, xneg = [w for v in xwin for w in v[0]], [w for v in xwin for w in v[1]]
+    if xclips:
+        print(f"더하는 학습 편 {len(xclips)}편(모든 겹 학습에만): 양성 창 {len(xpos)} 음성 창 {len(xneg)}", flush=True)
     print(f"창 합계: 양성 {sum(len(v[0]) for v in win.values())} 음성 {sum(len(v[1]) for v in win.values())}", flush=True)
 
     # 1) 배포 분류기의 학습셋 곡선(같은 피처) = 낙관 폭을 재는 짝
@@ -247,8 +254,8 @@ def main():
     for f in range(a.folds):
         tr = [c for c in clips if fold_of[c[0].split("_")[0]] != f]
         te = [c for c in clips if fold_of[c[0].split("_")[0]] == f]
-        pos = [w for c in tr for w in win[c[0]][0]]
-        neg = [w for c in tr for w in win[c[0]][1]]
+        pos = [w for c in tr for w in win[c[0]][0]] + xpos
+        neg = [w for c in tr for w in win[c[0]][1]] + xneg
         t1 = time.time()
         hard = None
         if a.hard_neg:
