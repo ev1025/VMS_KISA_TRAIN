@@ -21,7 +21,7 @@ import calc_intr as CI
 K = C.K
 DESC = K.ITEMS["intrusion"]["desc"]
 RATE = 6
-BASE = dict(conf=0.35, corners=4, hold_s=0.5, gap_s=2.0, trk_s=5.0)          # 지금 기준선 규칙 B(10-01 3단계 결과)
+BASE = dict(conf=0.40, corners=4, hold_s=0.5, gap_s=2.0, trk_s=5.0, seam=1)  # 판정기 VMS_KISA RULES.B 그대로(conf 0.40 · 조각 정리 2px). 10-03 감사: 0.35 · 조각 정리 없음은 판정기와 달랐음
 HYS = [(0, 0), (5, 10), (10, 15), (15, 25)]                                  # (안으로 hin, 밖으로 hout) px. (0, 0) = 없음
 MERGE = [(0, 0), (5, 80), (10, 120), (20, 160)]                              # (ms 초, mr px). (0, 0) = 없음
 TRK = ["iou", "oc"]                                                          # 추적기
@@ -180,6 +180,8 @@ def one(job):
     poly = K.zone_of(C.MAPS[set_], stem, "Intrusion", (1280, 720))
     step = max(1, int(round(fps / RATE)))
     rows = [(i / fps, dets) for i, dets in d["rows"] if i % step == 0]
+    if BASE.get("seam"):
+        rows = [(t, CI.seam_fix(dets)) for t, dets in rows]                       # 판정기와 같은 타일 경계 조각 정리
     out = {}
     for trk in TRK:
         gapn = max(1, int(round(BASE["trk_s"] * RATE)))
@@ -234,10 +236,10 @@ def main():
                     s = R["rules"].setdefault(k, [0, 0, 0])
                     for i in range(3):
                         s[i] += c[i]
-    C.save(C.E / "results" / "intr3_rules.json", res)
+    C.save(C.E / "results" / "intr3_rules_judgeB.json", res)
     for m, S in res.items():
         rd, sc = S.get("rd", {}), S.get("score", {})
-        print(f"\n== {m}: 안 본 연구개발 {rd.get('n')}편 · 채점 {sc.get('n')}편 · 초당 6장 · 기준선 B 위에서")
+        print(f"\n== {m}: 안 본 연구개발 {rd.get('n')}편 · 채점 {sc.get('n')}편 · 초당 6장 · 판정기 규칙 B(conf 0.40 · 조각 정리 2px) 위에서")
         print(f"{'규칙':22s} {'안본 F1':>8s} {'정/미/오':>12s} | {'채점 F1':>8s} {'정/미/오':>12s}")
         rows = sorted(rd["rules"].items(), key=lambda kv: (-f1(kv[1]), kv[0]))
         for k, v in rows:
