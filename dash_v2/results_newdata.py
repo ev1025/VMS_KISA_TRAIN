@@ -113,11 +113,25 @@ def _args(exp, e):
     return d, planned
 
 
+def _here(p):
+    """다른 서버(A · B)에서 적은 절대 경로 → 이 서버 경로. _exp/<실험>/data.yaml 은 학습한 서버의 절대 경로라
+    사본 서버(B)에선 그대로 못 읽는다(10-03 사용자: B 는 A 와 늘 같게). 저장소 뿌리 아래 첫 폴더부터는 두 서버가 같다"""
+    p = Path(p)
+    if not p.is_absolute() or p.is_file():
+        return p
+    s = str(p)
+    for top in ("/_exp/", "/data/", "/runs/", "/results/"):
+        i = s.find(top)
+        if i >= 0:
+            return G / s[i + 1:]
+    return p
+
+
 def _val(exp, e):
     """{"key": 같음을 가를 값, "text": 읽는 말, "note": 짧은 부연}. val_small 은 실험마다 자기 학습 목록에서 뽑는 같은 규칙이라 규칙으로 묶는다."""
     v = None
     try:
-        v = Path((yaml.safe_load((G / "_exp" / exp / "data.yaml").read_text(encoding="utf-8")) or {}).get("val") or "")
+        v = _here((yaml.safe_load((G / "_exp" / exp / "data.yaml").read_text(encoding="utf-8")) or {}).get("val") or "")
     except Exception:
         pass
     if (v is None or not v.is_file()) and (_info(exp) or {}).get("val"):
