@@ -12,7 +12,8 @@ const P3IT = { 침입: "intrusion", 배회: "loiter", 방화: "fire", 쓰러짐:
 const P3COL = ["#58a6ff", "#ff9b50", "#f778ba"], P3MAX = 3;
 const p3Sel = () => P3.sel[P3FAM[P3.item]] || [];
 const p3Row = () => ((META.items[P3.item] || {}).rows || []).find(r => r.name === P3.clip[P3.item]) || null;
-const p3Stages = D => Object.keys(D.phases || {}).filter(k => k !== "grid0");   // 1 ~ 4단계만(10-02 사용자: 0단계 · 전체 · 단계 없음 탭 지움)
+// 단계 탭: 1 ~ 4단계 + 0단계는 판 · 비교가 있을 때만(10-02 옛 뜻 0단계 탭을 지움 → 10-03 0단계 = 학습 데이터 구성 · 비율, 계약 v6). 전체 · 단계 없음 탭은 없음
+const p3Stages = D => Object.keys(D.phases || {}).filter(k => k !== "grid0" || p3Count(D, k) || Object.values(D.runs || {}).some(r => r.phase === k));
 const p3PhOf = r => r.phase || "_none";
 const p3Ph = (D, ph) => (D.phases || {})[ph] ? `<span class="nr-bdg ph" title="${nrEsc(D.phases[ph])}">${nrEsc(String(D.phases[ph]).split("(")[0])}</span>` : "";   // 줄 안 단계 배지 = 짧은 이름
 const p3Chip = (v, r) => v ? `<span class="nr-chip ${v.call === "동률" ? "tie" : v.call === "개선" ? "win" : "lose"}">${v.call}</span>`
