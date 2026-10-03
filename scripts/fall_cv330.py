@@ -49,6 +49,8 @@ V = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(V / "scripts"))
 import fall_track as FT  # noqa: E402  (트랙·피처·창·SeqNet 을 그대로 쓴다)
 
+AUG = 0.0                  # 관절 가림 증강 확률(학습 창마다 시간 표본 · 관절 단위로 0 지우기). 0 = 끔(2026-10-03, h1002o)
+ARCH = "gru"               # 분류기 구조: gru = 배포와 같은 Conv1D + 양방향 GRU, conv = 팽창 인과 1D 합성곱(NPU 용)
 FEAT_NOISE = 0.0            # 학습 창에 더하는 가우시안 잡음(정규화 단위). 0 = 없음. 픽셀 ±1 잡음에 둔감한 분류기 후보(2026-09-21)
 DEV = torch.device("cpu")   # --device 로 바꾼다. CPU(oneDNN) 학습이 시작 직후 간헐 세그폴트를 내서 GPU 도 열어 둠(2026-09-20)
 
@@ -113,6 +115,36 @@ def vanish_negs(neg, n, seed, keep=(6, 16)):
     return out
 
 
+class SeqNetConv(nn.Module):
+    """GRU 대신 팽창 인과 1D 합성곱 4층(팽창 1 · 2 · 4 · 8, 커널 3 → 수용 범위 31표본 ≥ 창 20). 과거 표본만 봐서 실시간 · NPU 에 맞음(2026-10-03)"""
+    def __init__(self, dim=None, ch=96):
+        super().__init__()
+        dim = dim or FT.DIM; self.pads = []
+        layers = []
+        for i, d in enumerate((1, 2, 4, 8)):
+            layers.append(nn.Conv1d(dim if i == 0 else ch, ch, 3, dilation=d)); self.pads.append(2 * d)
+        self.layers = nn.ModuleList(layers); self.head = nn.Linear(ch, 1)
+
+    def forward(self, x):
+        h = x.transpose(1, 2)
+        for conv, p in zip(self.layers, self.pads):
+            h = torch.relu(conv(nn.functional.pad(h, (p, 0))))
+        return self.head(h[:, :, -1]).squeeze(-1)
+
+
+def make_net():
+    return SeqNetConv() if ARCH == "conv" else FT.SeqNet()
+
+
+def augment(xb, p):
+    """관절 가림 증강: 시간 표본 통째(자세를 못 잡은 순간) · 관절 단위(가려진 관절, 그 관절의 x · y · 신뢰도 3칸)를 확률 p 로 0"""
+    n, t, _ = xb.shape
+    keep_t = (torch.rand(n, t, 1, device=xb.device) >= p).float()
+    keep_j = (torch.rand(n, 1, 17, device=xb.device) >= p).float().repeat_interleave(3, dim=2)
+    keep = torch.cat([torch.ones(n, 1, 8, device=xb.device), keep_j], dim=2)
+    return xb * keep_t * keep
+
+
 def train(pos, neg, seed, extra_neg=None, epochs=12, B=512):
     """기본 레시피. extra_neg(어려운 음성)는 3배 표집 뒤에 그대로 덧붙인다."""
     random.seed(seed); torch.manual_seed(seed); np.random.seed(seed)
@@ -121,7 +153,7 @@ def train(pos, neg, seed, extra_neg=None, epochs=12, B=512):
     X = torch.tensor(np.stack(pos + neg + extra), dtype=torch.float32).to(DEV)
     Y = torch.tensor([1.0] * len(pos) + [0.0] * (len(neg) + len(extra))).to(DEV)
     idx = torch.randperm(len(X), device=DEV); X, Y = X[idx], Y[idx]
-    net = FT.SeqNet().to(DEV)
+    net = make_net().to(DEV)
     opt = torch.optim.AdamW(net.parameters(), lr=1e-3)
     lossf = nn.BCEWithLogitsLoss()
     tot = 0.0
@@ -131,6 +163,8 @@ def train(pos, neg, seed, extra_neg=None, epochs=12, B=512):
             xb, yb = X[i:i + B], Y[i:i + B]
             if FEAT_NOISE:
                 xb = xb + FEAT_NOISE * torch.randn_like(xb)
+            if AUG:
+                xb = augment(xb, AUG)
             opt.zero_grad(); loss = lossf(net(xb), yb); loss.backward(); opt.step()
             tot += float(loss.detach()) * len(xb)
     return net, len(pos), len(neg) + len(extra), tot / len(X)
@@ -213,12 +247,14 @@ def main():
     ap.add_argument("--ignore-post", action="store_true", help="사건이 끝난 뒤(누워 있는) 창을 음성에서 뺀다")
     ap.add_argument("--vanish", type=float, default=0.0, help="사라지는 음성 창 수 = 양성 창 수 × 이 값(0 = 끔, 2026-09-30)")
     ap.add_argument("--tag", default="")
+    ap.add_argument("--aug", type=float, default=0.0, help="관절 가림 증강 확률(예 0.15)")
+    ap.add_argument("--arch", default="gru", choices=["gru", "conv"], help="분류기 구조(conv = 팽창 인과 1D 합성곱)")
     ap.add_argument("--extra-kpts", nargs="*", default=[], help="모든 겹의 학습에만 더할 피처 폴더(예: AI허브 171 실신 145편, 2026-10-03). 검증 겹 · 곡선에는 안 들어감")
     ap.add_argument("--no-insample", action="store_true")
     ap.add_argument("--device", default="cpu", help="cpu 또는 cuda")
     a = ap.parse_args()
-    global DEV
-    DEV = torch.device(a.device)
+    global DEV, AUG, ARCH
+    DEV = torch.device(a.device); AUG = a.aug; ARCH = a.arch
     torch.set_num_threads(a.threads)
     suffix = f"_{a.tag}" if a.tag else ""
     out_cv = V / f"dumps/fall_seq_cv330_{a.imgsz}{suffix}"
