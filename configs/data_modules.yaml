@@ -8,6 +8,7 @@ modules:
   - {name: mod_person_coco_pos_20260927, item: 사람, kind: module, role: pos, count: 57810, label: "COCO 사람 사진"}
   - {name: mod_person_coco_pos_r24k_20261003, item: 사람, kind: module, role: pos, count: 24000, label: "COCO 사람 사진 무작위 24,000장(COCO 비중 실험)"}
   - {name: mod_person_coco_pos_r12k_20261003, item: 사람, kind: module, role: pos, count: 12000, label: "COCO 사람 사진 무작위 12,000장(24k 의 앞부분, person_v2 수준)"}
+  - {name: mod_person_coco_pos_small12k_20261003, item: 사람, kind: module, role: pos, count: 12000, label: "COCO 사람 사진 중 가장 작은 사람이 든 12,000장(작은 사람 4,945 · 군중 2,849 포함)"}
   - {name: mod_person_coco_empty_20260927, item: 사람, kind: module, role: neg, count: 47897, label: "COCO 빈 사진(배경 후보)"}
   - {name: mod_person_own_pos_20260927, item: 사람, kind: module, role: pos, count: 11929, label: "우리 영상 사람 프레임(손라벨 + 확인 전파)"}
   - {name: mod_person_own_empty_20260927, item: 사람, kind: module, role: neg, count: 823, label: "우리 영상 빈 프레임"}
