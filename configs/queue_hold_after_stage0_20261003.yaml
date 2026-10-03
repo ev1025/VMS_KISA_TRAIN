@@ -1,0 +1,395 @@
+# 0단계(학습 데이터 구성 · 비율) 결과를 보고 다시 짤 판들(2026-10-03, 사용자 '데이터 개수 조정 이후에 1 · 2 · 3 · 4단계'). 러너로 돌리지 않는다.
+# 0단계에서 바탕 데이터가 바뀌면 이 판들의 base · extras · oversample · compose 를 새 구성으로 고쳐 새 이름(날짜)으로 큐에 넣는다
+# 들어 있는 것: 방화 1단계 1280 두 판(b170 은 47/60 에폭 체크포인트 있음) · 사람 4단계 두 판 · grid2f 에서 미룬 방화 2단계 5판 · 사람 대조군 시드 1(b85) · 모델 크기(11n · 11m · 방화 11m)
+name: hold_after_stage0_20261003
+defaults: {min_free_gb: 150, ram_cache_max: 0, stagger_sec: 120, util_gate_pct: 30, util_window_min: 10,
+  val_small: 600, vram_gate_mib: 10000}
+experiments:
+- name: f1280_grid_b170_20261002
+  model: yolo11s
+  item: 방화
+  phase: grid1
+  names:
+  - fire
+  - smoke
+  base: aihub71751_48k
+  extras:
+  - fasdd_snowfog
+  - fasdd_yolo
+  - wildfire_pos_yolo
+  - wildfire_fog_neg
+  - fire_snowbg_흑백불_20260926
+  oversample:
+    handset_fire_hand_20260928: 4
+    fire_mask_hn_fog_20260926: 3
+  extra:
+    patience: 0
+    seed: 0
+  train:
+    multi_scale: 0.0
+    epochs: 60
+    cache: false
+    workers: 8
+    imgsz: 1280
+    batch: 170
+  need_mib: 168000
+- name: f1280_grid_b85_20261002
+  model: yolo11s
+  item: 방화
+  phase: grid1
+  names:
+  - fire
+  - smoke
+  base: aihub71751_48k
+  extras:
+  - fasdd_snowfog
+  - fasdd_yolo
+  - wildfire_pos_yolo
+  - wildfire_fog_neg
+  - fire_snowbg_흑백불_20260926
+  oversample:
+    handset_fire_hand_20260928: 4
+    fire_mask_hn_fog_20260926: 3
+  extra:
+    patience: 0
+    seed: 0
+  train:
+    multi_scale: 0.0
+    epochs: 60
+    cache: false
+    workers: 8
+    imgsz: 1280
+    batch: 85
+  need_mib: 100000
+- name: p1280_grid4_b170_s0_20261003
+  model: yolo11s
+  item: 사람
+  phase: grid4
+  names:
+  - person
+  compose:
+    use:
+    - mod_person_coco_pos_20260927
+    - mod_person_own_pos_20260927
+    - mod_person_own_empty_20260927
+    - mod_person_coco_empty_20260927
+    exclude:
+    - flt_train_exclude_20261002
+    - flt_evalclips_20261002
+    background:
+      ratio: 0.1
+      pool:
+      - mod_person_coco_empty_20260927
+      seed: 0
+  val_set: data/학습데이터/trainset_person_hnfix_20260927/val_domain.txt
+  extra:
+    patience: 0
+    seed: 0
+    save_period: 5
+  train:
+    multi_scale: 0.0
+    epochs: 60
+    cache: false
+    workers: 8
+    imgsz: 1280
+    batch: 170
+  need_mib: 168000
+- name: p1280_grid4_b170_s1_20261003
+  model: yolo11s
+  item: 사람
+  phase: grid4
+  names:
+  - person
+  compose:
+    use:
+    - mod_person_coco_pos_20260927
+    - mod_person_own_pos_20260927
+    - mod_person_own_empty_20260927
+    - mod_person_coco_empty_20260927
+    exclude:
+    - flt_train_exclude_20261002
+    - flt_evalclips_20261002
+    background:
+      ratio: 0.1
+      pool:
+      - mod_person_coco_empty_20260927
+      seed: 0
+  val_set: data/학습데이터/trainset_person_hnfix_20260927/val_domain.txt
+  extra:
+    patience: 0
+    seed: 1
+    save_period: 5
+  train:
+    multi_scale: 0.0
+    epochs: 60
+    cache: false
+    workers: 8
+    imgsz: 1280
+    batch: 170
+  need_mib: 168000
+- name: f960_grid2_scale_b160_20261001
+  model: yolo11s
+  item: 방화
+  phase: grid2
+  names:
+  - fire
+  - smoke
+  base: aihub71751_48k_pos_20260928
+  extras:
+  - fasdd_snowfog
+  - fasdd_yolo_pos_20260928
+  - wildfire_pos_yolo
+  - wildfire_fog_neg
+  - fire_snowbg_흑백불_20260926
+  oversample:
+    handset_fire_hand_20260928: 4
+    fire_mask_hn_fog_20260926: 3
+  extra:
+    patience: 0
+    seed: 0
+    scale:
+    - 0.5
+    - 2.5
+  train:
+    multi_scale: 0.0
+    epochs: 60
+    cache: false
+    workers: 8
+    imgsz: 960
+    batch: 160
+  need_mib: 85000
+- name: f960_grid2_hand2_b160_20261001
+  model: yolo11s
+  item: 방화
+  phase: grid2
+  names:
+  - fire
+  - smoke
+  base: aihub71751_48k_pos_20260928
+  extras:
+  - fasdd_snowfog
+  - fasdd_yolo_pos_20260928
+  - wildfire_pos_yolo
+  - wildfire_fog_neg
+  oversample:
+    handset_fire_hand_20260928: 2
+    fire_mask_hn_fog_20260926: 3
+  extra:
+    patience: 0
+    seed: 0
+  train:
+    multi_scale: 0.0
+    epochs: 60
+    cache: false
+    workers: 8
+    imgsz: 960
+    batch: 160
+  need_mib: 85000
+- name: f960_grid2_snowaug_b160_20261001
+  model: yolo11s
+  item: 방화
+  phase: grid2
+  names:
+  - fire
+  - smoke
+  base: aihub71751_48k_pos_20260928
+  extras:
+  - fasdd_snowfog
+  - fasdd_yolo_pos_20260928
+  - wildfire_pos_yolo
+  - wildfire_fog_neg
+  - fire_snowbg_흑백불_20260926
+  oversample:
+    handset_fire_hand_20260928: 4
+    fire_mask_hn_fog_20260926: 3
+    fire_snowaug_20260926: 2
+  extra:
+    patience: 0
+    seed: 0
+  train:
+    multi_scale: 0.0
+    epochs: 60
+    cache: false
+    workers: 8
+    imgsz: 960
+    batch: 160
+  need_mib: 85000
+- name: f960_grid2_nosnowbg_b160_20261001
+  model: yolo11s
+  item: 방화
+  phase: grid2
+  names:
+  - fire
+  - smoke
+  base: aihub71751_48k_pos_20260928
+  extras:
+  - fasdd_snowfog
+  - fasdd_yolo_pos_20260928
+  - wildfire_pos_yolo
+  - wildfire_fog_neg
+  oversample:
+    handset_fire_hand_20260928: 4
+    fire_mask_hn_fog_20260926: 3
+  extra:
+    patience: 0
+    seed: 0
+  train:
+    multi_scale: 0.0
+    epochs: 60
+    cache: false
+    workers: 8
+    imgsz: 960
+    batch: 160
+  need_mib: 85000
+- name: f960_grid2_ms_b160_20261001
+  model: yolo11s
+  item: 방화
+  phase: grid2
+  names:
+  - fire
+  - smoke
+  base: aihub71751_48k_pos_20260928
+  extras:
+  - fasdd_snowfog
+  - fasdd_yolo_pos_20260928
+  - wildfire_pos_yolo
+  - wildfire_fog_neg
+  - fire_snowbg_흑백불_20260926
+  oversample:
+    handset_fire_hand_20260928: 4
+    fire_mask_hn_fog_20260926: 3
+  extra:
+    patience: 0
+    seed: 0
+  train:
+    multi_scale: 0.333
+    epochs: 60
+    cache: false
+    workers: 8
+    imgsz: 960
+    batch: 160
+  need_mib: 168000
+- name: p1280_grid2_ctl_s1_b85_20261002
+  model: yolo11s
+  item: 사람
+  phase: grid2
+  names:
+  - person
+  base: trainset_person_hnfix_full_bg10_20260928
+  extras: []
+  oversample: {}
+  val_set: data/학습데이터/trainset_person_hnfix_20260927/val_domain.txt
+  extra:
+    patience: 0
+    seed: 1
+    save_period: 5
+  train:
+    multi_scale: 0.0
+    epochs: 60
+    cache: false
+    workers: 8
+    imgsz: 1280
+    batch: 85
+  need_mib: 84000
+- name: f960_grid2_ctl_s1_b160_20261002
+  model: yolo11s
+  item: 방화
+  phase: grid2
+  names:
+  - fire
+  - smoke
+  base: aihub71751_48k_pos_20260928
+  extras:
+  - fasdd_snowfog
+  - fasdd_yolo_pos_20260928
+  - wildfire_pos_yolo
+  - wildfire_fog_neg
+  - fire_snowbg_흑백불_20260926
+  oversample:
+    handset_fire_hand_20260928: 4
+    fire_mask_hn_fog_20260926: 3
+  extra:
+    patience: 0
+    seed: 1
+    save_period: 5
+  train:
+    multi_scale: 0.0
+    epochs: 60
+    cache: false
+    workers: 8
+    imgsz: 960
+    batch: 160
+  need_mib: 90000
+- name: p1280_grid2_11n_b85_20261002
+  model: yolo11n
+  item: 사람
+  phase: grid2
+  names:
+  - person
+  base: trainset_person_hnfix_full_bg10_20260928
+  extras: []
+  oversample: {}
+  val_set: data/학습데이터/trainset_person_hnfix_20260927/val_domain.txt
+  extra:
+    patience: 0
+    seed: 0
+    save_period: 5
+  train:
+    multi_scale: 0.0
+    epochs: 60
+    cache: false
+    workers: 8
+    imgsz: 1280
+    batch: 85
+  need_mib: 84000
+- name: p1280_grid2_11m_b85_20261002
+  model: yolo11m
+  item: 사람
+  phase: grid2
+  names:
+  - person
+  base: trainset_person_hnfix_full_bg10_20260928
+  extras: []
+  oversample: {}
+  val_set: data/학습데이터/trainset_person_hnfix_20260927/val_domain.txt
+  extra:
+    patience: 0
+    seed: 0
+    save_period: 5
+  train:
+    multi_scale: 0.0
+    epochs: 60
+    cache: false
+    workers: 8
+    imgsz: 1280
+    batch: 85
+  need_mib: 168000
+- name: f960_grid2_11m_b160_20261002
+  model: yolo11m
+  item: 방화
+  phase: grid2
+  names:
+  - fire
+  - smoke
+  base: aihub71751_48k_pos_20260928
+  extras:
+  - fasdd_snowfog
+  - fasdd_yolo_pos_20260928
+  - wildfire_pos_yolo
+  - wildfire_fog_neg
+  - fire_snowbg_흑백불_20260926
+  oversample:
+    handset_fire_hand_20260928: 4
+    fire_mask_hn_fog_20260926: 3
+  extra:
+    patience: 0
+    seed: 0
+    save_period: 5
+  train:
+    multi_scale: 0.0
+    epochs: 60
+    cache: false
+    workers: 8
+    imgsz: 960
+    batch: 160
+  need_mib: 175000

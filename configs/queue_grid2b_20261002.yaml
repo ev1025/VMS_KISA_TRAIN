@@ -8,6 +8,7 @@
 # 2026-10-03 09시 사용자 '코코 줄여서 테스트하는 거 한 번 먼저': 맨 앞에 사람 COCO 축소 2판(COCO 사람 12k · 24k 무작위, 우리 영상 프레임은 그대로 · 반복 없음, 1280 b170 배경 10%). 대조군 = 1단계 p1280_grid_b170_bg10_20260929(0.737, 학습 제외 217장만 다름). 사람 4단계 두 판은 방화 1280 b85 뒤로(COCO 결과로 4단계 구성을 다시 정할 시간)
 # 2026-10-03 10시 딥리서치 답 적용(report/2026-10-03 딥리서치 프롬프트_학습 데이터 비율.md): 사람 COCO 판은 학습 단계 수를 대조군과 같게(12k 176에폭 · 24k 117에폭, 60에폭이면 단계 1만 미만이라 울트라리틱스가 옵티마이저를 SGD → AdamW 로 바꿔 대조군과 조건이 달라짐), 작은 사람 위주 COCO 12k · 우리 영상만 미세조정(SGD lr0 0.001, 30에폭) 추가, 방화 반복 없애기(손라벨 · 안개 합성 x1) · AI허브 산불 양성 빼기(안개 · 구름 음성은 둠) 추가. 방화 대조군 = f960_bgtest_bg10_b160_20260928
 # 2026-10-03 10시 사용자 '가장 급하다, 다음 큐부터 바로, 0단계로': 데이터 구성 6판(사람 COCO 4 · 방화 반복 · 산불 2)을 phase grid0(0단계)로 맨 앞. grid2f 의 남은 방화 2단계 5판(scale · hand2 · snowaug · nosnowbg · ms)은 미룸 표시로 건너뛰게 하고 여기 사람 4단계 뒤에 같은 이름으로(0단계 방화 결과에 따라 바탕 데이터를 바꿀 수 있음)
+# 2026-10-03 10시 사용자 '데이터 개수 조정 이후에 1 · 2 · 3 · 4단계 큐를 거는 게 맞겠다': 이 큐는 0단계 6판 + 판정용 시드 1 두 판(사람 · 방화 대조군 설정, 같은 설정 두 번의 차 = 잡음)만. 나머지 12판(방화 1280 두 판 · 사람 4단계 · 미룬 방화 2단계 5판 · 모델 크기 등)은 configs/queue_hold_after_stage0_20261003.yaml 로 옮김(돌리지 않음, 0단계 결과로 다시 짬)
 name: queue_grid2b_20261002
 defaults:
   val_small: 600
@@ -145,6 +146,39 @@ experiments:
     imgsz: 1280
     batch: 170
   need_mib: 168000
+- name: p1280_grid0_ctl_s1_b170_20261003
+  model: yolo11s
+  item: 사람
+  phase: grid0
+  names:
+  - person
+  compose:
+    use:
+    - mod_person_coco_pos_20260927
+    - mod_person_own_pos_20260927
+    - mod_person_own_empty_20260927
+    - mod_person_coco_empty_20260927
+    exclude:
+    - flt_train_exclude_20261002
+    - flt_evalclips_20261002
+    background:
+      ratio: 0.1
+      pool:
+      - mod_person_coco_empty_20260927
+      seed: 0
+  val_set: data/학습데이터/trainset_person_hnfix_20260927/val_domain.txt
+  extra:
+    patience: 0
+    seed: 1
+    save_period: 5
+  train:
+    multi_scale: 0.0
+    epochs: 60
+    cache: false
+    workers: 8
+    imgsz: 1280
+    batch: 170
+  need_mib: 168000
 - name: f960_grid0_rep1_b160_20261003
   model: yolo11s
   item: 방화
@@ -202,296 +236,10 @@ experiments:
     imgsz: 960
     batch: 160
   need_mib: 85000
-- name: f1280_grid_b170_20261002
+- name: f960_grid0_ctl_s1_b160_20261003
   model: yolo11s
   item: 방화
-  phase: grid1
-  names:
-  - fire
-  - smoke
-  base: aihub71751_48k
-  extras:
-  - fasdd_snowfog
-  - fasdd_yolo
-  - wildfire_pos_yolo
-  - wildfire_fog_neg
-  - fire_snowbg_흑백불_20260926
-  oversample:
-    handset_fire_hand_20260928: 4
-    fire_mask_hn_fog_20260926: 3
-  extra:
-    patience: 0
-    seed: 0
-  train:
-    multi_scale: 0.0
-    epochs: 60
-    cache: false
-    workers: 8
-    imgsz: 1280
-    batch: 170
-  need_mib: 168000
-- name: f1280_grid_b85_20261002
-  model: yolo11s
-  item: 방화
-  phase: grid1
-  names:
-  - fire
-  - smoke
-  base: aihub71751_48k
-  extras:
-  - fasdd_snowfog
-  - fasdd_yolo
-  - wildfire_pos_yolo
-  - wildfire_fog_neg
-  - fire_snowbg_흑백불_20260926
-  oversample:
-    handset_fire_hand_20260928: 4
-    fire_mask_hn_fog_20260926: 3
-  extra:
-    patience: 0
-    seed: 0
-  train:
-    multi_scale: 0.0
-    epochs: 60
-    cache: false
-    workers: 8
-    imgsz: 1280
-    batch: 85
-  need_mib: 100000
-- name: p1280_grid4_b170_s0_20261003
-  model: yolo11s
-  item: 사람
-  phase: grid4
-  names:
-  - person
-  compose:
-    use:
-    - mod_person_coco_pos_20260927
-    - mod_person_own_pos_20260927
-    - mod_person_own_empty_20260927
-    - mod_person_coco_empty_20260927
-    exclude:
-    - flt_train_exclude_20261002
-    - flt_evalclips_20261002
-    background:
-      ratio: 0.1
-      pool:
-      - mod_person_coco_empty_20260927
-      seed: 0
-  val_set: data/학습데이터/trainset_person_hnfix_20260927/val_domain.txt
-  extra:
-    patience: 0
-    seed: 0
-    save_period: 5
-  train:
-    multi_scale: 0.0
-    epochs: 60
-    cache: false
-    workers: 8
-    imgsz: 1280
-    batch: 170
-  need_mib: 168000
-- name: p1280_grid4_b170_s1_20261003
-  model: yolo11s
-  item: 사람
-  phase: grid4
-  names:
-  - person
-  compose:
-    use:
-    - mod_person_coco_pos_20260927
-    - mod_person_own_pos_20260927
-    - mod_person_own_empty_20260927
-    - mod_person_coco_empty_20260927
-    exclude:
-    - flt_train_exclude_20261002
-    - flt_evalclips_20261002
-    background:
-      ratio: 0.1
-      pool:
-      - mod_person_coco_empty_20260927
-      seed: 0
-  val_set: data/학습데이터/trainset_person_hnfix_20260927/val_domain.txt
-  extra:
-    patience: 0
-    seed: 1
-    save_period: 5
-  train:
-    multi_scale: 0.0
-    epochs: 60
-    cache: false
-    workers: 8
-    imgsz: 1280
-    batch: 170
-  need_mib: 168000
-- name: f960_grid2_scale_b160_20261001
-  model: yolo11s
-  item: 방화
-  phase: grid2
-  names:
-  - fire
-  - smoke
-  base: aihub71751_48k_pos_20260928
-  extras:
-  - fasdd_snowfog
-  - fasdd_yolo_pos_20260928
-  - wildfire_pos_yolo
-  - wildfire_fog_neg
-  - fire_snowbg_흑백불_20260926
-  oversample:
-    handset_fire_hand_20260928: 4
-    fire_mask_hn_fog_20260926: 3
-  extra:
-    patience: 0
-    seed: 0
-    scale:
-    - 0.5
-    - 2.5
-  train:
-    multi_scale: 0.0
-    epochs: 60
-    cache: false
-    workers: 8
-    imgsz: 960
-    batch: 160
-  need_mib: 85000
-- name: f960_grid2_hand2_b160_20261001
-  model: yolo11s
-  item: 방화
-  phase: grid2
-  names:
-  - fire
-  - smoke
-  base: aihub71751_48k_pos_20260928
-  extras:
-  - fasdd_snowfog
-  - fasdd_yolo_pos_20260928
-  - wildfire_pos_yolo
-  - wildfire_fog_neg
-  oversample:
-    handset_fire_hand_20260928: 2
-    fire_mask_hn_fog_20260926: 3
-  extra:
-    patience: 0
-    seed: 0
-  train:
-    multi_scale: 0.0
-    epochs: 60
-    cache: false
-    workers: 8
-    imgsz: 960
-    batch: 160
-  need_mib: 85000
-- name: f960_grid2_snowaug_b160_20261001
-  model: yolo11s
-  item: 방화
-  phase: grid2
-  names:
-  - fire
-  - smoke
-  base: aihub71751_48k_pos_20260928
-  extras:
-  - fasdd_snowfog
-  - fasdd_yolo_pos_20260928
-  - wildfire_pos_yolo
-  - wildfire_fog_neg
-  - fire_snowbg_흑백불_20260926
-  oversample:
-    handset_fire_hand_20260928: 4
-    fire_mask_hn_fog_20260926: 3
-    fire_snowaug_20260926: 2
-  extra:
-    patience: 0
-    seed: 0
-  train:
-    multi_scale: 0.0
-    epochs: 60
-    cache: false
-    workers: 8
-    imgsz: 960
-    batch: 160
-  need_mib: 85000
-- name: f960_grid2_nosnowbg_b160_20261001
-  model: yolo11s
-  item: 방화
-  phase: grid2
-  names:
-  - fire
-  - smoke
-  base: aihub71751_48k_pos_20260928
-  extras:
-  - fasdd_snowfog
-  - fasdd_yolo_pos_20260928
-  - wildfire_pos_yolo
-  - wildfire_fog_neg
-  oversample:
-    handset_fire_hand_20260928: 4
-    fire_mask_hn_fog_20260926: 3
-  extra:
-    patience: 0
-    seed: 0
-  train:
-    multi_scale: 0.0
-    epochs: 60
-    cache: false
-    workers: 8
-    imgsz: 960
-    batch: 160
-  need_mib: 85000
-- name: f960_grid2_ms_b160_20261001
-  model: yolo11s
-  item: 방화
-  phase: grid2
-  names:
-  - fire
-  - smoke
-  base: aihub71751_48k_pos_20260928
-  extras:
-  - fasdd_snowfog
-  - fasdd_yolo_pos_20260928
-  - wildfire_pos_yolo
-  - wildfire_fog_neg
-  - fire_snowbg_흑백불_20260926
-  oversample:
-    handset_fire_hand_20260928: 4
-    fire_mask_hn_fog_20260926: 3
-  extra:
-    patience: 0
-    seed: 0
-  train:
-    multi_scale: 0.333
-    epochs: 60
-    cache: false
-    workers: 8
-    imgsz: 960
-    batch: 160
-  need_mib: 168000
-- name: p1280_grid2_ctl_s1_b85_20261002
-  model: yolo11s
-  item: 사람
-  phase: grid2
-  names:
-  - person
-  base: trainset_person_hnfix_full_bg10_20260928
-  extras: []
-  oversample: {}
-  val_set: data/학습데이터/trainset_person_hnfix_20260927/val_domain.txt
-  extra:
-    patience: 0
-    seed: 1
-    save_period: 5
-  train:
-    multi_scale: 0.0
-    epochs: 60
-    cache: false
-    workers: 8
-    imgsz: 1280
-    batch: 85
-  need_mib: 84000
-- name: f960_grid2_ctl_s1_b160_20261002
-  model: yolo11s
-  item: 방화
-  phase: grid2
+  phase: grid0
   names:
   - fire
   - smoke
@@ -516,77 +264,4 @@ experiments:
     workers: 8
     imgsz: 960
     batch: 160
-  need_mib: 90000
-- name: p1280_grid2_11n_b85_20261002
-  model: yolo11n
-  item: 사람
-  phase: grid2
-  names:
-  - person
-  base: trainset_person_hnfix_full_bg10_20260928
-  extras: []
-  oversample: {}
-  val_set: data/학습데이터/trainset_person_hnfix_20260927/val_domain.txt
-  extra:
-    patience: 0
-    seed: 0
-    save_period: 5
-  train:
-    multi_scale: 0.0
-    epochs: 60
-    cache: false
-    workers: 8
-    imgsz: 1280
-    batch: 85
-  need_mib: 84000
-- name: p1280_grid2_11m_b85_20261002
-  model: yolo11m
-  item: 사람
-  phase: grid2
-  names:
-  - person
-  base: trainset_person_hnfix_full_bg10_20260928
-  extras: []
-  oversample: {}
-  val_set: data/학습데이터/trainset_person_hnfix_20260927/val_domain.txt
-  extra:
-    patience: 0
-    seed: 0
-    save_period: 5
-  train:
-    multi_scale: 0.0
-    epochs: 60
-    cache: false
-    workers: 8
-    imgsz: 1280
-    batch: 85
-  need_mib: 168000
-- name: f960_grid2_11m_b160_20261002
-  model: yolo11m
-  item: 방화
-  phase: grid2
-  names:
-  - fire
-  - smoke
-  base: aihub71751_48k_pos_20260928
-  extras:
-  - fasdd_snowfog
-  - fasdd_yolo_pos_20260928
-  - wildfire_pos_yolo
-  - wildfire_fog_neg
-  - fire_snowbg_흑백불_20260926
-  oversample:
-    handset_fire_hand_20260928: 4
-    fire_mask_hn_fog_20260926: 3
-  extra:
-    patience: 0
-    seed: 0
-    save_period: 5
-  train:
-    multi_scale: 0.0
-    epochs: 60
-    cache: false
-    workers: 8
-    imgsz: 960
-    batch: 160
-  need_mib: 175000
+  need_mib: 85000
