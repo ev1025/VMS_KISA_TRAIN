@@ -71,10 +71,19 @@ def set_dir(name):
     return None
 
 
+def here(p):
+    """다른 서버(A · B) 저장소 뿌리로 적힌 절대 경로 → 이 서버 뿌리. 목록 파일은 만든 서버(A) 경로 그대로라 B 에선 이렇게 읽는다(10-03 사용자: B 는 A 와 늘 같게).
+    '/data/' 부터는 두 서버가 같다. 이 서버 경로 · 줄인 사본(EXTRA_ROOTS) 경로는 그대로"""
+    i = p.find("/data/")
+    if i < 0 or p.startswith(str(G) + "/") or any(p.startswith(str(r) + "/") for r in EXTRA_ROOTS):
+        return p
+    return str(G) + p[i:]
+
+
 def list_images(d):
     lt = d / "list.txt"
     if lt.is_file():                                                   # 목록 모듈 = 이미지 절대 경로 줄. 걸러 내기는 이름만이라 사진을 짚을 수 없어 빈 목록
-        return [x for x in (ln.strip() for ln in lt.read_text(encoding="utf-8").splitlines()) if x.startswith("/")]
+        return [here(x) for x in (ln.strip() for ln in lt.read_text(encoding="utf-8").splitlines()) if x.startswith("/")]
     for sub in ("images/train", "images"):
         s = d / sub
         if s.is_dir():
